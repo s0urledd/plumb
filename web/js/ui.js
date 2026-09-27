@@ -119,8 +119,14 @@ export function table({ id, columns, rows, sortKey = null, sortDir = 'desc', row
   let list = rows;
   const col = columns.find(c => c.key === sortKey);
   if (col?.sort) { list = [...rows].sort((a, b) => { const x = col.sort(a), y = col.sort(b); return (x > y ? 1 : x < y ? -1 : 0) * (sortDir === 'asc' ? 1 : -1); }); }
-  const head = columns.map(c => `<th class="${c.n ? 'n' : ''} ${c.sort ? 'sort' : ''} ${c.key === sortKey ? 'sorted' : ''}" ${c.sort ? `data-sort="${esc(id)}:${esc(c.key)}"` : ''}${c.tip ? ` title="${esc(c.tip)}"` : ''}>${esc(c.label)}${c.key === sortKey ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</th>`).join('');
-  const body = list.map((r, i) => `<tr ${rowAttrs(r, i)}>${columns.map(c => `<td class="${c.n ? 'n' : ''} ${c.cls ?? ''}">${c.render(r, i)}</td>`).join('')}</tr>`).join('');
+  // A number with a second line under it (APR under a rate, "5 liq." under an
+  // amount) is centred, header included, so both lines and the header share
+  // one axis; single-line numbers stay right-aligned for easy comparison.
+  const cells = list.map((r, i) => columns.map(c => c.render(r, i)));
+  const stacked = columns.map((c, j) => Boolean(c.n) && cells.some(row => /class="sub[\s"]/.test(row[j])));
+  const align = (c, j) => (stacked[j] ? 'c' : c.n ? 'n' : '');
+  const head = columns.map((c, j) => `<th class="${align(c, j)} ${c.sort ? 'sort' : ''} ${c.key === sortKey ? 'sorted' : ''}" ${c.sort ? `data-sort="${esc(id)}:${esc(c.key)}"` : ''}${c.tip ? ` title="${esc(c.tip)}"` : ''}>${esc(c.label)}${c.key === sortKey ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</th>`).join('');
+  const body = list.map((r, i) => `<tr ${rowAttrs(r, i)}>${columns.map((c, j) => `<td class="${align(c, j)} ${c.cls ?? ''}">${cells[i][j]}</td>`).join('')}</tr>`).join('');
   return `<div class="table-wrap"><table class="t ${compact ? 'compact' : ''}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
