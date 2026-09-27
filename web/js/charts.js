@@ -272,7 +272,7 @@ export function mirrored(el, { labels, long, short, fmt = v => usd(v) }) {
     ...base(), grid: { left: 8, right: 28, top: 26, bottom: 6, containLabel: true },
     legend: { top: 0, right: 0, itemWidth: 8, itemHeight: 8, textStyle: { color: T.text }, data: ['Longs exposed (price down)', 'Shorts exposed (price up)'] },
     // Symmetric around zero so both sides read on the same scale.
-    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
+    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, showMinLabel: false, showMaxLabel: false, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
     yAxis: { type: 'category', data: labels, inverse: true, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.text } },
     tooltip: { ...base().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => `<div style="color:${T.faint};margin-bottom:4px">Price moves ${ps[0].axisValue}</div>` + ps.map(p => row(p.color, p.seriesName, fmt(Math.abs(p.value)))).join('') },
     series: [
@@ -323,7 +323,7 @@ export function entryProfile(el, { bins, mark, priceFmt = v => String(v), fmt = 
   chart.setOption({
     ...base(), grid: { left: 8, right: 20, top: 8, bottom: 6, containLabel: true },
     xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
-    yAxis: { type: 'category', data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.faint, interval: i => i % 4 === 0 || i === markIndex || Boolean(bins[i]?.edge) } },
+    yAxis: { type: 'category', data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.faint, hideOverlap: true, interval: i => i % 4 === 0 || Boolean(bins[i]?.edge) } }, // the mark has its own line label
     tooltip: { ...base().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => { const b = bins[ps[0].dataIndex]; const range = b.edge === 'below' ? `below ${priceFmt(b.hi)}` : b.edge === 'above' ? `above ${priceFmt(b.lo)}` : `${priceFmt(b.lo)} – ${priceFmt(b.hi)}`; return `<div style="color:${T.faint};margin-bottom:4px">Entry ${range}</div>${row(T.long, `Longs · ${b.long_count}`, fmt(b.long))}${row(T.short, `Shorts · ${b.short_count}`, fmt(b.short))}`; } },
     series: [
       { name: 'Longs', type: 'bar', stack: 'x', data: bins.map(b => num(b.long) ?? 0), itemStyle: { color: T.long, borderRadius: [0, 2, 2, 0] }, barCategoryGap: '20%',
