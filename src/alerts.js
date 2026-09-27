@@ -102,6 +102,8 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
         catch (error) {
           if (error.code === 403 || error.code === 400 && /chat not found/i.test(error.message)) { drop(chat); break; } // blocked or gone
           if (error.code === 429 && attempt < 2) { await new Promise(r => setTimeout(r, (error.retryAfter ?? 1) * 1000)); continue; }
+          // A network failure (no answer from Telegram) is retried too, after a pause.
+          if (error.code === undefined && attempt < 2) { await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); continue; }
           stats.failed++; log('warn', `alerts: send failed: ${error.message}`); break;
         }
       }

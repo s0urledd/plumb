@@ -36,6 +36,41 @@ export function createSse({ log = () => {}, heartbeatMs = 15000, maxClients = 50
   return { open, send, get clients() { return clients.size; }, close: () => { clearInterval(timer); for (const res of clients) res.end(); clients.clear(); } };
 }
 
+// A WebSocket that keeps itself connected. One attempt at a time; a handshake
+// that has not opened within openTimeoutMs, or an open socket with no message
+// for idleMs, is closed and retried (a stalled handshake fires no event of its
+// own, so without these a feed can stay down for good). Events from a retired
+// socket are ignored, so a late close never schedules a second attempt.
+export function keepConnected({ url, WebSocketImpl = globalThis.WebSocket, openTimeoutMs = 15000, idleMs = 60000, onOpen = () => {}, onMessage = () => {}, onDown = () => {}, now = () => Date.now(), timers = { setTimeout, clearTimeout, setInterval, clearInterval } }) {
+  let stopped = false, retry = 1000, attempt = 0, ws = null, watch = null;
+  const stats = { reconnects: 0, lastError: null };
+  function connect() {
+    if (stopped || !WebSocketImpl) return;
+    const id = ++attempt, startedAt = now();
+    let open = false, lastMessageAt = startedAt, ended = false;
+    const end = reason => {
+      if (ended || id !== attempt) return;
+      ended = true; timers.clearInterval(watch);
+      try { ws?.close(); } catch { /* already closing */ }
+      if (reason) stats.lastError = reason;
+      onDown({ wasOpen: open, reason });
+      schedule();
+    };
+    try { ws = new WebSocketImpl(url); } catch (error) { stats.lastError = error.message; schedule(); return; }
+    watch = timers.setInterval(() => {
+      if (!open && now() - startedAt > openTimeoutMs) end('connect timeout');
+      else if (open && now() - lastMessageAt > idleMs) end('no messages');
+    }, Math.min(5000, openTimeoutMs, idleMs));
+    watch.unref?.();
+    ws.onopen = () => { if (id !== attempt) return; open = true; retry = 1000; lastMessageAt = now(); onOpen(ws); };
+    ws.onmessage = msg => { if (id !== attempt) return; lastMessageAt = now(); onMessage(msg); };
+    ws.onerror = event => { if (id === attempt) stats.lastError = event?.message ?? 'error'; };
+    ws.onclose = () => end(null);
+  }
+  function schedule() { if (stopped) return; stats.reconnects++; const t = timers.setTimeout(connect, retry); t.unref?.(); retry = Math.min(retry * 2, 30000); }
+  return { start: connect, stop: () => { stopped = true; timers.clearInterval(watch); try { ws?.close(); } catch { /* closing */ } }, stats };
+}
+
 // Monode backend WebSocket client. Its messages are serde's externally tagged
 // ServerMessage: {"Events":[{event_name, block_number, txn_idx, txn_hash,
 // payload:{type,...}, seqno, timestamp_ns}, ...]}, {"TPS":n} or
@@ -49,7 +84,7 @@ export function createExecEvents({ url, exchange, onFinalized = () => {}, onProp
   // Blocks whose proposed trades were pushed: block_id -> { block, startedAt, voted }.
   const shown = new Map();
   const status = { connected: false, lastEventAt: null, finalized: null, proposed: null, tps: null, reconnects: 0, lastError: null };
-  let ws = null, stopped = false, retry = 1000;
+  let socket = null;
 
   function handleEvent(e) {
     const p = e.payload ?? {};
@@ -98,41 +133,44 @@ export function createExecEvents({ url, exchange, onFinalized = () => {}, onProp
     }
   }
 
-  function connect() {
-    if (stopped || !WebSocketImpl) return;
-    try { ws = new WebSocketImpl(url); } catch (error) { status.lastError = error.message; return schedule(); }
-    ws.onopen = () => { status.connected = true; retry = 1000; onStatus(status); log('info', 'execution-events sidecar connected'); };
-    ws.onmessage = msg => {
-      let data;
-      try { data = JSON.parse(typeof msg.data === 'string' ? msg.data : Buffer.from(msg.data).toString()); } catch { return; }
-      if (Array.isArray(data.Events)) for (const e of data.Events) handleEvent(e);
-      else if (data.TPS !== undefined) status.tps = Number(data.TPS);
-    };
-    ws.onerror = event => { status.lastError = event?.message ?? 'error'; };
-    ws.onclose = () => { const was = status.connected; status.connected = false; if (was) log('warn', 'execution-events sidecar disconnected'); onStatus(status); schedule(); };
+  // Monode sends its TPS line every second, so a minute of silence means the link is gone.
+  function start() {
+    socket = keepConnected({
+      url, WebSocketImpl, now, idleMs: 60000,
+      onOpen: () => { status.connected = true; onStatus(status); log('info', 'execution-events sidecar connected'); },
+      onMessage: msg => {
+        let data;
+        try { data = JSON.parse(typeof msg.data === 'string' ? msg.data : Buffer.from(msg.data).toString()); } catch { return; }
+        if (Array.isArray(data.Events)) for (const e of data.Events) handleEvent(e);
+        else if (data.TPS !== undefined) status.tps = Number(data.TPS);
+      },
+      onDown: ({ wasOpen, reason }) => {
+        status.connected = false; status.reconnects = socket.stats.reconnects + 1; status.lastError = reason ?? socket.stats.lastError;
+        if (wasOpen) log('warn', `execution-events sidecar disconnected${reason ? ` (${reason})` : ''}`);
+        onStatus(status);
+      }
+    });
+    socket.start();
+    return status;
   }
-  function schedule() { if (stopped) return; status.reconnects++; setTimeout(connect, retry).unref?.(); retry = Math.min(retry * 2, 30000); }
-  return { start: () => { connect(); return status; }, stop: () => { stopped = true; ws?.close(); }, status, handleEvent };
+  return { start, stop: () => socket?.stop(), status, handleEvent };
 }
 
 // Node WebSocket newHeads subscription as a wake-up source.
 export function createHeadSubscription({ url, onHead = () => {}, log = () => {}, WebSocketImpl = globalThis.WebSocket }) {
   const status = { connected: false, lastHeadAt: null, head: null, reconnects: 0 };
-  let ws = null, stopped = false, retry = 1000;
-  function connect() {
-    if (stopped || !WebSocketImpl) return;
-    try { ws = new WebSocketImpl(url); } catch { return schedule(); }
-    ws.onopen = () => { status.connected = true; retry = 1000; ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_subscribe', params: ['newHeads'] })); };
-    ws.onmessage = msg => {
+  // A block is proposed every few hundred milliseconds: a minute without a head means a dead subscription.
+  const socket = keepConnected({
+    url, WebSocketImpl, idleMs: 60000,
+    onOpen: ws => { status.connected = true; ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_subscribe', params: ['newHeads'] })); },
+    onMessage: msg => {
       let data; try { data = JSON.parse(typeof msg.data === 'string' ? msg.data : Buffer.from(msg.data).toString()); } catch { return; }
       const head = data?.params?.result;
       if (head?.number) { status.head = Number(BigInt(head.number)); status.lastHeadAt = Date.now(); onHead(status.head); }
-    };
-    ws.onclose = () => { if (status.connected) log('warn', 'head subscription closed'); status.connected = false; schedule(); };
-    ws.onerror = () => {};
-  }
-  function schedule() { if (stopped) return; status.reconnects++; setTimeout(connect, retry).unref?.(); retry = Math.min(retry * 2, 30000); }
-  return { start: () => { connect(); return status; }, stop: () => { stopped = true; ws?.close(); }, status };
+    },
+    onDown: ({ wasOpen, reason }) => { if (wasOpen) log('warn', `head subscription closed${reason ? ` (${reason})` : ''}`); status.connected = false; status.reconnects = socket.stats.reconnects + 1; }
+  });
+  return { start: () => { socket.start(); return status; }, stop: () => socket.stop(), status };
 }
 
 // Proposed-block trades for the live tape (never stored).
