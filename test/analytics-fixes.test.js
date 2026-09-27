@@ -274,3 +274,29 @@ test('funding map: each bucket is annualised with its own event spacing; no bloc
   assert.deepEqual([m.rate_8h_pct, m.apr_pct, m.interval_seconds], [null, null, null]);
   assert.deepEqual(g.series.find(s => s.id === 1).points.map(p => p.apr_pct === null), [false, false, true]);
 });
+
+test('position flow: buckets on the window grid, gaps as zero, totals from the rows', async () => {
+  const hour = 3600, seen = [];
+  const positionFlow = async (market, from, to, bucket) => {
+    seen.push({ market, from, to, bucket });
+    const first = Math.floor(from / bucket) * bucket;
+    // Two active hours: longs opened 1,000 then 250 closed; shorts mirror it.
+    return [
+      { t: first + 2 * hour, long_open: 1000e6, long_close: 0, short_open: 1000e6, short_close: 0, opens: 2, closes: 0 },
+      { t: first + 5 * hour, long_open: 0, long_close: 250e6, short_open: 0, short_close: 250e6, opens: 0, closes: 2 }
+    ];
+  };
+  const api = analyticsWith({ positionFlow });
+  const f = await api.positionFlow('1', new URLSearchParams('window=24h'));
+  assert.equal(seen[0].market, 1);
+  assert.equal(seen[0].bucket, hour);
+  assert.ok(f.times.length >= 24 && f.times.length <= 25);
+  assert.equal(f.long_open.length, f.times.length);
+  assert.equal(f.long_open[2], '1000.000000');
+  assert.equal(f.long_close[5], '250.000000');
+  assert.equal(f.long_open[3], '0');
+  assert.equal(f.totals.long_open, '1000.000000');
+  assert.equal(f.totals.short_close, '250.000000');
+  assert.equal(f.totals.opens, 2);
+  await assert.rejects(api.positionFlow('777', new URLSearchParams('window=24h')), /MARKET_NOT_FOUND/);
+});

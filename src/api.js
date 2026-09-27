@@ -118,6 +118,35 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
     const level = l => ({ price: dec(l.pricePNS, pd), size: dec(l.lotLNS, market.lotDecimals), notional: dec(m.notionalCNS(l.pricePNS, l.lotLNS, u), c), expired_size: dec(l.expiringLNS, market.lotDecimals) });
     return { market_id: market.id, symbol: market.symbol, mark: dec(market.markPNS, pd), stale: Boolean(x.bookStale), liquidity: liquidityView(x, market, true), bids: book.bids.slice(0, 40).map(level), asks: book.asks.slice(0, 40).map(level), requests: book.requests };
   }
+  // Where open positions were entered, long and short, against the mark: a
+  // profile of entry prices, each side's size-weighted average entry and how
+  // many of its positions are in profit now.
+  function entriesView(entry, bins = 32) {
+    const { market, metrics: x } = entry;
+    const pd = priceDec(market), mark = Number(dec(market.markPNS, pd));
+    const rows = x.positions.map(p => positionView(p, market)).map(v => ({ side: v.side, price: Number(v.entry_price), size: Number(v.size), entry: Number(v.entry_notional), pnl: Number(v.pnl) })).filter(r => r.price > 0 && r.size > 0);
+    const side = s => {
+      const list = rows.filter(r => r.side === s);
+      const size = list.reduce((a, r) => a + r.size, 0), notional = list.reduce((a, r) => a + r.entry, 0);
+      const up = list.filter(r => r.pnl > 0);
+      return { count: list.length, entry_notional: notional.toFixed(2), average_entry: size ? (notional / size).toPrecision(8) : null, in_profit: up.length, in_profit_pct: list.length ? Math.round(up.length / list.length * 1000) / 10 : null, upnl: list.reduce((a, r) => a + r.pnl, 0).toFixed(2) };
+    };
+    // The range covers the 2nd to 98th percentile of entries and the mark;
+    // entries outside it are counted in the edge bins.
+    const prices = rows.map(r => r.price).sort((a, b) => a - b);
+    const q = f => prices[Math.min(prices.length - 1, Math.max(0, Math.floor(f * (prices.length - 1))))];
+    let lo = prices.length ? Math.min(q(0.02), mark) : mark * 0.9, hi = prices.length ? Math.max(q(0.98), mark) : mark * 1.1;
+    if (hi <= lo) { lo = mark * 0.98; hi = mark * 1.02; }
+    const pad = (hi - lo) * 0.03; lo -= pad; hi += pad;
+    const width = (hi - lo) / bins;
+    const out = Array.from({ length: bins }, (_, i) => ({ lo: lo + i * width, hi: lo + (i + 1) * width, long: 0, short: 0, long_count: 0, short_count: 0 }));
+    for (const r of rows) {
+      const b = out[Math.min(bins - 1, Math.max(0, Math.floor((r.price - lo) / width)))];
+      if (r.side === 'long') { b.long += r.entry; b.long_count++; } else { b.short += r.entry; b.short_count++; }
+    }
+    const fmt = v => Number(v.toPrecision(8));
+    return { market_id: market.id, symbol: market.symbol, block: state.block.number.toString(), mark: dec(market.markPNS, pd), positions: rows.length, long: side('long'), short: side('short'), bins: out.map(b => ({ lo: fmt(b.lo), hi: fmt(b.hi), long: b.long.toFixed(2), short: b.short.toFixed(2), long_count: b.long_count, short_count: b.short_count })) };
+  }
   function stressView(entry, query) {
     const { market, metrics: x, units } = entry;
     const move = Number(query.get('move_pct'));
@@ -320,6 +349,8 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
     ['GET', /^\/api\/v1\/markets$/, () => ({ snapshot: snapshot(), markets: computeMetrics(state).markets.map(marketSummary) }), risk],
     ['GET', /^\/api\/v1\/markets\/(\d+)$/, async (match, query) => { const market = marketDetail(entryFor(match[1]), query); await withAddresses(market.top_positions); return { snapshot: snapshot(), market }; }, risk],
     ['GET', /^\/api\/v1\/markets\/(\d+)\/positions$/, (match, query) => { const csv = query.get('format') === 'csv'; const body = { snapshot: snapshot(), ...positionsList(entryFor(match[1]), query, csv ? { defaultLimit: 5000, maxLimit: 5000 } : {}) }; return csv ? { csv: toCsv(body.positions, POSITION_COLUMNS), filename: `plumb-${safeName(body.symbol)}-positions-${body.snapshot.block}.csv` } : body; }, risk],
+    ['GET', /^\/api\/v1\/markets\/(\d+)\/entries$/, match => ({ snapshot: snapshot(), ...entriesView(entryFor(match[1])) })],
+    ['GET', /^\/api\/v1\/markets\/(\d+)\/flow$/, (match, q) => A('positionFlow')(match[1], q)],
     ['GET', /^\/api\/v1\/markets\/(\d+)\/stress$/, async (match, query) => { const view = stressView(entryFor(match[1]), query); await withAddresses(view.positions_hit); return { snapshot: snapshot(), ...view }; }, risk],
     ['GET', /^\/api\/v1\/markets\/(\d+)\/book$/, match => ({ snapshot: snapshot(), ...bookView(entryFor(match[1])) }), risk],
     ['GET', /^\/api\/v1\/markets\/(\d+)\/ladder$/, match => { const e = entryFor(match[1]); return { snapshot: snapshot(), market_id: e.market.id, symbol: e.market.symbol, ladder: ladderView(e.metrics.ladder, e.market), liquidation_map: mapView(e.metrics.map) }; }, risk],

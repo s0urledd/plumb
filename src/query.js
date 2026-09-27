@@ -213,6 +213,18 @@ export function createQueries({ ch, rollups, coverage = null }) {
   async function recent(kinds, { limit = 100, offset = 0, market = null, sinceTs = null, order = 'recent' } = {}) {
     return q(`SELECT ${EV_COLUMNS} FROM ev WHERE ${recentWhere(kinds, market, sinceTs)} ORDER BY ${order === 'size' ? 'notional DESC, block DESC' : 'block DESC, log_index DESC'} LIMIT ${int(limit)}${offset ? ` OFFSET ${int(offset)}` : ''}`);
   }
+  // Open interest opened and closed, per side and bucket, in collateral units.
+  // Each position event carries its signed effect on long and short open
+  // interest (lots); the fill's notional per lot prices it.
+  async function positionFlow(market, from, to, bucket) {
+    const px = 'notional / lot';
+    return q(`SELECT toUnixTimestamp(toStartOfInterval(ts, INTERVAL ${int(bucket)} SECOND)) AS t,
+      sumIf(oi_long * ${px}, oi_long > 0) AS long_open, sumIf(-oi_long * ${px}, oi_long < 0) AS long_close,
+      sumIf(oi_short * ${px}, oi_short > 0) AS short_open, sumIf(-oi_short * ${px}, oi_short < 0) AS short_close,
+      countIf(oi_long > 0 OR oi_short > 0) AS opens, countIf(oi_long < 0 OR oi_short < 0) AS closes
+      FROM ev WHERE market = ${int(market)} AND ts >= toDateTime(${int(from)}, 'UTC') AND ts < toDateTime(${int(to)}, 'UTC') AND lot > 0 AND (oi_long != 0 OR oi_short != 0)
+      GROUP BY t ORDER BY t`);
+  }
   async function recentCount(kinds, { market = null, sinceTs = null } = {}) {
     return Number((await q(`SELECT count() AS n FROM ev WHERE ${recentWhere(kinds, market, sinceTs)}`))[0]?.n ?? 0);
   }
@@ -242,5 +254,5 @@ export function createQueries({ ch, rollups, coverage = null }) {
     return new Map(rows.map(r => [Number(r.account), { address: r.address, created: Number(r.ts) }]));
   }
 
-  return { marketTotals, protocolTotals, traders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, recent, recentCount, fundingHistory, fundingSeries, findAccounts, addresses, split };
+  return { marketTotals, protocolTotals, traders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, recent, recentCount, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
 }
