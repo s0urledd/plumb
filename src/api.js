@@ -131,11 +131,12 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
       const up = list.filter(r => r.pnl > 0);
       return { count: list.length, entry_notional: notional.toFixed(2), average_entry: size ? (notional / size).toPrecision(8) : null, in_profit: up.length, in_profit_pct: list.length ? Math.round(up.length / list.length * 1000) / 10 : null, upnl: list.reduce((a, r) => a + r.pnl, 0).toFixed(2) };
     };
-    // The range covers the 2nd to 98th percentile of entries and the mark;
-    // entries outside it are counted in the edge bins.
-    const prices = rows.map(r => r.price).sort((a, b) => a - b);
-    const q = f => prices[Math.min(prices.length - 1, Math.max(0, Math.floor(f * (prices.length - 1))))];
-    let lo = prices.length ? Math.min(q(0.02), mark) : mark * 0.9, hi = prices.length ? Math.max(q(0.98), mark) : mark * 1.1;
+    // The range covers the middle 95% of entry notional and the mark, so a few
+    // small far-off entries do not squeeze the rest; those outside it are
+    // counted in the edge bins.
+    const sorted = [...rows].sort((a, b) => a.price - b.price), total = sorted.reduce((a, r) => a + r.entry, 0);
+    const q = f => { let run = 0; for (const r of sorted) { run += r.entry; if (run >= f * total) return r.price; } return sorted.at(-1)?.price ?? mark; };
+    let lo = sorted.length ? Math.min(q(0.025), mark) : mark * 0.9, hi = sorted.length ? Math.max(q(0.975), mark) : mark * 1.1;
     if (hi <= lo) { lo = mark * 0.98; hi = mark * 1.02; }
     const pad = (hi - lo) * 0.03; lo -= pad; hi += pad;
     const width = (hi - lo) / bins;
