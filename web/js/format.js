@@ -38,14 +38,14 @@ export function pct(v, { digits = 2, sign = false } = {}) {
 export function size(v) { const n = num(v); if (n === null) return '—'; const a = Math.abs(n); return n.toLocaleString('en-US', { maximumFractionDigits: a >= 100 ? 2 : a >= 1 ? 4 : 6 }); }
 export const signClass = v => { const n = num(v); return n === null || n === 0 ? '' : n > 0 ? 'pos' : 'neg'; };
 // invert: a rise is bad (liquidations, losses), so it takes the negative colour.
-export function deltaHtml(change, invert = false) {
+export function deltaHtml(change, invert = false, title = null) {
   const n = num(change);
   if (n === null) return '<span class="delta flat">—</span>';
   const good = invert ? n < 0 : n > 0, bad = invert ? n > 0 : n < 0;
   const cls = good ? 'up' : bad ? 'down' : 'flat';
   // Past +1000 % (from a near-empty previous window) a multiple reads better: "×113".
   const text = n >= 1000 ? `×${Math.round(1 + n / 100)}` : `${Math.abs(n).toFixed(Math.abs(n) >= 100 ? 0 : 1)}%`;
-  return `<span class="delta ${cls}" title="${n.toFixed(1)}% on the previous period">${n > 0 ? '▲' : n < 0 ? '▼' : ''} ${text}</span>`;
+  return `<span class="delta ${cls}" title="${esc(title ?? `${n.toFixed(1)}% on the previous period`)}">${n > 0 ? '▲' : n < 0 ? '▼' : ''} ${text}</span>`;
 }
 export function ago(ts) {
   if (!ts) return '—';
