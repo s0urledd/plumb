@@ -272,12 +272,63 @@ export function mirrored(el, { labels, long, short, fmt = v => usd(v) }) {
     ...base(), grid: { left: 8, right: 28, top: 26, bottom: 6, containLabel: true },
     legend: { top: 0, right: 0, itemWidth: 8, itemHeight: 8, textStyle: { color: T.text }, data: ['Longs exposed (price down)', 'Shorts exposed (price up)'] },
     // Symmetric around zero so both sides read on the same scale.
-    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
+    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, showMinLabel: false, showMaxLabel: false, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
     yAxis: { type: 'category', data: labels, inverse: true, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.text } },
     tooltip: { ...base().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => `<div style="color:${T.faint};margin-bottom:4px">Price moves ${ps[0].axisValue}</div>` + ps.map(p => row(p.color, p.seriesName, fmt(Math.abs(p.value)))).join('') },
     series: [
       { name: 'Longs exposed (price down)', type: 'bar', stack: 'x', data: long.map(v => -v), itemStyle: { color: T.long, borderRadius: [2, 0, 0, 2] }, barMaxWidth: 14 },
       { name: 'Shorts exposed (price up)', type: 'bar', stack: 'x', data: short, itemStyle: { color: T.short, borderRadius: [0, 2, 2, 0] }, barMaxWidth: 14 }
+    ]
+  }, true);
+}
+
+// Open interest opened (above zero) and closed (below) per bucket, long and
+// short stacked, with the net change as a line. Closes are the paler shade.
+export function flowBars(el, { times, longOpen, longClose, shortOpen, shortClose, bucketSeconds, fmt = v => usd(v), yFmt = usdAxis }) {
+  const chart = init(el);
+  if (!chart) return;
+  const partial = partialAt(times, bucketSeconds);
+  const n = a => a.map(v => num(v) ?? 0);
+  const lo = n(longOpen), lc = n(longClose), so = n(shortOpen), sc = n(shortClose);
+  const net = lo.map((v, i) => v - lc[i]); // long and short open interest move together
+  const bar = (name, data, color, stack, radius) => ({ name, type: 'bar', stack, data: fade(data, partial), itemStyle: { color, borderRadius: radius }, barMaxWidth: 18, emphasis: { focus: 'series' } });
+  chart.setOption({
+    ...base(), xAxis: timeAxis(times, bucketSeconds), yAxis: valueAxis(v => yFmt(Math.abs(v)) === '$0' ? '$0' : `${v < 0 ? '-' : ''}${yFmt(Math.abs(v))}`),
+    legend: { show: false },
+    tooltip: { ...base().tooltip, formatter: params => {
+      const all = Array.isArray(params) ? params : [params];
+      const i = all[0]?.dataIndex ?? 0, t = all[0]?.axisValue;
+      const head = `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(t) : dateTime(t) + ' UTC'}${i === partial ? ' · in progress' : ''}</div>`;
+      return head + row(T.long, 'Longs opened', fmt(lo[i])) + row(T.long + '80', 'Longs closed', fmt(lc[i])) + row(T.short, 'Shorts opened', fmt(so[i])) + row(T.short + '80', 'Shorts closed', fmt(sc[i]))
+        + `<div style="border-top:1px solid ${T.border};margin-top:4px;padding-top:4px">${row('#ffffff', 'Open interest change', `${net[i] > 0 ? '+' : ''}${fmt(net[i])}`)}</div>`;
+    } },
+    series: [
+      bar('Longs opened', lo, T.long, 'open', 0), bar('Shorts opened', so, T.short, 'open', [2, 2, 0, 0]),
+      bar('Longs closed', lc.map(v => -v), T.long + '80', 'close', 0), bar('Shorts closed', sc.map(v => -v), T.short + '80', 'close', [0, 0, 2, 2]),
+      { name: 'Open interest change', type: 'line', data: net, symbol: 'none', lineStyle: { color: '#ffffff', width: 1.25, opacity: 0.8 }, itemStyle: { color: '#ffffff' }, z: 5 }
+    ]
+  }, true);
+}
+
+// Open positions by entry price: longs to the right, shorts to the left, the
+// current mark as a marker line.
+export function entryProfile(el, { bins, mark, priceFmt = v => String(v), fmt = v => usd(v) }) {
+  const chart = init(el);
+  if (!chart) return;
+  // Open-ended edge bins say so: "< 81,091" holds every entry below the range.
+  const labels = bins.map(b => (b.edge === 'below' ? `< ${priceFmt(b.hi)}` : b.edge === 'above' ? `> ${priceFmt(b.lo)}` : priceFmt((b.lo + b.hi) / 2)));
+  const markIndex = bins.findIndex(b => mark >= b.lo && mark < b.hi);
+  const peak = Math.max(1, ...bins.map(b => Math.max(num(b.long) ?? 0, num(b.short) ?? 0)));
+  const edge = niceCeil(peak * 1.05);
+  chart.setOption({
+    ...base(), grid: { left: 8, right: 20, top: 8, bottom: 6, containLabel: true },
+    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
+    yAxis: { type: 'category', data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.faint, hideOverlap: true, interval: i => i % 4 === 0 || Boolean(bins[i]?.edge) } }, // the mark has its own line label
+    tooltip: { ...base().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => { const b = bins[ps[0].dataIndex]; const range = b.edge === 'below' ? `below ${priceFmt(b.hi)}` : b.edge === 'above' ? `above ${priceFmt(b.lo)}` : `${priceFmt(b.lo)} – ${priceFmt(b.hi)}`; return `<div style="color:${T.faint};margin-bottom:4px">Entry ${range}</div>${row(T.long, `Longs · ${b.long_count}`, fmt(b.long))}${row(T.short, `Shorts · ${b.short_count}`, fmt(b.short))}`; } },
+    series: [
+      { name: 'Longs', type: 'bar', stack: 'x', data: bins.map(b => num(b.long) ?? 0), itemStyle: { color: T.long, borderRadius: [0, 2, 2, 0] }, barCategoryGap: '20%',
+        markLine: markIndex < 0 ? undefined : { symbol: 'none', silent: true, label: { formatter: `Mark ${priceFmt(mark)}`, color: T.text, position: 'insideStartTop', fontSize: 11 }, lineStyle: { color: 'rgba(255,255,255,0.55)', type: 'dashed', width: 1 }, data: [{ yAxis: markIndex }] } },
+      { name: 'Shorts', type: 'bar', stack: 'x', data: bins.map(b => -(num(b.short) ?? 0)), itemStyle: { color: T.short, borderRadius: [2, 0, 0, 2] } }
     ]
   }, true);
 }
