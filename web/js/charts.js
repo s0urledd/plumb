@@ -315,15 +315,16 @@ export function flowBars(el, { times, longOpen, longClose, shortOpen, shortClose
 export function entryProfile(el, { bins, mark, priceFmt = v => String(v), fmt = v => usd(v) }) {
   const chart = init(el);
   if (!chart) return;
-  const labels = bins.map(b => priceFmt((b.lo + b.hi) / 2));
+  // Open-ended edge bins say so: "< 81,091" holds every entry below the range.
+  const labels = bins.map(b => (b.edge === 'below' ? `< ${priceFmt(b.hi)}` : b.edge === 'above' ? `> ${priceFmt(b.lo)}` : priceFmt((b.lo + b.hi) / 2)));
   const markIndex = bins.findIndex(b => mark >= b.lo && mark < b.hi);
   const peak = Math.max(1, ...bins.map(b => Math.max(num(b.long) ?? 0, num(b.short) ?? 0)));
   const edge = niceCeil(peak * 1.05);
   chart.setOption({
     ...base(), grid: { left: 8, right: 20, top: 8, bottom: 6, containLabel: true },
     xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
-    yAxis: { type: 'category', data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.faint, interval: i => i % 4 === 0 || i === markIndex } },
-    tooltip: { ...base().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => { const b = bins[ps[0].dataIndex]; return `<div style="color:${T.faint};margin-bottom:4px">Entry ${priceFmt(b.lo)} – ${priceFmt(b.hi)}</div>${row(T.long, `Longs · ${b.long_count}`, fmt(b.long))}${row(T.short, `Shorts · ${b.short_count}`, fmt(b.short))}`; } },
+    yAxis: { type: 'category', data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.faint, interval: i => i % 4 === 0 || i === markIndex || Boolean(bins[i]?.edge) } },
+    tooltip: { ...base().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => { const b = bins[ps[0].dataIndex]; const range = b.edge === 'below' ? `below ${priceFmt(b.hi)}` : b.edge === 'above' ? `above ${priceFmt(b.lo)}` : `${priceFmt(b.lo)} – ${priceFmt(b.hi)}`; return `<div style="color:${T.faint};margin-bottom:4px">Entry ${range}</div>${row(T.long, `Longs · ${b.long_count}`, fmt(b.long))}${row(T.short, `Shorts · ${b.short_count}`, fmt(b.short))}`; } },
     series: [
       { name: 'Longs', type: 'bar', stack: 'x', data: bins.map(b => num(b.long) ?? 0), itemStyle: { color: T.long, borderRadius: [0, 2, 2, 0] }, barCategoryGap: '20%',
         markLine: markIndex < 0 ? undefined : { symbol: 'none', silent: true, label: { formatter: `Mark ${priceFmt(mark)}`, color: T.text, position: 'insideStartTop', fontSize: 11 }, lineStyle: { color: 'rgba(255,255,255,0.55)', type: 'dashed', width: 1 }, data: [{ yAxis: markIndex }] } },

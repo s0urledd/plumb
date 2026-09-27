@@ -131,22 +131,24 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
       const up = list.filter(r => r.pnl > 0);
       return { count: list.length, entry_notional: notional.toFixed(2), average_entry: size ? (notional / size).toPrecision(8) : null, in_profit: up.length, in_profit_pct: list.length ? Math.round(up.length / list.length * 1000) / 10 : null, upnl: list.reduce((a, r) => a + r.pnl, 0).toFixed(2) };
     };
-    // The range covers the middle 95% of entry notional and the mark, so a few
-    // small far-off entries do not squeeze the rest; those outside it are
-    // counted in the edge bins.
+    // The range covers the middle 80% of entry notional and the mark, so older
+    // far-off entries do not squeeze the busy part; entries outside it go into
+    // open-ended edge bins ("below" / "above"), counted, not dropped.
     const sorted = [...rows].sort((a, b) => a.price - b.price), total = sorted.reduce((a, r) => a + r.entry, 0);
     const q = f => { let run = 0; for (const r of sorted) { run += r.entry; if (run >= f * total) return r.price; } return sorted.at(-1)?.price ?? mark; };
-    let lo = sorted.length ? Math.min(q(0.025), mark) : mark * 0.9, hi = sorted.length ? Math.max(q(0.975), mark) : mark * 1.1;
+    let lo = sorted.length ? Math.min(q(0.1), mark) : mark * 0.9, hi = sorted.length ? Math.max(q(0.9), mark) : mark * 1.1;
     if (hi <= lo) { lo = mark * 0.98; hi = mark * 1.02; }
     const pad = (hi - lo) * 0.03; lo -= pad; hi += pad;
     const width = (hi - lo) / bins;
     const out = Array.from({ length: bins }, (_, i) => ({ lo: lo + i * width, hi: lo + (i + 1) * width, long: 0, short: 0, long_count: 0, short_count: 0 }));
     for (const r of rows) {
-      const b = out[Math.min(bins - 1, Math.max(0, Math.floor((r.price - lo) / width)))];
+      const i = Math.floor((r.price - lo) / width);
+      if (i < 0) out[0].edge = 'below'; else if (i >= bins) out[bins - 1].edge = 'above';
+      const b = out[Math.min(bins - 1, Math.max(0, i))];
       if (r.side === 'long') { b.long += r.entry; b.long_count++; } else { b.short += r.entry; b.short_count++; }
     }
     const fmt = v => Number(v.toPrecision(8));
-    return { market_id: market.id, symbol: market.symbol, block: state.block.number.toString(), mark: dec(market.markPNS, pd), positions: rows.length, long: side('long'), short: side('short'), bins: out.map(b => ({ lo: fmt(b.lo), hi: fmt(b.hi), long: b.long.toFixed(2), short: b.short.toFixed(2), long_count: b.long_count, short_count: b.short_count })) };
+    return { market_id: market.id, symbol: market.symbol, block: state.block.number.toString(), mark: dec(market.markPNS, pd), positions: rows.length, long: side('long'), short: side('short'), bins: out.map(b => ({ lo: fmt(b.lo), hi: fmt(b.hi), ...(b.edge ? { edge: b.edge } : {}), long: b.long.toFixed(2), short: b.short.toFixed(2), long_count: b.long_count, short_count: b.short_count })) };
   }
   function stressView(entry, query) {
     const { market, metrics: x, units } = entry;
