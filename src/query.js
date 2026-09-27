@@ -215,9 +215,9 @@ export function createQueries({ ch, rollups, coverage = null }) {
   }
   // Latest position changes of a set of accounts (the account-ordered copy of
   // the events reads only their rows).
-  async function movesOf(accounts, { sinceTs, limit = 50 } = {}) {
+  async function movesOf(accounts, { sinceTs, limit = 50, minNotional = 0n } = {}) {
     if (!accounts.length) return [];
-    return q(`SELECT ${EV_COLUMNS} FROM ev_account WHERE account IN (${accounts.map(int).join(',')}) AND kind IN ('open', 'increase', 'decrease', 'close', 'invert', 'liquidation', 'deleverage') AND ts >= toDateTime(${int(sinceTs)}, 'UTC') ORDER BY block DESC, log_index DESC LIMIT ${int(limit)}`);
+    return q(`SELECT ${EV_COLUMNS} FROM ev_account WHERE account IN (${accounts.map(int).join(',')}) AND kind IN ('open', 'increase', 'decrease', 'close', 'invert', 'liquidation', 'deleverage') AND ts >= toDateTime(${int(sinceTs)}, 'UTC')${minNotional > 0n ? ` AND notional >= ${BigInt(minNotional).toString()}` : ''} ORDER BY block DESC, log_index DESC LIMIT ${int(limit)}`);
   }
   // Open interest opened and closed, per side and bucket, in collateral units.
   // Each position event carries its signed effect on long and short open

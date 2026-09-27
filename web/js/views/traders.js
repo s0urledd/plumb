@@ -10,18 +10,19 @@ const SORTS = [['pnl', 'Top PnL'], ['loss', 'Top losses'], ['volume', 'Volume'],
 const FLOW_SORTS = new Set(['net_flow', 'deposits', 'withdrawals']);
 const CO_TABS = [['size', 'By size'], ['pnl', 'By track record']];
 const SM_WINDOWS = [['7d', '7D'], ['30d', '30D'], ['all', 'All']];
+const SM_SIZES = [['100', '≥$100'], ['1000', '≥$1K'], ['10000', '≥$10K']];
 
 export function mount(el, { query, setQuery }) {
   let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '7d';
   let by = SORTS.some(([v]) => v === query.get('by')) ? query.get('by') : 'pnl';
-  let page = 0, alive = true, data = null, cohorts = null, coTab = 'size', coSel = null, smWin = '30d';
+  let page = 0, alive = true, data = null, cohorts = null, coTab = 'size', coSel = null, smWin = '30d', smMin = '1000';
   const LIMIT = 50;
   el.innerHTML = `
     <div class="page-head"><div><h1>Traders</h1><div class="sub">Accounts that traded in the window, ranked from indexed events (flow rankings: accounts that deposited or withdrew). Net PnL = realized PnL (price PnL + funding) − fees.</div></div></div>
     <div class="kpis k4" id="tkpis" style="margin-bottom:16px">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:60%;margin-top:10px"></div></div>').join('')}</div>
     <section class="panel" style="margin-bottom:16px"><div class="panel-head"><div><h2>Positioning by cohort</h2><div class="desc" id="co-desc">Open positions now, grouped by account · click a cohort for its largest wallets</div></div><div id="co-tabs">${seg('co', CO_TABS, coTab)}</div></div>
       <div class="panel-body flush" id="cohorts">${skeleton(4)}</div><div id="co-detail"></div></section>
-    <section class="panel" style="margin-bottom:16px"><div class="panel-head"><div><h2>Smart money moves</h2><div class="desc" id="sm-desc">What the most profitable traders are doing now</div></div><div id="sm-win">${seg('smw', SM_WINDOWS, smWin)}</div></div>
+    <section class="panel" style="margin-bottom:16px"><div class="panel-head"><div><h2>Smart money moves</h2><div class="desc" id="sm-desc">What the most profitable traders are doing now</div></div><div class="sm-ctl"><div id="sm-min">${seg('smm', SM_SIZES, smMin)}</div><div id="sm-win">${seg('smw', SM_WINDOWS, smWin)}</div></div></div>
       <div class="panel-body flush scroll sm-list" id="moves">${skeleton(6)}</div></section>
     <section class="panel"><div class="panel-head"><h2 id="title">Leaderboard</h2><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><span class="meta" id="meta"></span><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div>
       <div class="panel-head" style="min-height:0;padding-top:0;flex-wrap:wrap;gap:10px"><div id="by" style="max-width:100%;min-width:0">${seg('by', SORTS, by)}</div><div id="win">${seg('window', WINDOWS, w)}</div></div>
@@ -79,7 +80,7 @@ export function mount(el, { query, setQuery }) {
   // The latest position changes of the top directional traders (makers and
   // high-frequency accounts left out server-side), ranked by net PnL in smWin.
   async function loadMoves() {
-    const m = await get(`traders/moves?window=${smWin}&limit=40`, { maxAge: 8000 });
+    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=40`, { maxAge: 8000 });
     if (!alive) return;
     const wl = smWin === 'all' ? 'all-time' : smWin;
     $('sm-desc').textContent = `Latest position changes of the top ${int(m.leaders)} traders by net PnL (${wl}), last 7 days${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts left out` : ''}`;
@@ -164,7 +165,7 @@ export function mount(el, { query, setQuery }) {
   load().catch(error => { $('list').innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; });
   loadSummary().catch(() => { $('tkpis').innerHTML = ''; });
   return {
-    onSeg(name, v) { if (name === 'smw') { smWin = v; $('sm-win').innerHTML = seg('smw', SM_WINDOWS, smWin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'co') { coTab = v; coSel = null; $('co-tabs').innerHTML = seg('co', CO_TABS, coTab); renderCohorts(); return; } if (name === 'window') setQuery({ window: v === '7d' ? null : v }); if (name === 'by') setQuery({ by: v === 'pnl' ? null : v }); },
+    onSeg(name, v) { if (name === 'smm') { smMin = v; $('sm-min').innerHTML = seg('smm', SM_SIZES, smMin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'smw') { smWin = v; $('sm-win').innerHTML = seg('smw', SM_WINDOWS, smWin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'co') { coTab = v; coSel = null; $('co-tabs').innerHTML = seg('co', CO_TABS, coTab); renderCohorts(); return; } if (name === 'window') setQuery({ window: v === '7d' ? null : v }); if (name === 'by') setQuery({ by: v === 'pnl' ? null : v }); },
     onAction(a, t) { if (a === 'co-pick') { coSel = coSel === t.dataset.key ? null : t.dataset.key; renderCohorts(); return; } if (a === 'co-close') { coSel = null; renderCohorts(); return; } if (a === 'next' && data && (page + 1) * LIMIT < data.total) { page++; load().catch(() => {}); } if (a === 'prev' && page > 0) { page--; load().catch(() => {}); } },
     update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '7d'; by = SORTS.some(([v]) => v === q.get('by')) ? q.get('by') : 'pnl'; page = 0; $('win').innerHTML = seg('window', WINDOWS, w); $('by').innerHTML = seg('by', SORTS, by); load().catch(() => {}); loadSummary().catch(() => {}); },
     destroy() { alive = false; clearInterval(coTimer); clearInterval(smTimer); }
