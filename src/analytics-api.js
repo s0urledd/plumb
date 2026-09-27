@@ -38,6 +38,16 @@ export function createCache({ now = () => Date.now(), max = 500 } = {}) {
   return { get, clear: () => store.clear(), size: () => store.size };
 }
 
+// Directional leaders from a PnL leaderboard: profitable accounts, market
+// makers (mostly maker fills) and high-frequency accounts (5,000+ trades a day)
+// left out, the first `top` kept in rank order.
+export function pickLeaders(rows, { days, top }) {
+  const maker = r => r.trades >= 100 && (r.maker_share_pct ?? 0) >= 80;
+  const fast = r => r.trades / days >= 5000;
+  const profitable = rows.filter(r => Number(r.pnl) > 0);
+  return { leaders: profitable.filter(r => !maker(r) && !fast(r)).slice(0, top), excluded: profitable.filter(r => maker(r) || fast(r)).length };
+}
+
 export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collector, accountState = null, now = () => Date.now(), maxTripEvents = 150000 }) {
   const { state } = collector;
   const cache = createCache({ now });
@@ -364,6 +374,27 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     if (computed) for (const { metrics: x } of computed.markets) { const p = x.positions.find(q => q.accountId === BigInt(accountId)); if (p) { count++; notional += p.markNotionalCNS; upnl += p.pnlCNS; } }
     return { count, notional, upnl };
   }
+  // Smart money: the latest position changes of the most profitable
+  // directional traders in a window (top 50 by net PnL, market makers and
+  // high-frequency accounts left out: their flow is inventory, not views).
+  const SMART_TOP = 50, MOVE_WINDOW_S = 7 * 86400;
+  async function smartMoves(query) {
+    const w = ['7d', '30d', 'all'].includes(query.get('window')) ? query.get('window') : '30d';
+    const limit = Math.min(Math.max(Number(query.get('limit')) || 40, 1), 100);
+    return cache.get(`smart:${w}:${limit}`, 10000, async () => {
+      const board = await leaderboard(new URLSearchParams(`window=${w}&by=pnl&limit=200`));
+      const days = w === '7d' ? 7 : w === '30d' ? 30 : Math.max(1, (headTs() - firstTs()) / 86400);
+      const { leaders, excluded } = pickLeaders(board.rows, { days, top: SMART_TOP });
+      const byId = new Map(leaders.map(r => [Number(r.account), r]));
+      const rows = await queries.movesOf([...byId.keys()], { sinceTs: headTs() - MOVE_WINDOW_S, limit });
+      const views = await tradeViews(rows);
+      return {
+        meta: metaOf({ window: w }),
+        leaders: leaders.length, excluded,
+        rows: views.map(v => { const l = byId.get(v.account); return { ...v, leader: { rank: l.rank, pnl: l.pnl, volume: l.volume } }; })
+      };
+    });
+  }
   async function leaderboard(query) {
     const w = windowOf(query);
     const sort = query.get('by') || 'pnl';
@@ -592,5 +623,5 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       return { meta: metaOf({ window: 'all', from, to, coverage: coverageOf(from, to) }), block: state.block.number.toString(), ...t };
     });
   }
-  return { addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
+  return { addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
 }

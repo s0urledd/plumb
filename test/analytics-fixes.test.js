@@ -274,3 +274,19 @@ test('funding map: each bucket is annualised with its own event spacing; no bloc
   assert.deepEqual([m.rate_8h_pct, m.apr_pct, m.interval_seconds], [null, null, null]);
   assert.deepEqual(g.series.find(s => s.id === 1).points.map(p => p.apr_pct === null), [false, false, true]);
 });
+
+test('smart money leaders: profitable directional traders only, in rank order', async () => {
+  const { pickLeaders } = await import('../src/analytics-api.js');
+  const rows = [
+    { rank: 1, account: 1, pnl: '900', trades: 20000, maker_share_pct: 95 },   // market maker
+    { rank: 2, account: 2, pnl: '800', trades: 400000, maker_share_pct: 40 },  // 13k trades a day over 30 days
+    { rank: 3, account: 3, pnl: '700', trades: 120, maker_share_pct: 10 },
+    { rank: 4, account: 4, pnl: '600', trades: 50, maker_share_pct: 90 },      // few trades: not called a maker
+    { rank: 5, account: 5, pnl: '500', trades: 30, maker_share_pct: 0 },
+    { rank: 6, account: 6, pnl: '-10', trades: 30, maker_share_pct: 0 }        // losing
+  ];
+  const { leaders, excluded } = pickLeaders(rows, { days: 30, top: 2 });
+  assert.deepEqual(leaders.map(r => r.account), [3, 4]);
+  assert.equal(excluded, 2);
+  assert.deepEqual(pickLeaders(rows, { days: 30, top: 10 }).leaders.map(r => r.account), [3, 4, 5]);
+});

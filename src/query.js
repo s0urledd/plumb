@@ -213,6 +213,12 @@ export function createQueries({ ch, rollups, coverage = null }) {
   async function recent(kinds, { limit = 100, offset = 0, market = null, sinceTs = null, order = 'recent' } = {}) {
     return q(`SELECT ${EV_COLUMNS} FROM ev WHERE ${recentWhere(kinds, market, sinceTs)} ORDER BY ${order === 'size' ? 'notional DESC, block DESC' : 'block DESC, log_index DESC'} LIMIT ${int(limit)}${offset ? ` OFFSET ${int(offset)}` : ''}`);
   }
+  // Latest position changes of a set of accounts (the account-ordered copy of
+  // the events reads only their rows).
+  async function movesOf(accounts, { sinceTs, limit = 50 } = {}) {
+    if (!accounts.length) return [];
+    return q(`SELECT ${EV_COLUMNS} FROM ev_account WHERE account IN (${accounts.map(int).join(',')}) AND kind IN ('open', 'increase', 'decrease', 'close', 'invert', 'liquidation', 'deleverage') AND ts >= toDateTime(${int(sinceTs)}, 'UTC') ORDER BY block DESC, log_index DESC LIMIT ${int(limit)}`);
+  }
   async function recentCount(kinds, { market = null, sinceTs = null } = {}) {
     return Number((await q(`SELECT count() AS n FROM ev WHERE ${recentWhere(kinds, market, sinceTs)}`))[0]?.n ?? 0);
   }
@@ -242,5 +248,5 @@ export function createQueries({ ch, rollups, coverage = null }) {
     return new Map(rows.map(r => [Number(r.account), { address: r.address, created: Number(r.ts) }]));
   }
 
-  return { marketTotals, protocolTotals, traders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, recent, recentCount, fundingHistory, fundingSeries, findAccounts, addresses, split };
+  return { marketTotals, protocolTotals, traders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, recent, recentCount, movesOf, fundingHistory, fundingSeries, findAccounts, addresses, split };
 }

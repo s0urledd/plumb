@@ -302,6 +302,7 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
     ['GET', /^\/api\/v1\/protocol$/, (_, q) => A('protocol')(q)],
     ['GET', /^\/api\/v1\/cohorts$/, () => A('cohorts')(), risk],
     ['GET', /^\/api\/v1\/traders\/summary$/, (_, q) => A('traderSummary')(q)],
+    ['GET', /^\/api\/v1\/traders\/moves$/, (_, q) => A('smartMoves')(q)],
     ['GET', /^\/api\/v1\/protocol\/series$/, (_, q) => A('series')(q)],
     ['GET', /^\/api\/v1\/trades$/, (_, q) => A('trades')(q)],
     ['GET', /^\/api\/v1\/liquidations$/, async (_, q) => { const body = await A('liquidations')(q); return q.get('format') === 'csv' ? { csv: toCsv(body.rows), filename: `plumb-liquidations-${body.meta.block ?? 'unknown'}.csv` } : body; }],
