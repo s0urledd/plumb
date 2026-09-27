@@ -79,21 +79,36 @@ export function mount(el, { query, setQuery }) {
 
   // The latest position changes of the top directional traders (makers and
   // high-frequency accounts left out server-side), ranked by net PnL in smWin.
+  // A trader splitting one decision into many fills ("reduce long" eight times
+  // in five minutes) shows as one row: the same account, market, action and
+  // side within 30 minutes of each other fold together.
+  const MOVE_VERBS = { open: 'Open', increase: 'Add', decrease: 'Reduce', close: 'Close', invert: 'Flip to', liquidation: 'Liquidated', deleverage: 'ADL' };
+  function foldMoves(rows) {
+    const out = [], open = new Map();
+    for (const r of rows) {
+      const key = `${r.account}|${r.market}|${r.kind}|${r.side}`, g = open.get(key);
+      if (g && g.oldest - r.ts <= 1800) { g.count++; g.notional += num(r.notional) || 0; g.size += num(r.size) || 0; g.pnl += num(r.pnl) || 0; g.oldest = r.ts; continue; }
+      const next = { ...r, count: 1, notional: num(r.notional) || 0, size: num(r.size) || 0, pnl: num(r.pnl) || 0, oldest: r.ts };
+      open.set(key, next); out.push(next);
+    }
+    return out;
+  }
+  const moveAction = r => { const side = r.side === 'long' || r.side === 'short' ? r.side : ''; const opening = ['open', 'increase'].includes(r.kind) || (r.kind === 'invert'); const cls = r.kind === 'liquidation' ? 'neg' : (side === 'long') === opening ? 'pos' : 'neg'; return `<span class="${cls}">${MOVE_VERBS[r.kind] ?? r.kind} ${esc(side)}</span>${r.count > 1 ? ` <span class="tag" title="${r.count} fills over ${Math.max(1, Math.round((r.ts - r.oldest) / 60))} min">×${r.count}</span>` : ''}`; };
   async function loadMoves() {
-    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=40`, { maxAge: 8000 });
+    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=100`, { maxAge: 8000 });
     if (!alive) return;
     const wl = smWin === 'all' ? 'all-time' : smWin;
     $('sm-desc').textContent = `Latest position changes of the top ${int(m.leaders)} traders by net PnL (${wl}), last 7 days${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts left out` : ''}`;
     $('moves').innerHTML = table({ id: 'moves', compact: true, emptyText: 'No moves by these traders in the last 7 days', columns: [
       { key: 't', label: 'When', render: r => `<span class="muted num" title="${esc(new Date(r.ts * 1000).toISOString().replace('T', ' ').slice(0, 19))} UTC">${ago(r.ts)}</span>` },
       { key: 'a', label: 'Trader', render: r => `<span class="sm-trader"><span class="rank-pill" title="Rank by net PnL, ${esc(wl)}">#${int(r.leader.rank)}</span>${addr(r.address, r.account)}</span>` },
-      { key: 'x', label: 'Action', render: tradeAction },
+      { key: 'x', label: 'Action', render: moveAction },
       { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
       { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
-      { key: 'p', label: 'Price', n: true, render: r => price(r.price) },
+      { key: 'p', label: 'Price', n: true, render: r => price(r.count > 1 && r.size ? r.notional / r.size : r.price) },
       { key: 'r', label: 'Realized', n: true, render: r => (['decrease', 'close', 'invert', 'liquidation', 'deleverage'].includes(r.kind) && num(r.pnl) ? pnl(r.pnl) : '<span class="faint">—</span>') },
       { key: 'l', label: `Net PnL · ${wl}`, n: true, render: r => pnl(r.leader.pnl) }
-    ], rows: m.rows, rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"` });
+    ], rows: foldMoves(m.rows).slice(0, 30), rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"` });
   }
 
   // Traders at a glance for the leaderboard's window.
