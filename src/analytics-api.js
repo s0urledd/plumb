@@ -404,7 +404,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   const SMART_TOP = 50, MOVE_WINDOW_S = 7 * 86400;
   async function smartMoves(query) {
     const w = ['7d', '30d', 'all'].includes(query.get('window')) ? query.get('window') : '30d';
-    const limit = Math.min(Math.max(Number(query.get('limit')) || 40, 1), 100);
+    const limit = Math.min(Math.max(Number(query.get('limit')) || 40, 1), 500);
     // Moves smaller than min USD are left out (default $1K): some leaders trade dust.
     const min = Math.min(Math.max(Math.floor(Number(query.get('min') ?? 1000)) || 0, 0), 10000000);
     return cache.get(`smart:${w}:${limit}:${min}`, 10000, async () => {

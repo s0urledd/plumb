@@ -95,7 +95,7 @@ export function mount(el, { query, setQuery }) {
   }
   const moveAction = r => { const side = r.side === 'long' || r.side === 'short' ? r.side : ''; const opening = ['open', 'increase'].includes(r.kind) || (r.kind === 'invert'); const cls = r.kind === 'liquidation' ? 'neg' : (side === 'long') === opening ? 'pos' : 'neg'; return `<span class="${cls}">${MOVE_VERBS[r.kind] ?? r.kind} ${esc(side)}</span>${r.count > 1 ? ` <span class="tag" title="${r.count} fills over ${Math.max(1, Math.round((r.ts - r.oldest) / 60))} min">×${r.count}</span>` : ''}`; };
   async function loadMoves() {
-    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=100`, { maxAge: 8000 });
+    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=400`, { maxAge: 8000 });
     if (!alive) return;
     const wl = smWin === 'all' ? 'all-time' : smWin;
     $('sm-desc').textContent = `Latest position changes of the top ${int(m.leaders)} traders by net PnL (${wl}), last 7 days${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts left out` : ''}`;
