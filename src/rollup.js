@@ -81,9 +81,12 @@ export function createRollups({ ch, coverage, log = () => {}, maxHoursPerStateme
     }
   }
 
+  // One run at a time. The guard is cleared once the run has settled, never
+  // inside it: a run with nothing to do finishes before `running` is assigned,
+  // and clearing it there left a settled promise in place that blocked every later run.
   async function run(nowTs) {
     if (running) return running;
-    running = (async () => {
+    const job = (async () => {
       const started = Date.now();
       try {
         if (!loaded) await load();
@@ -96,8 +99,9 @@ export function createRollups({ ch, coverage, log = () => {}, maxHoursPerStateme
         status.lastError = { message: error.message, at: Date.now() };
         log('warn', `rollup failed: ${error.message}`);
         return 0;
-      } finally { running = null; }
+      }
     })();
+    running = job.finally(() => { running = null; });
     return running;
   }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createExecEvents, createSse } from '../src/live.js';
+import { createExecEvents, createSse, keepConnected } from '../src/live.js';
 import { makeLog } from './helpers/logs.js';
 
 const EXCHANGE = '0x34b6552d57a35a1d042ccae1951bd1c370112a6f';
@@ -54,4 +54,57 @@ test('server-sent events reach every open client in order', () => {
   assert.match(writes.at(-2), /^id: 1\nevent: block\ndata: \{"block":"10"\}\n\n$/);
   assert.match(writes.at(-1), /event: trades/);
   sse.close();
+});
+
+// A fake WebSocket and clock for the reconnect layer.
+function fakeSockets() {
+  const made = [];
+  class FakeSocket { constructor(url) { this.url = url; this.closed = false; made.push(this); } close() { if (this.closed) return; this.closed = true; setImmediate(() => this.onclose?.()); } send() {} }
+  return { made, FakeSocket };
+}
+function fakeTimers() {
+  let t = 0; const due = [];
+  const timers = {
+    setTimeout: (fn, ms) => { const x = { at: t + ms, fn }; due.push(x); return x; },
+    clearTimeout: x => { const i = due.indexOf(x); if (i >= 0) due.splice(i, 1); },
+    setInterval: (fn, ms) => { const x = { every: ms, at: t + ms, fn }; due.push(x); return x; },
+    clearInterval: x => { const i = due.indexOf(x); if (i >= 0) due.splice(i, 1); }
+  };
+  const advance = async ms => {
+    const end = t + ms;
+    for (;;) {
+      due.sort((a, b) => a.at - b.at);
+      const next = due[0];
+      if (!next || next.at > end) break;
+      t = next.at;
+      if (next.every) next.at += next.every; else due.shift();
+      next.fn();
+      await new Promise(r => setImmediate(r));
+    }
+    t = end;
+  };
+  return { timers, advance, now: () => t };
+}
+
+test('reconnect layer: a stalled handshake and a silent socket are both retried, once each', async () => {
+  const { made, FakeSocket } = fakeSockets();
+  const clock = fakeTimers();
+  const downs = [];
+  const conn = keepConnected({ url: 'ws://x', WebSocketImpl: FakeSocket, openTimeoutMs: 15000, idleMs: 60000, now: clock.now, timers: clock.timers, onDown: d => downs.push(d.reason) });
+  conn.start();
+  assert.equal(made.length, 1);
+  await clock.advance(20000);                  // never opens: closed and retried
+  assert.equal(downs[0], 'connect timeout');
+  await clock.advance(1000);
+  assert.equal(made.length, 2, 'one new attempt, not two');
+  made[1].onopen(); made[1].onmessage({ data: '{}' });
+  await clock.advance(30000);
+  assert.equal(made.length, 2, 'an open socket with traffic stays');
+  await clock.advance(40000);                  // a minute of silence
+  assert.equal(downs[1], 'no messages');
+  made[0].onclose?.();                         // a late close from the first socket changes nothing
+  await clock.advance(2000);
+  assert.equal(made.length, 3);
+  assert.equal(downs.length, 2);
+  conn.stop();
 });
