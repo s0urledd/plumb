@@ -8,31 +8,36 @@ const text = r => (typeof r === 'string' ? r : r.text);
 const buttons = r => (r.keyboard ?? []).flat().map(b => b.callback_data ?? b.url);
 
 // A fake Telegram: records sent and edited messages and serves queued updates.
-function harness({ positions = [] } = {}) {
+function harness({ positions = [], maxChats } = {}) {
   const sent = [], edited = [], answered = [], updates = [];
-  let saved = null;
+  let saved = null, gate = null, release = null, clock = NOW * 1000, stateCalls = 0;
   const fetch = async (url, init) => {
     const method = url.split('/').pop(), body = JSON.parse(init.body);
     const ok = result => ({ json: async () => ({ ok: true, result }) });
-    if (method === 'sendMessage') { sent.push(body); return ok({}); }
+    if (method === 'sendMessage') { if (gate) await gate; sent.push(body); return ok({}); }
     if (method === 'editMessageText') { edited.push(body); return ok({}); }
     if (method === 'answerCallbackQuery') { answered.push(body); return ok(true); }
     if (method === 'getUpdates') return ok(updates.splice(0));
     return ok({ username: 'plumb_test_bot' });
   };
   const alerts = createAlerts({
-    token: 'T', fetch, sendGapMs: 0, now: () => NOW * 1000,
+    token: 'T', fetch, sendGapMs: 0, now: () => clock, maxChats,
     store: { load: async () => saved, save: async v => { saved = structuredClone(v); } },
     resolveAccount: async key => (key === ADDR || key === '7' ? { id: 7, address: ADDR } : null),
     tradeViews: async rows => rows.map(r => ({ ...r, symbol: r.market === 1 ? 'BTC' : 'SOL', address: r.account === 7 ? ADDR : null })),
-    accountState: async () => ({ portfolio: { account_value: '361.2', unrealized_pnl: '-1.17' }, positions }),
+    accountState: async () => { stateCalls++; await new Promise(r => setTimeout(r, 5)); return { portfolio: { account_value: '361.2', unrealized_pnl: '-1.17' }, positions }; },
     symbolOf: id => ({ 1: 'BTC', 2: 'SOL', 30: 'SOL_v2' }[id] ?? `#${id}`), marketIds: () => [1, 2, 30]
   });
   let n = 100;
   const msg = (t, chat = 42) => updates.push({ update_id: n++, message: { text: t, chat: { id: chat, type: 'private' } } });
   const tap = (data, chat = 42) => updates.push({ update_id: n++, callback_query: { id: `q${n}`, data, message: { message_id: 5, chat: { id: chat, type: 'private' } } } });
   const flush = () => new Promise(r => setTimeout(r, 100));
-  return { alerts, sent, edited, answered, msg, tap, flush, saved: () => saved, setPositions: p => { positions.splice(0, positions.length, ...p); } };
+  return {
+    alerts, sent, edited, answered, msg, tap, flush, saved: () => saved, setPositions: p => { positions.splice(0, positions.length, ...p); },
+    // Holds every sendMessage until released, so alerts pile up in the queue.
+    hold: () => { gate = new Promise(r => { release = r; }); }, release: () => { gate = null; release(); },
+    advance: s => { clock += s * 1000; }, stateCalls: () => stateCalls
+  };
 }
 const trade = over => ({ kind: 'open', role: 'taker', account: 3, market: 1, side: 'long', buy: true, size: '0.5', price: '84000', notional: '42000', pnl: '0', tx: '0xabc', ...over });
 const pos = d => ({ market: 1, symbol: 'BTC', side: 'long', notional: '478', leverage: 15, pnl: '-1.17', mark: '84419.3', liquidation_price: '82252.46', liquidation_distance_pct: d });
@@ -162,6 +167,79 @@ test('near-liquidation warnings follow the chat\'s levels, once per level, and r
   for (const d of [30, 19, 9]) { early.setPositions([pos(d)]); await early.alerts.checkRisk(); }
   await early.flush();
   assert.deepEqual(early.sent.map(m => /(\d+\.\d)% away/.exec(m.text)[1]), ['19.0', '9.0']);
+});
+
+test('a busy chat keeps its newest alerts, and alerts gone stale in the queue are dropped', async () => {
+  const h = harness();
+  await h.alerts.handle('1', '/trades 1k');
+  h.hold();
+  const commits = [h.alerts.onCommit({ ts: NOW, ev: [trade({ notional: '1000' })], funding: [] })];
+  await new Promise(r => setTimeout(r, 20)); // the first is on its way, held
+  for (let i = 2; i <= 30; i++) commits.push(h.alerts.onCommit({ ts: NOW, ev: [trade({ notional: String(1000 * i) })], funding: [] }));
+  await new Promise(r => setTimeout(r, 20));
+  h.release();
+  await Promise.all(commits); await h.flush();
+  // Of the 29 waiting, the 20 newest go out.
+  assert.deepEqual(h.sent.map(m => /<b>\$(\d+K)<\/b>/.exec(m.text)[1]), ['1K', ...Array.from({ length: 20 }, (_, i) => `${i + 11}K`)]);
+  assert.equal(h.alerts.stats.dropped, 9);
+
+  const s = harness();
+  await s.alerts.handle('1', '/trades 1k');
+  s.hold();
+  const first = s.alerts.onCommit({ ts: NOW, ev: [trade({ notional: '1000' })], funding: [] });
+  await new Promise(r => setTimeout(r, 20));
+  const second = s.alerts.onCommit({ ts: NOW, ev: [trade({ notional: '2000' })], funding: [] });
+  s.msg('/list', 1); await s.alerts.pollOnce(); // a command reply queued behind it
+  s.advance(400); s.release();
+  await Promise.all([first, second]); await s.flush();
+  // The alert that waited past five minutes is dropped; the reply is not.
+  assert.equal(s.sent.length, 2);
+  assert.match(s.sent[0].text, /<b>\$1K<\/b>/);
+  assert.match(s.sent[1].text, /Watched wallets/);
+  assert.equal(s.alerts.stats.dropped, 1);
+});
+
+test('a funding change nobody heard about, or seen late, is not reported later', async () => {
+  const h = harness();
+  const f = (rate, ts = NOW) => ({ ts, ev: [], funding: [{ market: 2, actual_rate: rate }] });
+  await h.alerts.handle('1', '/funding on');
+  await h.alerts.onCommit(f(45));
+  await h.alerts.handle('1', '/stop');
+  await h.alerts.onCommit(f(-20)); // flips with nobody subscribed
+  await h.alerts.handle('2', '/funding on');
+  await h.alerts.onCommit(f(-10));
+  await h.alerts.onCommit(f(30, NOW - 3600)); // a flip in a stale commit
+  await h.alerts.onCommit(f(5));
+  await h.alerts.onCommit(f(-5));
+  await h.flush();
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].text, /Shorts now pay longs · -0\.0050%/);
+});
+
+test('a full service refuses new chats on every path; existing chats keep working', async () => {
+  const h = harness({ maxChats: 1 });
+  assert.match(text(await h.alerts.handle('1', '/funding on')), /Funding flips<\/b> {2}on/);
+  for (const t of ['/liqs 25k', '/trades 100k', '/funding on', '/watch 7']) assert.equal(text(await h.alerts.handle('2', t)), 'The alert service is full right now.', t);
+  for (const d of ['liqs:10000', 'trades:50000', 'funding', 'levels:early']) assert.equal(text((await h.alerts.press('2', d))[0]), 'The alert service is full right now.', d);
+  assert.deepEqual(Object.keys(h.alerts.subs()), ['1']);
+  assert.match(text(await h.alerts.handle('1', '/liqs 25k')), /Liquidations<\/b> {2}\$25K/);
+});
+
+test('re-watching a wallet warns again; risk checks never overlap', async () => {
+  const h = harness();
+  await h.alerts.handle('1', '/watch 7');
+  h.setPositions([pos(9)]);
+  await h.alerts.checkRisk();
+  await h.alerts.handle('1', '/unwatch 7');
+  await h.alerts.handle('1', '/watch 7');
+  await h.alerts.checkRisk();
+  await h.flush();
+  assert.equal(h.sent.length, 2);
+
+  const g = harness();
+  await g.alerts.handle('1', '/watch 7');
+  await Promise.all([g.alerts.checkRisk(), g.alerts.checkRisk()]);
+  assert.equal(g.stateCalls(), 1);
 });
 
 test('a blocked chat is dropped', async () => {
