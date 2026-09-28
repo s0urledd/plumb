@@ -161,8 +161,7 @@ export function mount(el, { params, query, setQuery }) {
     headValue('ladder', open ? `${usd(r10.notional_at_10pct)}${unit('on a 10% move')}` : '—', open ? `longs ${usd(r10.long_notional_at_10pct)} if the price falls · shorts ${usd(r10.short_notional_at_10pct)} if it rises` : '');
     legendOf('ladder', open ? [{ name: 'Longs (price down)', color: COLORS.long }, { name: 'Shorts (price up)', color: COLORS.short }] : []);
     if (!open) { lnode.innerHTML = none('No open positions'); return; }
-    mirrored(lnode, { labels: ladder.map(x => `${x.shock_pct}%`), long: ladder.map(x => num(x.long.notional)), short: ladder.map(x => num(x.short.notional)) });
-    lnode.__chart?.setOption({ legend: { show: false }, grid: { top: 8 } }); // the dot legend in the head names the sides
+    mirrored(lnode, { labels: ladder.map(x => `${x.shock_pct}%`), long: ladder.map(x => num(x.long.notional)), short: ladder.map(x => num(x.short.notional)), legend: false }); // the dot legend in the head names the sides
   }
   // The largest open positions by notional; each row opens the wallet.
   function renderPositions(rows) {

@@ -4,7 +4,7 @@
 import { get } from '../api.js';
 import { usd, int, price, pct, num, esc, size, multiple } from '../format.js';
 import { kpi, table, mktLink, sideTag, addr, pnl, skeleton, skChart, empty } from '../ui.js';
-import { mirrored } from '../charts.js';
+import { mirrored, COLORS } from '../charts.js';
 
 // Depth read up to the walk's level cap is a lower bound; a no-break space
 // keeps the sign with its figure when a note wraps.
@@ -16,6 +16,8 @@ const cover = (v, complete) => { const n = num(v); return n === null ? '—' : n
 // fund short of its shortfall never reads as 1×.
 const times = v => { const n = num(v); return n === null ? '—' : n >= 10000 ? `${int(Math.floor(n / 100))}×` : n >= 1000 ? `${(Math.floor(n / 10) / 10).toFixed(1)}×` : `${(Math.floor(n) / 100).toFixed(2)}×`; };
 const signed = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}%`;
+// The ladder's sides, named in the card head as on the market page.
+const LADDER_KEY = [['Longs (price down)', COLORS.long], ['Shorts (price up)', COLORS.short]].map(([name, color]) => `<span><i style="background:${color}"></i>${name}</span>`).join('');
 
 export function mount(el, { query, setQuery }) {
   let alive = true, overview = null;
@@ -29,7 +31,7 @@ export function mount(el, { query, setQuery }) {
           <div class="panel-body"><div style="display:flex;align-items:center;gap:14px"><span class="faint num" style="width:48px">−50%</span><input id="move" class="range" type="range" min="-50" max="50" step="1" value="${move}" aria-label="Price move"><span class="faint num" style="width:48px;text-align:right">+50%</span></div>
           <div style="text-align:center;margin-top:6px;font-size:13px" class="muted">Mark moves <b id="move-label" class="num" style="color:var(--text)"></b> to <b id="move-price" class="num" style="color:var(--text)"></b></div></div>
           <div id="stress">${skeleton(5)}</div></section>
-        <section class="panel rk-ladder"><div class="panel-head"><h2>Liquidation ladder</h2><span class="meta" id="ladder-meta"></span></div><div class="panel-body"><div class="chart" id="ladder">${skChart()}</div></div></section>
+        <section class="panel rk-ladder"><div class="panel-head"><div><h2>Liquidation ladder</h2><div class="desc" id="ladder-meta"></div></div><div class="legend dots" id="ladder-lg"></div></div><div class="panel-body"><div class="chart" id="ladder">${skChart()}</div></div></section>
       </div>
       <section class="panel"><div class="panel-head"><h2>Largest positions exposed</h2><span class="meta" id="hit-meta"></span></div><div class="panel-body flush" id="hit">${skeleton(6)}</div></section>
       <section class="panel"><div class="panel-head"><h2>By market</h2><span class="meta">Each market’s worse direction: longs exposed to a fall or shorts to a rise; shortfall is equity below zero at that price</span></div><div class="panel-body flush" id="table">${skeleton(8)}</div></section>
@@ -83,8 +85,9 @@ export function mount(el, { query, setQuery }) {
     const key = JSON.stringify([labels, long, short]);
     if (key === drawn) return;
     drawn = key;
+    $('ladder-lg').innerHTML = labels.length ? LADDER_KEY : '';
     if (!labels.length) { $('ladder').innerHTML = empty('No positions'); return; }
-    mirrored($('ladder'), { labels, long, short });
+    mirrored($('ladder'), { labels, long, short, legend: false });
   }
   let stressTimer = null, stressSeq = 0, resyncing = false;
   async function stress() {

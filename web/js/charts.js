@@ -28,6 +28,7 @@ function init(el) {
     el.__chart = chart; registry.add(chart); observer?.observe(el);
   }
   for (const t of ['click', 'datazoom', 'legendselectchanged']) chart.off(t); // handlers belong to the builder drawing now
+  chart.__png = null; // so does what the image export adds
   return chart;
 }
 // Exports: the plotted data (time-aligned series, as shown) and the image.
@@ -48,7 +49,16 @@ export function chartCsv(el) {
   const lines = [['time_utc', ...cols.map(c => c.name)], ...times.map((t, i) => [iso(t), ...cols.map(c => { const v = c.at(i); return v === '-' || v === null || v === undefined ? '' : v; })])];
   return lines.map(r => r.map(csvCell).join(',')).join('\n');
 }
-export const chartPng = el => el?.__chart?.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: T.surface }) ?? null;
+// A chart whose key sits in the card head draws it into the image (__png: the
+// options to add), since the file has no card around it; the page is left as it was.
+export function chartPng(el) {
+  const chart = el?.__chart; if (!chart) return null;
+  const extra = chart.__png?.(), was = extra && chart.getOption();
+  if (extra) chart.setOption({ ...extra, animation: false });
+  const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: T.surface });
+  if (extra) { chart.setOption(Object.fromEntries(Object.keys(extra).map(k => [k, was[k]]))); chart.setOption({ animation: was.animation }); }
+  return url;
+}
 
 // Shows or hides one series (legend chips outside the canvas drive this).
 export function toggleSeries(el, name) { el?.__chart?.dispatchAction({ type: 'legendToggleSelect', name }); }
@@ -354,17 +364,20 @@ let ruler;
 const textWidth = (s, px = 11) => { ruler ??= document.createElement('canvas').getContext('2d'); ruler.font = `${px}px ${T.font}`; return ruler.measureText(s).width; };
 
 // Mirrored bars: long exposure left of zero, short right (liquidation ladder).
-export function mirrored(el, { labels, long, short, fmt = v => usd(v) }) {
+// legend: false leaves the key to a dot legend in the card head; the chart
+// then draws its own only into a PNG export.
+export function mirrored(el, { labels, long, short, fmt = v => usd(v), legend = true }) {
   const chart = init(el);
   if (!chart) return;
   const peak = Math.max(0, ...long.map(v => num(v) ?? 0), ...short.map(v => num(v) ?? 0));
   const edge = peak > 0 ? niceCeil(peak * 1.05) : 1;
   const longName = 'Longs exposed (price down)', shortName = 'Shorts exposed (price up)';
   // On a narrow chart the legend wraps to a second line: the bars start below it.
-  const wraps = [longName, shortName].reduce((w, n) => w + 7 + 5 + textWidth(n) + 14, 0) > el.clientWidth;
+  const below = () => ([longName, shortName].reduce((w, n) => w + 7 + 5 + textWidth(n) + 14, 0) > el.clientWidth ? 46 : 26);
+  if (!legend) chart.__png = () => ({ legend: { show: true }, grid: { top: below() } });
   chart.setOption({
-    ...base(), grid: { left: 8, right: 28, top: wraps ? 46 : 26, bottom: 6, containLabel: true },
-    legend: { top: 0, right: 0, icon: 'circle', itemWidth: 7, itemHeight: 7, itemGap: 14, textStyle: { color: T.text, fontSize: 11 }, data: [longName, shortName] },
+    ...base(), grid: { left: 8, right: 28, top: legend ? below() : 8, bottom: 6, containLabel: true },
+    legend: { show: legend, top: 0, right: 0, icon: 'circle', itemWidth: 7, itemHeight: 7, itemGap: 14, textStyle: { color: T.text, fontSize: 11 }, data: [longName, shortName] },
     // Symmetric around zero so both sides read on the same scale.
     xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, fontSize: 10.5, hideOverlap: true, showMinLabel: false, showMaxLabel: false, formatter: v => usdAxis(Math.abs(v)) }, splitLine: SPLIT },
     yAxis: { type: 'category', data: labels, inverse: true, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.text } },
