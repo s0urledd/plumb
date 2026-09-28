@@ -17,8 +17,12 @@ export function mount(el, { query, setQuery }) {
     <section class="panel"><div class="panel-head"><div><h2>Funding</h2><div class="desc" id="f-desc">Annualised funding rate per market</div></div><div class="head-right">${chartTools('funding-map', 'funding')}</div></div>
       <div class="panel-body"><div class="chart" id="funding-map">${skChart()}</div></div></section>
     </div>`;
+  // Not trading: closed on the contract, or open with no trades in the window and
+  // no open positions (a listing nobody trades yet). Both are tagged and dimmed alike.
+  const idle = r => r.active === false || (!num(r.volume) && !num(r.open_interest));
+  const idleTitle = r => (r.active === false ? 'Not open for trading' : `Open for trading, but no trades ${w === 'all' ? 'yet' : `in ${w}`} and no open positions`);
   const COLS = [
-    { key: 'symbol', label: 'Market', sort: r => r.symbol, render: r => `${mkt(r.id, r.symbol, r.name && r.name !== r.symbol && r.name !== `${r.symbol} Perp` ? r.name : null)}${r.active === false ? ' <span class="tag" title="Not open for trading">inactive</span>' : ''}` },
+    { key: 'symbol', label: 'Market', sort: r => r.symbol, render: r => `${mkt(r.id, r.symbol, r.name && r.name !== r.symbol && r.name !== `${r.symbol} Perp` ? r.name : null)}${idle(r) ? ` <span class="tag" title="${idleTitle(r)}">inactive</span>` : ''}` },
     { key: 'mark', label: 'Mark', n: true, sort: r => num(r.mark ?? r.close), render: r => price(r.mark ?? r.close) },
     { key: 'change_pct', label: 'Change', n: true, sort: r => num(r.change_pct) ?? -1e9, render: r => pctCell(r.change_pct) },
     { key: 'range', label: 'Low – High', n: true, render: r => r.low ? `<span class="muted">${price(r.low)} – ${price(r.high)}</span>` : '—' },
@@ -33,7 +37,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'max_leverage', label: 'Max lev.', n: true, sort: r => r.max_leverage ?? 0, render: r => (r.max_leverage ? `${r.max_leverage}x` : '—') },
     { key: 'insurance', label: 'Insurance', n: true, sort: r => num(r.insurance) ?? 0, render: r => usd(r.insurance) }
   ];
-  function render() { if (data) el.querySelector('#list').innerHTML = table({ id: 'm', columns: COLS, rows: data.markets, sortKey: sort.key, sortDir: sort.dir, rowAttrs: r => `class="link${!num(r.volume) && !num(r.open_interest) ? ' inactive' : ''}" data-href="#/markets/${r.id}"` }); }
+  function render() { if (data) el.querySelector('#list').innerHTML = table({ id: 'm', columns: COLS, rows: data.markets, sortKey: sort.key, sortDir: sort.dir, rowAttrs: r => `class="link${idle(r) ? ' inactive' : ''}" data-href="#/markets/${r.id}"` }); }
   async function load() { data = await get(`protocol?window=${w}`); if (!alive) return; assignColors([...data.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol }))); render(); }
   // Funding across markets and time: APR per bucket, green when longs pay.
   async function loadFunding() {
