@@ -297,6 +297,7 @@ tr.inactive td { opacity: 0.5; }
 .legend i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
 /* Dot legends name a chart's series in its card head, on the right. */
 .legend.dots { justify-content: flex-end; gap: 4px 12px; font-size: 11.5px; }
+.legend.dots:empty { display: none; }
 .chart { width: 100%; height: 300px; }
 .chart.sm { height: 200px; }
 .chart.lg { height: 360px; }
@@ -533,10 +534,13 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .trend-id .seg { margin-top: 10px; }
 .trend-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
 .trend-ctl { display: flex; align-items: center; gap: 6px; }
+/* Phones: the title and figure, then the controls (tools at the end), then the
+   key across the card, so neither squeezes the other into a narrow column. */
 @media (max-width: 640px) {
   .panel.trend > .panel-head { flex-wrap: wrap; }
-  .trend-side { width: 100%; flex-direction: row; justify-content: space-between; align-items: flex-end; }
-  .trend-ctl .chart-tools { order: 2; }
+  .trend-side { width: 100%; align-items: stretch; }
+  .trend-ctl .chart-tools { order: 2; margin-left: auto; }
+  .trend .legend.dots { justify-content: flex-start; max-width: none; margin-top: 0; }
 }
 
 /* Page-by-page tables (liquidations feed). */
@@ -637,9 +641,6 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .pnl-card .cal-months { grid-auto-columns: var(--cell, 16px); }
 .pnl-card .cal i { width: var(--cell, 16px); height: var(--cell, 16px); }
 @media (max-width: 640px) {
-  /* The colour key gets a row of its own under the view switch. */
-  .pnl-card .trend-side { flex-wrap: wrap; }
-  .pnl-card .legend.dots { flex-basis: 100%; justify-content: flex-start; margin-top: 0; }
   .wallet-page .stat-grid { grid-template-columns: minmax(0, 1fr); }
   .wallet-page .stat-grid .stat { border-right: 0; }
   .wallet-page .t td .rank-of { display: none; }
@@ -651,6 +652,11 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
    its label over the wallets' values (--cols a row), each value marked with
    its wallet's dot, and the header becomes a list of the wallets. */
 .cmp-w { display: inline-flex; align-items: center; gap: 6px; }
+/* The chart's head holds only its title, so the wallets' key takes the rest of
+   the row and wraps only when the card is narrower than all of it. */
+.cmp-chart .trend-id { flex: none; }
+.cmp-chart .trend-side { flex: 0 1 auto; min-width: 0; }
+.cmp-chart .legend.dots { max-width: none; }
 .cmp-w > i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: none; }
 @media (max-width: 640px) {
   table.t.cmp, .cmp thead, .cmp tbody { display: block; }
