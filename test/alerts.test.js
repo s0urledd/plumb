@@ -32,8 +32,11 @@ function harness({ positions = [], maxChats } = {}) {
   const msg = (t, chat = 42) => updates.push({ update_id: n++, message: { text: t, chat: { id: chat, type: 'private' } } });
   const tap = (data, chat = 42) => updates.push({ update_id: n++, callback_query: { id: `q${n}`, data, message: { message_id: 5, chat: { id: chat, type: 'private' } } } });
   const flush = () => new Promise(r => setTimeout(r, 100));
+  // Replies go out through a queue that is not awaited: wait until the condition
+  // holds (or a generous limit passes) rather than for a fixed time.
+  const until = async (ok, ms = 5000) => { for (const end = Date.now() + ms; !ok() && Date.now() < end;) await new Promise(r => setTimeout(r, 5)); };
   return {
-    alerts, sent, edited, answered, msg, tap, flush, saved: () => saved, setPositions: p => { positions.splice(0, positions.length, ...p); },
+    alerts, sent, edited, answered, msg, tap, flush, until, saved: () => saved, setPositions: p => { positions.splice(0, positions.length, ...p); },
     // Holds every sendMessage until released, so alerts pile up in the queue.
     hold: () => { gate = new Promise(r => { release = r; }); }, release: () => { gate = null; release(); },
     advance: s => { clock += s * 1000; }, stateCalls: () => stateCalls
@@ -66,7 +69,7 @@ test('the menu shows each alert state and the buttons to change it', async () =>
 test('commands and a bare address subscribe; state persists', async () => {
   const h = harness();
   h.msg(ADDR); h.msg('/trades 500'); h.msg('/funding'); h.msg('/watch 0xdead'); h.msg('/list');
-  await h.alerts.pollOnce(); await h.flush();
+  await h.alerts.pollOnce(); await h.until(() => h.sent.length >= 5);
   const texts = h.sent.map(m => m.text);
   assert.match(texts[0], /Watching/);
   assert.match(texts[1], /minimum/);
