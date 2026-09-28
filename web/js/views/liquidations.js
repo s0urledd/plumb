@@ -11,7 +11,7 @@ const BUCKETS = { 3600: 'Per hour', 14400: 'Per 4 hours', 86400: 'Per day', 6048
 export function mount(el, { query, setQuery }) {
   let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '7d';
   let market = query.get('market') ?? '';
-  let alive = true, markets = [], adl = null;
+  let alive = true, markets = [], adl = null; // { key: filters counted under, n }
   el.innerHTML = `
     <div class="page-head"><div><h1>Liquidations</h1><div class="sub">Forced closes from exchange events: liquidations on the order book and auto-deleveraging.</div></div><div id="win">${seg('window', WINDOWS, w)}</div></div>
     <div class="stack"><div class="kpis k4" id="kpis"></div>
@@ -34,11 +34,13 @@ export function mount(el, { query, setQuery }) {
     // A market filter narrows the KPIs and the chart too, not only the feed.
     const liquidated = row ? row.liquidated : h.liquidated.value, count = row ? row.liquidations : h.liquidations.value, volume = row ? row.volume : h.volume.value;
     const largest = l.largest ?? null; // the largest inside the window, from the server
-    adl = row ? null : num(h.deleverages); // counted for all markets only
+    // ADL and force closes: the headline counts them for all markets only, so
+    // one market's are its feed events less its liquidations.
+    adl = { key: asked, n: row ? Math.max(0, num(l.total) - (num(count) ?? 0)) : market ? null : num(h.deleverages) };
     $('kpis').innerHTML = [
       kpi({ label: `Liquidated · ${w}${row ? ` · ${row.symbol}` : ''}`, value: usd(liquidated), delta: row || w === 'all' || p.meta.previous_complete === false ? undefined : h.liquidated.change_pct, basis: 'vs prev', basisTitle: `Compared with the previous ${w}`, invert: true, note: `${int(count)} liquidations` }),
       kpi({ label: 'Share of volume', value: `${num(volume) ? (num(liquidated) / num(volume) * 100).toFixed(2) : '0.00'}%`, note: `of ${usd(volume)} traded` }),
-      kpi({ label: 'ADL, force closes', value: int(h.deleverages), note: row ? 'all markets' : 'positions closed by the protocol', tip: 'PositionDeleveraged events: auto-deleveraging against a bankrupt position, or a force close at the mark price (flagged on the event).' }),
+      kpi({ label: 'ADL, force closes', value: int(adl.n), note: 'closed by the protocol', tip: 'PositionDeleveraged events: auto-deleveraging against a bankrupt position, or a force close at the mark price (flagged on the event).' }),
       kpi({ label: `Largest · ${w === 'all' ? 'all-time' : w}`, value: largest ? usd(largest.notional) : '—', note: largest ? `${esc(largest.symbol)} ${esc(largest.side ?? '')} · ${ago(largest.ts)}` : 'none in this window' })
     ].join('');
     const node = $('chart'); node.innerHTML = '';
@@ -61,8 +63,10 @@ export function mount(el, { query, setQuery }) {
   }
   function renderFeed(l) {
     const rows = l.rows, total = l.total ?? rows.length, pages = Math.max(1, Math.ceil(total / PAGE));
-    // The feed has ADL and force closes too, so it runs longer than the liquidation count above.
-    $('feed-meta').textContent = `${int(total)} events${adl ? ` · incl. ${int(adl)} ADL and force close${adl === 1 ? '' : 's'}` : ''} · ${w === 'all' ? 'all-time' : w}`;
+    // The feed has ADL and force closes too, so it runs longer than the liquidation
+    // count above. A redraw under filters not yet loaded leaves the count out.
+    const n = adl?.key === filters() ? adl.n : null;
+    $('feed-meta').textContent = `${int(total)} events${n ? ` · incl. ${int(n)} ADL and force close${n === 1 ? '' : 's'}` : ''} · ${w === 'all' ? 'all-time' : w}`;
     $('feed-meta').title = 'Liquidations plus ADL and force closes; the liquidation count above counts liquidations only.';
     const first = total ? page * PAGE + 1 : 0, last = page * PAGE + rows.length;
     const pager = pages > 1 ? `<div class="panel-foot pager"><span>${int(first)}–${int(last)} of ${int(total)}</span><span class="pager-ctl"><button class="btn ghost sm" data-action="prev" ${page === 0 ? 'disabled' : ''}>← Prev</button><span class="num">Page ${int(page + 1)} of ${int(pages)}</span><button class="btn ghost sm" data-action="next" ${page + 1 >= pages ? 'disabled' : ''}>Next →</button></span></div>` : '';
