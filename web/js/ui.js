@@ -70,8 +70,8 @@ export const mktLink = (id, symbol) => mkt(id, symbol, null, { link: true });
 // Funding interval as the chain runs it now (seconds from the API), not a fixed text.
 export function fundingTip(intervalSeconds) {
   const s = Number(intervalSeconds);
-  const every = s > 0 ? `about every ${s >= 5400 ? `${(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`} at the current block time` : 'a fixed number of blocks';
-  return `Funding is settled once per funding interval (${every}). Shown scaled to 8 hours of clock time; APR over 365 days.`;
+  const every = s > 0 ? `about every ${s >= 5400 ? `${(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`}` : 'on a fixed block schedule';
+  return `Funding settles ${every}; shown as the rate for 8 hours and for a year (APR).`;
 }
 export const sideTag = side => { const s = String(side ?? '').toLowerCase(); return s === 'long' || s === 'short' ? `<span class="side ${s}">${s === 'long' ? 'LONG' : 'SHORT'}</span>` : '<span class="faint">—</span>'; };
 export function addr(address, account, { star = true } = {}) {
@@ -84,7 +84,7 @@ export function addr(address, account, { star = true } = {}) {
 // A " · " in the label or the note keeps to the word before it, so a wrapped line never starts with it.
 export const keepDots = html => String(html).replaceAll(' · ', '\u00a0· ');
 export function kpi({ label, value, delta = undefined, invert = false, basis = null, basisTitle = null, note = '', spark = null, tip = null, cls = '' }) {
-  return `<div class="kpi ${cls}"><div class="kpi-label">${keepDots(esc(label))}${tip ? ` <span class="info-tip" title="${esc(tip)}">i</span>` : ''}</div><div class="kpi-value">${value}</div><div class="kpi-row">${delta === undefined ? '' : `${deltaHtml(delta, invert, basisTitle)}${basis ? `<span class="kpi-basis">${esc(basis)}</span>` : ''}`}<span class="kpi-note">${keepDots(note)}</span></div>${spark ? `<div class="spark" id="${esc(spark)}"></div>` : ''}</div>`;
+  return `<div class="kpi ${cls}"><div class="kpi-label">${keepDots(esc(label))}${tip ? ` <span class="info-tip" tabindex="0" title="${esc(tip)}">i</span>` : ''}</div><div class="kpi-value">${value}</div><div class="kpi-row">${delta === undefined ? '' : `${deltaHtml(delta, invert, basisTitle)}${basis ? `<span class="kpi-basis">${esc(basis)}</span>` : ''}`}<span class="kpi-note">${keepDots(note)}</span></div>${spark ? `<div class="spark" id="${esc(spark)}"></div>` : ''}</div>`;
 }
 export const seg = (name, options, active) => `<div class="seg" role="group">${options.map(([v, label]) => `<button data-seg="${esc(name)}" data-v="${esc(v)}" class="${String(v) === String(active) ? 'on' : ''}">${esc(label)}</button>`).join('')}</div>`;
 export const tabs = (name, options, active) => `<div class="tabs" role="tablist">${options.map(([v, label]) => `<button role="tab" data-tab="${esc(name)}" data-v="${esc(v)}" class="${v === active ? 'on' : ''}">${esc(label)}</button>`).join('')}</div>`;
@@ -109,7 +109,7 @@ export function tradeAction(r) {
 export function fundingCell(f, { apr = true } = {}) {
   const rate = num(f?.rate_8h_pct);
   if (rate === null) return '<span class="faint">—</span>';
-  if (rate === 0) return '<span class="faint" title="Flat: the contract set no funding for this interval">0% · flat</span>';
+  if (rate === 0) return '<span class="faint" title="Zero rate: no funding payments this interval">0% · flat</span>';
   return `<span class="${signClass(rate, 4)}">${pct(rate, { digits: 4, sign: true })}</span>${apr ? `<div class="sub">${pct(f.apr_pct, { digits: 1, sign: true })} APR</div>` : ''}`;
 }
 export const pctCell = (v, sign = true) => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${sign ? signClass(v) : ''}">${pct(v, { sign })}</span>`);
@@ -130,7 +130,7 @@ export function table({ id, columns, rows, sortKey = null, sortDir = 'desc', row
   // one axis; single-line numbers stay right-aligned for easy comparison.
   const cells = list.map((r, i) => columns.map(c => c.render(r, i)));
   const stacked = columns.map((c, j) => Boolean(c.n) && cells.some(row => /class="sub[\s"]/.test(row[j])));
-  const align = (c, j) => (stacked[j] ? 'c' : c.n ? 'n' : '');
+  const align = (c, j) => (c.center || stacked[j] ? 'c' : c.n ? 'n' : '');
   const head = columns.map((c, j) => `<th class="${align(c, j)} ${c.sort ? 'sort' : ''} ${c.key === sortKey ? 'sorted' : ''}" ${c.sort ? `data-sort="${esc(id)}:${esc(c.key)}"` : ''}${c.tip ? ` title="${esc(c.tip)}"` : ''}>${esc(c.label)}${c.key === sortKey ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</th>`).join('');
   const body = list.map((r, i) => `<tr ${rowAttrs(r, i)}>${columns.map((c, j) => `<td class="${align(c, j)} ${c.cls ?? ''}">${cells[i][j]}</td>`).join('')}</tr>`).join('');
   return `<div class="table-wrap"><table class="t ${compact ? 'compact' : ''}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
@@ -199,4 +199,36 @@ if (!CSS.supports('animation-timeline: scroll()')) {
   window.addEventListener('resize', soon);
   new MutationObserver(soon).observe(document.getElementById('view'), { childList: true, subtree: true });
   soon();
+}
+
+// --- hover notes ------------------------------------------------------------------------
+// Every title="" on the site shows in one styled note instead of the browser's
+// plain box: on first hover the attribute moves to data-tip, so the native one
+// never opens. An (i) also opens on tap, for touch screens.
+if (typeof document !== 'undefined') {
+  const pop = Object.assign(document.createElement('div'), { className: 'tip-pop', hidden: true });
+  pop.setAttribute('role', 'tooltip');
+  document.body.append(pop);
+  let on = null, shownAt = 0;
+  const place = el => {
+    const r = el.getBoundingClientRect(), p = pop.getBoundingClientRect(), gap = 8;
+    const above = r.top - p.height - gap >= 8;
+    const left = Math.min(window.innerWidth - p.width - 8, Math.max(8, r.left + r.width / 2 - p.width / 2));
+    pop.style.transform = `translate(${Math.round(left)}px, ${Math.round(above ? r.top - p.height - gap : r.bottom + gap)}px)`;
+  };
+  const show = el => {
+    if (el.hasAttribute('title')) { el.dataset.tip = el.getAttribute('title'); el.removeAttribute('title'); }
+    if (!el.dataset.tip) return;
+    on = el; shownAt = Date.now(); pop.textContent = el.dataset.tip; pop.hidden = false; place(el);
+  };
+  const hide = () => { on = null; pop.hidden = true; };
+  const noted = t => t?.closest?.('[title]:not([title=""]), [data-tip]:not([data-tip=""])');
+  document.addEventListener('mouseover', e => { const el = noted(e.target); if (el && el !== on) show(el); else if (!el && on) hide(); });
+  document.addEventListener('mouseout', e => { if (!e.relatedTarget) hide(); });
+  document.addEventListener('focusin', e => { const el = noted(e.target); if (el) show(el); });
+  document.addEventListener('focusout', hide);
+  // A tap on (i) toggles its note (the tap's own mouseover has just opened it); a tap elsewhere closes it.
+  document.addEventListener('click', e => { const el = e.target.closest?.('.info-tip'); if (el) { if (on === el && Date.now() - shownAt > 400) hide(); else show(el); } else if (on) hide(); });
+  window.addEventListener('scroll', hide, true);
+  window.addEventListener('hashchange', hide);
 }

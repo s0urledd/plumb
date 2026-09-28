@@ -9,14 +9,14 @@ const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
 const BUCKETS = { 3600: 'Per hour', 14400: 'Per 4 hours', 86400: 'Per day', 604800: 'Per week' };
 
 export function mount(el, { query, setQuery }) {
-  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '7d';
+  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '24h';
   let market = query.get('market') ?? '';
   let alive = true, markets = [], adl = null; // { key: filters counted under, n }
   el.innerHTML = `
     <div class="page-head"><div><h1>Liquidations</h1><div class="sub">Forced closes from exchange events: liquidations on the order book and auto-deleveraging.</div></div><div id="win">${seg('window', WINDOWS, w)}</div></div>
     <div class="stack"><div class="kpis k4" id="kpis"></div>
-      <section class="panel lq-chart"><div class="panel-head"><div><h2>Liquidated notional <span class="info-tip" title="Notional closed by liquidations in each period, by market, with the running total on the right axis. ADL and force closes are not included; the feed below lists them too.">i</span></h2><div class="desc" id="chart-desc"></div></div><div class="head-right"><div class="legend dots" id="legend"></div>${chartTools('chart', 'liquidations')}</div></div><div class="panel-body"><div class="chart" id="chart">${skChart()}</div></div></section>
-      <section class="panel"><div class="panel-head"><h2>Feed</h2><div class="lq-feed-ctl"><span class="meta" id="feed-meta"></span><select id="mf" class="btn ghost" aria-label="Market filter"><option value="">All markets</option></select><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div><div class="panel-body flush" id="feed">${skeleton(10)}</div></section></div>`;
+      <section class="panel lq-chart"><div class="panel-head"><div><h2>Liquidated notional <span class="info-tip" title="Notional liquidated per period, by market, with the running total as a line. Excludes ADL and force closes.">i</span></h2><div class="desc" id="chart-desc"></div></div><div class="head-right"><div class="legend dots" id="legend"></div>${chartTools('chart', 'liquidations')}</div></div><div class="panel-body"><div class="chart" id="chart">${skChart()}</div></div></section>
+      <section class="panel"><div class="panel-head"><h2>Feed</h2><div class="lq-feed-ctl"><span class="meta" id="feed-meta" title="Includes ADL and force closes, so it can exceed the liquidation count above."></span><select id="mf" class="btn ghost" aria-label="Market filter"><option value="">All markets</option></select><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div><div class="panel-body flush" id="feed">${skeleton(10)}</div></section></div>`;
   const $ = s => el.querySelector(`#${s}`);
   // The feed pages through every event of the window, newest first, fifty at a time.
   const PAGE = 50;
@@ -42,7 +42,7 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: `Liquidated · ${wl}${row ? ` · ${row.symbol}` : ''}`, value: usd(liquidated), delta: row || w === 'all' || p.meta.previous_complete === false ? undefined : h.liquidated.change_pct, basis: 'vs prev', basisTitle: `Compared with the previous ${wl}`, invert: true, note: `${int(count)} ${num(count) === 1 ? 'liquidation' : 'liquidations'}` }),
       // With no volume there is no share to take: the note says why.
       kpi({ label: 'Share of volume', value: num(volume) ? `${(num(liquidated) / num(volume) * 100).toFixed(2)}%` : '—', note: num(volume) ? `of ${usd(volume)} traded` : `no trades in ${wl}` }),
-      kpi({ label: 'ADL, force closes', value: int(adl.n), note: 'closed by the protocol', tip: 'PositionDeleveraged events: auto-deleveraging against a bankrupt position, or a force close at the mark price (flagged on the event).' }),
+      kpi({ label: 'ADL, force closes', value: int(adl.n), note: 'closed by the protocol', tip: 'Closes forced by the protocol, full or partial: auto-deleveraging against a bankrupt position, or a force close at the mark price.' }),
       kpi({ label: `Largest · ${wl}`, value: largest ? usd(largest.notional) : '—', note: largest ? `${esc(largest.symbol)} ${esc(largest.side ?? '')} · ${ago(largest.ts)}` : 'none in this window' })
     ].join('');
     const node = $('chart'); node.innerHTML = '';
@@ -69,7 +69,6 @@ export function mount(el, { query, setQuery }) {
     // count above. A redraw under filters not yet loaded leaves the count out.
     const n = adl?.key === filters() ? adl.n : null;
     $('feed-meta').textContent = `${int(total)} events${n ? ` · incl. ${int(n)} ADL and force close${n === 1 ? '' : 's'}` : ''} · ${w === 'all' ? 'all-time' : w}`;
-    $('feed-meta').title = 'Liquidations plus ADL and force closes; the liquidation count above counts liquidations only.';
     const first = total ? page * PAGE + 1 : 0, last = page * PAGE + rows.length;
     const pager = pages > 1 ? `<div class="panel-foot pager"><span>${int(first)}–${int(last)} of ${int(total)}</span><span class="pager-ctl"><button class="btn ghost sm" data-action="prev" ${page === 0 ? 'disabled' : ''}>← Prev</button><span class="num">Page ${int(page + 1)} of ${int(pages)}</span><button class="btn ghost sm" data-action="next" ${page + 1 >= pages ? 'disabled' : ''}>Next →</button></span></div>` : '';
     $('feed').innerHTML = table({ id: 'liq', columns: [
@@ -99,8 +98,8 @@ export function mount(el, { query, setQuery }) {
   load().catch(error => { $('feed').innerHTML = empty(error.message); });
   return {
     onAction(a) { if (a === 'prev' && page > 0) goTo(page - 1).catch(() => {}); if (a === 'next') goTo(page + 1).catch(() => {}); },
-    onSeg(name, v) { if (name === 'window') setQuery({ window: v === '7d' ? null : v }); },
-    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '7d'; market = q.get('market') ?? ''; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); },
+    onSeg(name, v) { if (name === 'window') setQuery({ window: v === '24h' ? null : v }); },
+    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; market = q.get('market') ?? ''; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); },
     destroy() { alive = false; off(); }
   };
 }

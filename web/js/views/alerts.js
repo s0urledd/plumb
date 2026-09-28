@@ -48,7 +48,7 @@ export function mount(el, { navigate }) {
     const rows = await Promise.all(list.map(w => get(`wallets/${encodeURIComponent(w.key)}`, { maxAge: 10000 }).then(d => ({ key: w.key, added: w.added, d })).catch(() => ({ key: w.key, added: w.added, d: null }))));
     if (!alive) return;
     $('list').innerHTML = table({ id: 'watch', columns: [
-      { key: 'a', label: 'Wallet', render: r => `<span class="addr"><a class="mono" href="#/wallet/${esc(r.d?.account.address ?? r.key)}">${esc(short(r.d?.account.address ?? r.key))}</a><button class="icon-btn on" data-watch="${esc(r.key)}" title="Remove">${ICON.star}</button></span>` },
+      { key: 'a', label: 'Wallet', render: r => `<span class="addr"><a class="mono" href="#/wallet/${esc(r.d?.account.address ?? r.key)}">${esc(short(r.d?.account.address ?? r.key))}</a><button class="icon-btn on" data-watch="${esc(r.key)}" title="Remove from watchlist">${ICON.star}</button></span>` },
       { key: 'v', label: 'Account value', n: true, render: r => usd(r.d?.portfolio?.account_value) },
       { key: 'o', label: 'Open positions', n: true, render: r => int(r.d ? r.d.positions?.length ?? 0 : null) }, // a wallet that failed to load: unknown, not none
       { key: 'c', label: 'Closest liq.', n: true, render: r => { const d = r.d?.portfolio?.closest_liquidation?.distance_pct ?? null; return d === null ? '<span class="faint">—</span>' : `<span class="${d < 5 ? 'neg' : d < 15 ? 'warn-text' : 'muted'}">${d.toFixed(1)}% away</span>`; } },

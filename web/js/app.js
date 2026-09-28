@@ -113,19 +113,20 @@ document.addEventListener('keydown', e => { if (e.key === '/' && !['INPUT', 'TEX
 // --- live status + banner -----------------------------------------------------------------
 const live = document.getElementById('live'), liveText = document.getElementById('live-text'), banner = document.getElementById('banner');
 let lastBlock = null, lastBlockAt = 0, streamOpen = true;
+live.querySelector('.dot').insertAdjacentHTML('afterend', `<span class="live-ico">${ICON.cube}</span>`);
 function setLive(state, text) { live.className = `live ${state}`; liveText.textContent = text; }
-// The pill shows the latest finalized block and how old it is. A stream that
-// drops and reconnects within a few seconds (a deploy, a proxy hiccup) keeps
-// the pill steady; it warns only when blocks actually stop arriving.
+// The pill shows the latest finalized block. A stream that drops and
+// reconnects within a few seconds (a deploy, a proxy hiccup) keeps the pill
+// steady; it warns only when blocks actually stop arriving.
 const RECONNECT_GRACE_MS = 4000, DELAYED_MS = 15000;
 function renderLive() {
   if (!lastBlock) return;
-  const since = Date.now() - lastBlockAt;
-  if (!streamOpen && since > RECONNECT_GRACE_MS) { setLive('warn', 'Reconnecting…'); return; }
-  const age = lastBlock.ts ? Math.max(0, Math.round(Date.now() / 1000 - Number(lastBlock.ts))) : null;
-  const delayed = since > DELAYED_MS;
-  setLive(delayed ? 'warn' : 'ok', `${delayed ? 'Delayed' : 'Block'} · #${int(lastBlock.block)}${age === null ? '' : ` · ${age < 60 ? `${age}s` : `${Math.floor(age / 60)}m`}`}`);
-  live.title = age === null ? 'Latest finalized block' : `Latest finalized block, ${age}s old`;
+  const since = Date.now() - lastBlockAt, lost = !streamOpen && since > RECONNECT_GRACE_MS, delayed = since > DELAYED_MS;
+  if (lost) setLive('warn', 'Reconnecting…'); else setLive(delayed ? 'warn' : 'ok', `${delayed ? 'Delayed · ' : ''}#${int(lastBlock.block)}`);
+  // Once hovered, the note lives in data-tip (ui.js): update it there, so the
+  // browser's own tooltip is not brought back every second.
+  const note = lost ? 'Live connection lost; reconnecting' : delayed ? `No new block for over ${DELAYED_MS / 1000} seconds` : 'Latest finalized block indexed';
+  if (live.dataset.tip) live.dataset.tip = note; else live.title = note;
 }
 stream.on('block', b => { lastBlock = b; lastBlockAt = Date.now(); renderLive(); });
 stream.on('status', s => { streamOpen = s === 'open'; renderLive(); });
@@ -148,7 +149,6 @@ function renderTicker(markets) {
   const ch = Number(m.change_pct);
   ticker.hidden = false;
   ticker.href = `#/markets/${m.id}`;
-  ticker.title = 'MON mark price on Perpl · change over 24 hours';
   ticker.innerHTML = `${logo(m.id, 'MON', 16)}<span class="tp">$${esc(price(p))}</span>${Number.isFinite(ch) ? `<span class="${signClass(ch) || 'faint'}">${pct(ch, { sign: true })}</span>` : ''}`;
 }
 stream.on('protocol', p => renderTicker(p.markets));
@@ -158,7 +158,7 @@ async function poll() {
     const h = await get('health', { maxAge: 0 });
     showBanner(h.index?.backfill);
     setAlertsBot(h.alerts?.bot);
-    if (!lastBlockAt && h.index?.live?.to) setLive('ok', `Block · #${int(h.index.live.to)}`);
+    if (!lastBlockAt && h.index?.live?.to) setLive('ok', `#${int(h.index.live.to)}`);
   } catch { setLive('bad', 'Offline'); }
 }
 poll(); setInterval(poll, 30000);

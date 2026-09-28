@@ -91,6 +91,9 @@ button, input, select { font: inherit; color: inherit; }
 .ticker:hover { border-color: var(--line-2); color: inherit; }
 .live { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text-2); flex: none; font-variant-numeric: tabular-nums; }
 .live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.live-ico { display: inline-flex; color: var(--text-2); margin-right: -3px; }
+.live-ico svg { width: 14px; height: 14px; }
+#live-text, .ticker > span { position: relative; top: 1px; }
 .live.ok .dot { background: var(--long); box-shadow: 0 0 0 0 rgba(129, 199, 132, 0.6); animation: pulse 2s infinite; }
 .live.warn .dot { background: var(--warn); }
 .live.bad .dot { background: var(--short); }
@@ -209,7 +212,7 @@ button, input, select { font: inherit; color: inherit; }
 .kpi:not(:has(.spark)) { padding-bottom: 16px; }
 /* Labels and notes wrap rather than cut; the info tip follows the label's last word. */
 .kpi-label { color: var(--text-2); font-size: 13px; line-height: 18px; text-wrap: balance; }
-.kpi-label .info-tip { margin-left: 2px; vertical-align: -1px; }
+.kpi-label .info-tip { margin-left: 2px; vertical-align: 0.12em; }
 .kpi-value { font-size: 28px; font-weight: 400; letter-spacing: -0.03em; margin-top: 8px; white-space: nowrap; line-height: 1.1; }
 .kpi-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin-top: 6px; min-height: 18px; font-size: 12px; }
 .kpi-note { color: var(--text-3); font-size: 12px; flex-basis: 100%; min-width: 0; text-wrap: balance; }
@@ -220,7 +223,11 @@ button, input, select { font: inherit; color: inherit; }
 .delta.up { color: var(--long); }
 .delta.down { color: var(--short); }
 .delta.flat { color: var(--text-3); }
-.info-tip { display: inline-flex; flex: none; width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--text-3); color: var(--text-3); font-size: 9px; align-items: center; justify-content: center; cursor: help; }
+.info-tip { display: inline-flex; flex: none; width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--text-3); color: var(--text-3); font-size: 9px; align-items: center; justify-content: center; cursor: help; transition: color 0.12s, background 0.12s, border-color 0.12s; outline: none; }
+.info-tip:hover, .info-tip:focus-visible { color: #fff; background: var(--accent-strong); border-color: var(--accent-strong); }
+/* The one hover note (ui.js): a framed card, short text. */
+.tip-pop { position: fixed; left: 0; top: 0; z-index: 60; max-width: 280px; padding: 8px 11px; background: #1c1b20; border: 1px solid rgba(162, 164, 255, 0.24); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); color: var(--text); font-size: 12px; line-height: 1.5; font-weight: 400; letter-spacing: 0; text-align: left; white-space: normal; pointer-events: none; }
+.tip-pop[hidden] { display: none; }
 
 /* ---------- tables ---------- */
 .table-wrap { overflow-x: auto; }
@@ -264,6 +271,9 @@ tr.hl td { background: rgba(162, 164, 255, 0.07); }
 .t.compact .cell-bar .track { top: 29px; }
 .cell-bar .track { position: absolute; right: 12px; top: 33px; width: 64px; height: 2px; background: rgba(255, 255, 255, 0.07); border-radius: 1px; overflow: hidden; }
 .cell-bar .track > i { position: absolute; right: 0; top: 0; bottom: 0; background: var(--accent); opacity: 0.8; }
+td.c.cell-bar .track { right: auto; left: 50%; transform: translateX(-50%); }
+.ls-table .t th.c { width: 34%; }
+.ls-table .t th:last-child { width: 33%; }
 
 /* ---------- small components ---------- */
 .mkt { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
@@ -540,8 +550,6 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 
 /* A trend chart on a window of its own: one click back to the page window. */
 .trend-win { display: inline-flex; align-items: center; gap: 6px; }
-.trend-reset { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 11.5px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
-.trend-reset:hover { background: var(--accent-soft); }
 
 /* ========== page: markets (market.js, markets.js) ========== */
 /* markets rules */
@@ -618,9 +626,10 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 /* Leaderboard head: filter and CSV together; on phones the filter takes the row. */
 .lb-tools { display: flex; align-items: center; gap: 10px; }
 .lb-ctl { min-height: 0; padding-top: 0; flex-wrap: wrap; gap: 10px; }
-.lb-ctl #by { max-width: 100%; min-width: 0; }
-/* Every ranking in view: the switch wraps instead of scrolling out of sight. */
-.lb-ctl .seg { flex-wrap: wrap; }
+.lb-ctl #by { flex: 1 1 100%; max-width: 100%; min-width: 0; }
+/* Every ranking in view, spread over the card's width; the switch wraps instead of scrolling out of sight. */
+.lb-ctl .seg { display: flex; width: 100%; flex-wrap: wrap; }
+.lb-ctl .seg button { flex: 1 1 auto; }
 #board { scroll-margin-top: 72px; }
 @media (max-width: 860px) { #board { scroll-margin-top: 112px; } }
 @media (max-width: 640px) {
