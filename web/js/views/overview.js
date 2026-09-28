@@ -2,7 +2,7 @@
 // next to the live tape, the markets table, a grid of trend charts and the
 // latest liquidations and flows.
 import { get, stream } from '../api.js';
-import { usd, compact, int, price, pct, num, esc, signClass, timeOnly, ago, duration } from '../format.js';
+import { usd, compact, int, price, pct, share, num, esc, signClass, timeOnly, ago, duration } from '../format.js';
 import { kpi, keepDots, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, chartTools, skeleton, skChart, empty, assignColors, colorOf, hasColor, logo, ICON, OTHER_HEX, SLOT_HEX, mergeByAsset } from '../ui.js';
 import { sparkline, stackedBars, lineChart, signedBars, twoSided, toggleSeries, COLORS, CUMULATIVE } from '../charts.js';
 
@@ -63,7 +63,7 @@ export function mount(el, { query, setQuery }) {
         ${panel('traders', 'Active traders', 'Distinct accounts trading per period: returning, and first-time (first trade ever)')}
         ${panel('fees', 'Fees', 'Gross fees on fills; the contract splits them only on trades that open or add', `<div id="fees-mode">${segSm('feesv', FEE_VIEWS, feeView)}</div>`)}
         ${panel('liq', 'Liquidations', 'Liquidated notional by market')}
-        ${panel('tpnl', 'Trader PnL', 'Realized PnL of all traders per period (price PnL + funding, before fees)')}
+        ${panel('tpnl', 'Trader PnL', 'Realized PnL of all traders per period (price PnL + funding, before fees). After fees: less the trading fees and the liquidation fees taken from liquidated margin, as on the Traders page.')}
         ${panel('taker', 'Taker flow', 'Aggressive buys up, sells down; line: net per period')}
       </div>
       <div class="section-label">Activity</div>
@@ -126,7 +126,7 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: 'TVL', value: usd(c?.tvl), delta: seriesChange('tvl'), ...within, note: `${usd(h.net_flow.value, { sign: true })} net flow · ${wl}`, spark: 'sp-tvl', tip: 'Collateral held by the exchange contract, read from chain state.' }),
       kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.take_rate_bps === null || h.take_rate_bps === undefined ? '' : `${num(h.take_rate_bps).toFixed(2)} bps of volume`, spark: 'sp-fees', tip: `Fees charged on fills, gross. On trades that open or add to a position the contract emits the split: ${usd(h.protocol_fees.value)} protocol share (of which ${usd(h.builder_fees)} to order builders) and ${usd(h.insurance_fees.value)} to the insurance fund. Trades that reduce or close carry no split in their events: ${usd(unsplit(h))} in ${wl}. Rebates and referral shares are paid outside fills and are not deducted.` }),
       kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr', tip: 'Accounts that traded in the window. New accounts: accounts created in the window, some of which have not traded yet.' }),
-      kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq' })
+      kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq', tip: 'Notional of the positions closed by liquidations in the window. Auto-deleveraging and force closes are not included; the Liquidations page lists them.' })
     ].join('');
     spark('sp-vol', pts.map(p => num(p.volume)));
     spark('sp-oi', pts.map(p => num(p.open_interest)));
@@ -194,8 +194,9 @@ export function mount(el, { query, setQuery }) {
     const win = pw[id], sr = d.s, pts = sr.points, times = sr.times, b = sr.meta.bucket_seconds, h = d.p.headline, c = d.p.current;
     // Charts are redrawn in place on the minute refresh (their marks move, not regrow);
     // a window switch starts from a skeleton (onSeg).
-    // Open interest and TVL: axes start at zero, so a 1% move looks like one; the change over the window is in the header.
-    const moved = field => { const x = seriesChange(field, sr, win); if (x === undefined) return win === 'all' ? 'now' : ''; const d = Math.abs(Number(x.toFixed(1))) < 10 ? 1 : 0; return `<span class="${signClass(x, d) || 'faint'}">${pct(x, { digits: d, sign: true })}</span> over ${win}`; };
+    // Open interest and TVL: axes start at zero, so a 1% move looks like one; the change
+    // over the window is in the header, at the KPI's precision (one decimal, none from 100%).
+    const moved = field => { const x = seriesChange(field, sr, win); if (x === undefined) return win === 'all' ? 'now' : ''; return `<span class="${signClass(x, 1) || 'faint'}">${pct(x, { digits: 1, sign: true })}</span> over ${win}`; };
     const cumulative = sr.meta.cumulative_complete;
     switch (id) {
       case 'oi':
@@ -262,7 +263,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'mark', label: 'Price', n: true, sort: r => num(r.mark ?? r.close), render: r => price(r.mark ?? r.close) },
     { key: 'change_pct', label: w === 'all' ? 'Change' : `${w} change`, n: true, sort: r => num(r.change_pct) ?? -1e9, render: r => pctCell(r.change_pct) },
     { key: 'volume', label: 'Volume', n: true, cls: 'cell-bar', sort: r => num(r.volume), render: r => `${usd(r.volume)}<span class="track"><i style="width:${Math.max(2, Math.min(100, r.share_pct ?? 0))}%"></i></span>` },
-    { key: 'share_pct', label: 'Share', n: true, sort: r => r.share_pct ?? 0, render: r => `<span class="muted">${pct(r.share_pct, { digits: 1 })}</span>` },
+    { key: 'share_pct', label: 'Share', n: true, sort: r => r.share_pct ?? 0, render: r => `<span class="muted">${share(r.share_pct)}</span>` },
     { key: 'open_interest', label: 'Open interest', n: true, sort: r => num(r.open_interest) ?? 0, render: r => usd(r.open_interest) },
     { key: 'funding', label: 'Funding 8h', tip: fundingTip(data?.markets?.find(m => m.funding?.interval_seconds)?.funding.interval_seconds), n: true, sort: r => r.funding?.rate_8h_pct ?? 0, render: r => fundingCell(r.funding) },
     { key: 'ls', label: 'Long / short positions', sort: r => r.long_position_share_pct ?? 0, render: r => ratio(r.long_positions, r.short_positions) },
@@ -368,9 +369,10 @@ export function mount(el, { query, setQuery }) {
     ], rows: l.chain.venues, rowAttrs: r => (r.self ? 'class="hl"' : '') });
   }
 
-  // Live: finalized trades stream in; proposed ones appear first, dimmed.
+  // Live: finalized trades stream in; proposed ones appear first, dimmed. A batch
+  // arrives in block order (oldest first), so each row goes on top in turn.
   off.push(stream.on('trades', rows => {
-    for (const r of rows.slice().reverse()) { const i = tape.findIndex(x => x.proposed && x.tx === r.tx); if (i >= 0) tape.splice(i, 1); tape.unshift({ ...r, fresh: true }); }
+    for (const r of rows) { const i = tape.findIndex(x => x.proposed && x.tx === r.tx); if (i >= 0) tape.splice(i, 1); tape.unshift({ ...r, fresh: true }); }
     tape.length = Math.min(tape.length, 400); renderTape();
   }));
   // A proposed trade still unmatched 10 finalized blocks later never finalized.
