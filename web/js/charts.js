@@ -5,7 +5,7 @@ import { usd, compact, dateTime, date, num, esc } from './format.js';
 
 const T = {
   text: 'rgba(224,225,255,0.70)', faint: 'rgba(255,255,255,0.42)', grid: 'rgba(255,255,255,0.05)', axis: 'rgba(255,255,255,0.10)',
-  accent: '#a2a4ff', long: '#81c784', short: '#f65a6e', tooltip: '#24222a', border: 'rgba(255,255,255,0.12)', font: 'Geist, ui-sans-serif, system-ui, sans-serif'
+  accent: '#a2a4ff', long: '#81c784', short: '#f65a6e', tooltip: '#1c1b20', border: 'rgba(255,255,255,0.10)', surface: '#121113', font: 'Geist, ui-sans-serif, system-ui, sans-serif'
 };
 export const COLORS = T;
 const registry = new Set();
@@ -45,7 +45,7 @@ export function chartCsv(el) {
   const lines = [['time_utc', ...cols.map(c => c.name)], ...times.map((t, i) => [iso(t), ...cols.map(c => { const v = c.at(i); return v === '-' || v === null || v === undefined ? '' : v; })])];
   return lines.map(r => r.map(csvCell).join(',')).join('\n');
 }
-export const chartPng = el => el?.__chart?.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#0e0d10' }) ?? null;
+export const chartPng = el => el?.__chart?.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: T.surface }) ?? null;
 
 // Shows or hides one series (legend chips outside the canvas drive this).
 export function toggleSeries(el, name) { el?.__chart?.dispatchAction({ type: 'legendToggleSelect', name }); }
@@ -54,11 +54,11 @@ export function disposeAll() { for (const c of registry) { try { observer?.unobs
 const base = () => ({
   animation: true, animationDuration: 300, animationDurationUpdate: 250,
   textStyle: { fontFamily: T.font, color: T.text, fontSize: 11 },
-  grid: { left: 8, right: 12, top: 14, bottom: 6, containLabel: true },
+  grid: { left: 4, right: 8, top: 12, bottom: 4, containLabel: true },
   tooltip: {
     trigger: 'axis', backgroundColor: T.tooltip, borderColor: T.border, borderWidth: 1, padding: [8, 10], textStyle: { color: '#fff', fontSize: 12, fontFamily: T.font },
     axisPointer: { type: 'line', lineStyle: { color: 'rgba(162,164,255,0.35)', width: 1 }, shadowStyle: { color: 'rgba(162,164,255,0.06)' } },
-    extraCssText: 'box-shadow:0 10px 30px rgba(0,0,0,.5);border-radius:6px;'
+    extraCssText: 'box-shadow:0 12px 32px rgba(0,0,0,.55);border-radius:8px;'
   }
 });
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -69,16 +69,27 @@ export function timeLabel(v, bucketSeconds) {
   if (bucketSeconds >= 86400 || (d.getUTCHours() === 0 && d.getUTCMinutes() === 0)) return day;
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 }
-const timeAxis = (times, bucketSeconds) => ({
-  type: 'category', data: times, boundaryGap: true,
-  axisLine: { lineStyle: { color: T.axis } }, axisTick: { show: false },
-  axisLabel: { color: T.faint, hideOverlap: true, formatter: v => timeLabel(v, bucketSeconds), margin: 10 }
-});
+// Days are named in white, hours stay faint. Over more than two days of
+// sub-day buckets only the midnights are labelled, so each day is named once.
+const midnight = v => Number(v) % 86400 === 0;
+const timeAxis = (times, bucketSeconds) => {
+  const multiDay = bucketSeconds < 86400 && times.length > 1 && Number(times.at(-1)) - Number(times[0]) > 2 * 86400;
+  return {
+    type: 'category', data: times, boundaryGap: true,
+    axisLine: { show: false }, axisTick: { show: false },
+    axisLabel: {
+      color: T.faint, hideOverlap: true, margin: 12, fontSize: 10.5,
+      ...(multiDay ? { interval: (i, v) => midnight(v) } : {}),
+      formatter: v => { const t = timeLabel(v, bucketSeconds); return bucketSeconds < 86400 && midnight(v) ? `{d|${t}}` : t; },
+      rich: { d: { color: 'rgba(255,255,255,0.78)', fontWeight: 500, fontSize: 10.5 } }
+    }
+  };
+};
 // 1, 2, 2.5 or 5 times a power of ten, at or above v.
 const niceCeil = v => { const p = 10 ** Math.floor(Math.log10(v)); return [1, 2, 2.5, 5, 10].map(k => k * p).find(x => x >= v); };
 // Axis money: $1.5M, $900K, $0.
 export const usdAxis = v => { const n = Number(v); if (!n) return '$0'; const a = Math.abs(n); const [k, u] = a >= 1e9 ? [1e9, 'B'] : a >= 1e6 ? [1e6, 'M'] : a >= 1e3 ? [1e3, 'K'] : [1, '']; const x = a / k; return `${n < 0 ? '-' : ''}$${x >= 100 || Number.isInteger(x) ? Math.round(x) : x.toFixed(1).replace(/\.0$/, '')}${u}`; };
-const valueAxis = fmt => ({ type: 'value', splitNumber: 4, axisLabel: { color: T.faint, formatter: fmt, margin: 10 }, splitLine: { lineStyle: { color: T.grid } }, axisLine: { show: false }, axisTick: { show: false } });
+const valueAxis = fmt => ({ type: 'value', splitNumber: 3, axisLabel: { color: T.faint, formatter: fmt, margin: 10, fontSize: 10.5 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.045)', type: [3, 4] } }, axisLine: { show: false }, axisTick: { show: false } });
 const row = (color, name, value) => `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7"><span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:7px"></span>${esc(name)}</span><b style="font-weight:500;font-variant-numeric:tabular-nums">${value}</b></div>`;
 // The last bucket while its period is still running: its bar is drawn faded
 // and its tooltip says so, so a half-filled hour does not read as a drop.
@@ -109,9 +120,9 @@ export function sparkline(el, values, { color = T.accent, area = true } = {}) {
   const chart = init(el);
   if (!chart) return;
   chart.setOption({
-    animation: false, grid: { left: 0, right: 0, top: 2, bottom: 2 },
+    animation: false, grid: { left: 0, right: 0, top: 2, bottom: 0 },
     xAxis: { type: 'category', show: false, data: values.map((_, i) => i) }, yAxis: { type: 'value', show: false, scale: true },
-    series: [{ type: 'line', data: values, symbol: 'none', smooth: 0.25, lineStyle: { color, width: 1.5 }, areaStyle: area ? { color: new window.echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color + '4d' }, { offset: 1, color: color + '05' }]) } : undefined }]
+    series: [{ type: 'line', data: values, symbol: 'none', smooth: 0.35, lineStyle: { color, width: 1.5 }, areaStyle: area ? { color: new window.echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color + '59' }, { offset: 1, color: color + '00' }]) } : undefined }]
   }, true);
 }
 
@@ -142,8 +153,8 @@ export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { total: true, exclude: CUMULATIVE, partial }) },
     dataZoom: zoom ? zoomOptions() : undefined,
     series: [
-      ...series.map((s, i) => ({ name: s.name, type: 'bar', stack: 'a', data: fade(s.data, partial), itemStyle: { color: s.color, borderRadius: i === series.length - 1 ? [2, 2, 0, 0] : 0, borderColor: '#0e0d10', borderWidth: series.length > 1 ? 0.5 : 0 }, barMaxWidth: 22, emphasis: { focus: 'series' } })),
-      ...(cumulative ? [{ name: CUMULATIVE, type: 'line', yAxisIndex: 1, data: total, symbol: 'none', smooth: 0.2, lineStyle: { color: 'rgba(255,255,255,0.75)', width: 1.5 }, itemStyle: { color: '#ffffff' }, z: 5 }] : [])
+      ...series.map((s, i) => ({ name: s.name, type: 'bar', stack: 'a', data: fade(s.data, partial), itemStyle: { color: s.color, borderRadius: i === series.length - 1 ? [3, 3, 0, 0] : 0, borderColor: T.surface, borderWidth: series.length > 1 ? 0.5 : 0 }, barMaxWidth: 20, barCategoryGap: '30%', emphasis: { focus: 'series' } })),
+      ...(cumulative ? [{ name: CUMULATIVE, type: 'line', yAxisIndex: 1, data: total, symbol: 'none', smooth: 0.2, lineStyle: { color: 'rgba(255,255,255,0.8)', width: 1.5 }, itemStyle: { color: '#ffffff' }, z: 5 }] : [])
     ]
   }, true);
 }
@@ -167,7 +178,7 @@ export function lineChart(el, { times, series, bucketSeconds, fmt = v => usd(v),
   chart.setOption({
     ...base(), grid: { ...base().grid, right: 22 }, xAxis: { ...timeAxis(times, bucketSeconds), boundaryGap: false }, yAxis: { ...valueAxis(yFmt), scale },
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds) },
-    series: series.map(s => ({ name: s.name, type: 'line', data: s.data, symbol: 'none', smooth: 0.2, connectNulls: true, lineStyle: { color: s.color, width: 2 }, itemStyle: { color: s.color }, areaStyle: area && series.length === 1 ? { color: new window.echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: s.color + '4d' }, { offset: 1, color: s.color + '05' }]) } : undefined }))
+    series: series.map(s => ({ name: s.name, type: 'line', data: s.data, symbol: 'none', smooth: 0.3, connectNulls: true, lineStyle: { color: s.color, width: 1.75 }, itemStyle: { color: s.color }, areaStyle: area && series.length === 1 ? { color: new window.echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: s.color + '47' }, { offset: 1, color: s.color + '00' }]) } : undefined }))
   }, true);
 }
 
@@ -226,7 +237,7 @@ export function divergingHeatmap(el, { times, rows, bucketSeconds, clamp, fmt = 
     xAxis: { ...timeAxis(times, bucketSeconds), splitArea: { show: false } },
     yAxis: { type: 'category', data: rows.map(r => r.name), inverse: true, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: T.text, margin: 10 } },
     visualMap: { type: 'continuous', min: -clamp, max: clamp, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, itemWidth: 10, itemHeight: 180, text: labels, textGap: 8, textStyle: { color: T.faint, fontSize: 11 }, inRange: { color: [DIVERGING.neg, DIVERGING.mid, DIVERGING.pos] } },
-    series: [{ type: 'heatmap', data, itemStyle: { borderColor: '#0e0d10', borderWidth: 2, borderRadius: 2 }, emphasis: { itemStyle: { borderColor: 'rgba(255,255,255,0.6)', borderWidth: 1 } } }]
+    series: [{ type: 'heatmap', data, itemStyle: { borderColor: T.surface, borderWidth: 2, borderRadius: 2 }, emphasis: { itemStyle: { borderColor: 'rgba(255,255,255,0.6)', borderWidth: 1 } } }]
   }, true);
 }
 

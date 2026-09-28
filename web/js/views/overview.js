@@ -27,7 +27,7 @@ export function mount(el, { query, setQuery }) {
   const pw = Object.fromEntries(TRENDS.map(id => [id, w]));
   const custom = new Set(); // charts set to a window of their own; the rest follow the page
   const winCtl = id => `${segSm(`tw:${id}`, WINDOWS, pw[id])}${custom.has(id) ? `<button class="trend-reset" data-action="treset" data-v="${id}" title="Follow the page window again">↺ ${w === 'all' ? 'All' : w.toUpperCase()}</button>` : ''}`;
-  const panel = (id, title, desc, extra = '') => `<section class="panel trend"><div class="panel-head"><div class="trend-id"><h2>${title}</h2><div class="desc">${desc}</div>${extra}</div><div class="trend-side"><div class="trend-ctl">${chartTools(id, id)}<span id="${id}-win" class="trend-win">${winCtl(id)}</span></div><div class="head-value" id="${id}-v"></div></div></div><div class="panel-body"><div class="chart sm" id="${id}">${skChart()}</div></div></section>`;
+  const panel = (id, title, desc, extra = '') => `<section class="panel trend"><div class="panel-head"><div class="trend-id"><h2>${title} <span class="info-tip" title="${esc(desc)}">i</span></h2><div class="head-value" id="${id}-v"></div>${extra}</div><div class="trend-side"><div class="trend-ctl">${chartTools(id, id)}<span id="${id}-win" class="trend-win">${winCtl(id)}</span></div><div class="legend dots" id="${id}-lg"></div></div></div><div class="panel-body"><div class="chart sm" id="${id}">${skChart()}</div></div></section>`;
 
   el.innerHTML = `
     <div class="page-head hero">
@@ -162,6 +162,9 @@ export function mount(el, { query, setQuery }) {
     const p = backfill && !backfill.complete && backfill.pct < 100 ? ` Indexing is ${Math.floor(backfill.pct)}% done${backfill.eta_s ? `, about ${duration(backfill.eta_s)} left` : ''}.` : '';
     return `A running sum over every event since launch, drawn once history indexing completes.${p}`;
   }
+  // A dot and a name per series, above the chart on the right.
+  const legendOf = (id, list) => { const n = $(`${id}-lg`); if (n) n.innerHTML = list.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join(''); };
+  const NET = { color: '#ffffff' };
   function headValue(id, value, note = '') { const n = $(`${id}-v`); if (n) n.innerHTML = `<div class="hv">${value}</div>${note ? `<div class="hn">${note}</div>` : ''}`; }
   // Fees per period by type (protocol revenue, insurance fund) or by market.
   const unsplit = x => Math.max(0, (num(x.fees?.value ?? x.fees) ?? 0) - (num(x.protocol_fees?.value ?? x.protocol_fees) ?? 0) - (num(x.insurance_fees?.value ?? x.insurance_fees) ?? 0));
@@ -170,6 +173,7 @@ export function mount(el, { query, setQuery }) {
     const sr = d.s, pts = sr.points, times = sr.times, b = sr.meta.bucket_seconds;
     node.innerHTML = '';
     const list = feeView === 'market' ? byMarket('fees', sr) : [{ name: 'Protocol', color: SLOT_HEX[0], data: pts.map(p => num(p.protocol_fees)) }, { name: 'Insurance fund', color: SLOT_HEX[2], data: pts.map(p => num(p.insurance_fees)) }, { name: 'Reducing trades (no split)', color: OTHER_HEX, data: pts.map(unsplit) }].filter(x => x.data.some(v => v > 0));
+    legendOf('fees', list);
     if (list.length) stackedBars(node, { times, series: list, bucketSeconds: b }); else node.innerHTML = empty('No fees in this window');
   }
   // Each trend panel: its window's totals (header) and series (chart).
@@ -201,6 +205,7 @@ export function mount(el, { query, setQuery }) {
         break;
       case 'flows':
         headValue('flows', `<span class="${num(h.net_flow.value) >= 0 ? 'pos' : 'neg'}">${usd(h.net_flow.value, { sign: true })}</span>`, `${usd(h.deposits.value)} in · ${usd(h.withdrawals.value)} out · ${winLabel(win)}`);
+        legendOf('flows', [{ name: 'Deposits', color: COLORS.long }, { name: 'Withdrawals', color: COLORS.short }, { name: 'Net', ...NET }]);
         twoSided(node, { times, bucketSeconds: b, up: { name: 'Deposits', data: pts.map(p => p.deposits) }, down: { name: 'Withdrawals', data: pts.map(p => p.withdrawals) }, net: 'Net deposits' });
         break;
       case 'traders':
@@ -213,6 +218,7 @@ export function mount(el, { query, setQuery }) {
             { name: 'Returning traders', color: COLORS.accent, data: pts.map(p => Math.max(0, (p.traders ?? 0) - (p.new_traders ?? 0))) },
             { name: 'First-time traders', color: SLOT_HEX[2], data: pts.map(p => p.new_traders ?? 0) }
           ] : [{ name: 'Active traders', color: COLORS.accent, data: pts.map(p => p.traders ?? 0) }];
+          legendOf('traders', split.length > 1 ? split : []);
           stackedBars(node, { times, series: split, bucketSeconds: b, fmt: v => int(v), yFmt: v => (Math.abs(v) >= 1000 ? compact(v, { digits: 1 }) : int(v)) });
         }
         break;
@@ -223,6 +229,7 @@ export function mount(el, { query, setQuery }) {
       case 'liq': {
         headValue('liq', usd(h.liquidated.value), `${int(h.liquidations.value)} liquidations · ${winLabel(win)}`);
         const list = byMarket('liquidated', sr);
+        legendOf('liq', list.length ? [...list, { name: 'Cumulative', ...NET }] : []);
         if (list.length) stackedBars(node, { times, series: list, bucketSeconds: b, cumulative: true }); else node.innerHTML = empty('No liquidations in this window');
         break;
       }
@@ -239,6 +246,7 @@ export function mount(el, { query, setQuery }) {
       case 'taker': {
         const buys = d.p.markets.reduce((a, m) => a + (num(m.taker_buy) ?? 0), 0), sells = d.p.markets.reduce((a, m) => a + (num(m.taker_sell) ?? 0), 0);
         headValue('taker', buys + sells ? `${pct(buys / (buys + sells) * 100, { digits: 1 })} buys` : '—', `${usd(buys)} bought · ${usd(sells)} sold · ${winLabel(win)}`);
+        legendOf('taker', [{ name: 'Buys', color: COLORS.long }, { name: 'Sells', color: COLORS.short }, { name: 'Net', ...NET }]);
         twoSided(node, { times, bucketSeconds: b, up: { name: 'Taker buys', data: pts.map(p => p.taker_buy) }, down: { name: 'Taker sells', data: pts.map(p => p.taker_sell) }, net: 'Net taker buying' });
         break;
       }
