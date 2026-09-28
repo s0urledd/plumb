@@ -106,7 +106,8 @@ export function mount(el, { params, query, setQuery }) {
     const sides = withLevels && showLevels && levels ? levelSides(levels) : null;
     legendOf('candles', !sides ? [] : sides.size ? [sides.has('long') && { name: 'Long liq. levels', color: COLORS.long }, sides.has('short') && { name: 'Short liq. levels', color: COLORS.short }].filter(Boolean) : [{ name: `No liquidation levels within ${LEVEL_SPAN * 100}%` }]);
     $('lvl-toggle').hidden = !withLevels;
-    const node = $('candles'); node.innerHTML = '';
+    // Redrawn in place on a refresh, so a zoom holds; a new window starts from a skeleton (update).
+    const node = $('candles');
     if (!traded) node.innerHTML = none('No trades in this window');
     else {
       let prev = null;
@@ -119,7 +120,7 @@ export function mount(el, { params, query, setQuery }) {
   async function loadFlow() {
     const f = await get(`markets/${id}/flow?window=${w}`, { maxAge: 5000 });
     if (!alive) return;
-    const t = f.totals, node = $('flow'); node.innerHTML = '';
+    const t = f.totals, node = $('flow'); // redrawn in place, like the candles
     const netChange = num(t.long_open) - num(t.long_close);
     headValue('flow', pnl(netChange), `${usd(num(t.long_open) + num(t.short_open))} opened · ${usd(num(t.long_close) + num(t.short_close))} closed · ${wl()}`);
     const moved = f.times.length && num(t.long_open) + num(t.short_open) + num(t.long_close) + num(t.short_close);
@@ -330,7 +331,7 @@ export function mount(el, { params, query, setQuery }) {
   return {
     onSeg(name, v) { if (name === 'lvl') { showLevels = v === 'on'; $('lvl-toggle').innerHTML = segSm('lvl', LEVEL_TOGGLE, v); load().catch(() => {}); return; } if (name === 'window') setQuery({ window: v === '24h' ? null : v }); },
     onAction(a, t) { if (a === 'calc-side') { calc.side = t.dataset.v; calc.exit = null; renderCalc(); } },
-    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); known.then(found => { if (found) { loadFeeds().catch(() => {}); loadFlow().catch(() => {}); } }); },
+    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; $('win').innerHTML = seg('window', WINDOWS, w); $('candles').innerHTML = $('flow').innerHTML = skChart(); load().catch(() => {}); known.then(found => { if (found) { loadFeeds().catch(() => {}); loadFlow().catch(() => {}); } }); },
     destroy() { alive = false; el.removeEventListener('change', onCalcChange); off(); clearInterval(timer); }
   };
 }

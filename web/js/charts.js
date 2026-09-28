@@ -183,11 +183,13 @@ export function sparkline(el, values, { color = T.accent, area = true } = {}) {
 }
 
 // A range slider under a time chart (drag or scroll to zoom), plus wheel zoom.
+// A chart redrawn in place (a refresh) keeps the stretch the reader zoomed to.
 export const CUMULATIVE = 'Cumulative';
-function zoomOptions(xAxisIndex = 0) {
+const zoomOf = chart => { const z = chart.getOption()?.dataZoom?.[0]; return z && (z.start > 0 || z.end < 100) ? { start: z.start, end: z.end } : null; };
+function zoomOptions(xAxisIndex = 0, kept = null) {
   return [
-    { type: 'inside', xAxisIndex, zoomOnMouseWheel: 'shift', moveOnMouseMove: false },
-    { type: 'slider', xAxisIndex, height: 16, bottom: 4, borderColor: T.axis, backgroundColor: 'rgba(255,255,255,0.02)', fillerColor: 'rgba(162,164,255,0.12)', dataBackground: { lineStyle: { color: 'rgba(162,164,255,0.35)' }, areaStyle: { color: 'rgba(162,164,255,0.08)' } }, selectedDataBackground: { lineStyle: { color: T.accent }, areaStyle: { color: 'rgba(162,164,255,0.18)' } }, handleStyle: { color: '#24222a', borderColor: T.accent }, moveHandleSize: 0, textStyle: { color: T.faint, fontSize: 10 }, labelFormatter: () => '', brushSelect: false }
+    { type: 'inside', xAxisIndex, zoomOnMouseWheel: 'shift', moveOnMouseMove: false, ...kept },
+    { type: 'slider', xAxisIndex, ...kept, height: 16, bottom: 4, borderColor: T.axis, backgroundColor: 'rgba(255,255,255,0.02)', fillerColor: 'rgba(162,164,255,0.12)', dataBackground: { lineStyle: { color: 'rgba(162,164,255,0.35)' }, areaStyle: { color: 'rgba(162,164,255,0.08)' } }, selectedDataBackground: { lineStyle: { color: T.accent }, areaStyle: { color: 'rgba(162,164,255,0.18)' } }, handleStyle: { color: '#24222a', borderColor: T.accent }, moveHandleSize: 0, textStyle: { color: T.faint, fontSize: 10 }, labelFormatter: () => '', brushSelect: false }
   ];
 }
 
@@ -209,6 +211,7 @@ const runningTotal = (total, bars) => ({
 export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v), yFmt = usdAxis, cumulative = false, zoom = false }) {
   const chart = init(el);
   if (!chart) return;
+  const kept = zoom ? zoomOf(chart) : null;
   let run = 0;
   const total = cumulative ? times.map((_, i) => (run += series.reduce((a, s) => a + (num(s.data[i]) || 0), 0))) : null;
   const partial = partialAt(times, bucketSeconds);
@@ -224,7 +227,7 @@ export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v
     yAxis: cumulative ? [valueAxis(yFmt), { ...valueAxis(yFmt), splitLine: { show: false } }] : valueAxis(yFmt),
     legend: { show: false, data: [...series.map(s => s.name), ...(cumulative ? [CUMULATIVE] : [])] },
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { total: true, exclude: CUMULATIVE, partial }) },
-    dataZoom: zoom ? zoomOptions() : undefined,
+    dataZoom: zoom ? zoomOptions(0, kept) : undefined,
     series: [
       ...data().map((d, i) => ({ name: series[i].name, type: 'bar', stack: 'a', data: d, itemStyle: { color: series[i].color, borderColor: T.surface, borderWidth: series.length > 1 ? 0.5 : 0 }, ...layout, emphasis: { focus: 'series' } })),
       ...(cumulative ? [runningTotal(total, layout)] : [])
@@ -324,6 +327,7 @@ export function divergingHeatmap(el, { times, rows, bucketSeconds, clamp, fmt = 
 export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volColor = 'rgba(162,164,255,0.35)', zoom = false, levels = null, mark = null, levelSpan = 0.04, onLevel = null }) {
   const chart = init(el);
   if (!chart) return;
+  const kept = zoom ? zoomOf(chart) : null;
   const x = i => ({ ...timeAxis(times, bucketSeconds, el), gridIndex: i, axisLabel: i === 0 ? { show: false } : timeAxis(times, bucketSeconds, el).axisLabel });
   const near = levels && mark ? levels.filter(l => Math.abs((l.lo + l.hi) / 2 / mark - 1) <= levelSpan).map(l => ({ ...l, n: (num(l.long) ?? 0) + (num(l.short) ?? 0), side: (num(l.long) ?? 0) >= (num(l.short) ?? 0) ? 'long' : 'short' })) : [];
   const peak = Math.max(1, ...near.map(b => b.n));
@@ -367,10 +371,11 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
   const right = fitRight(chart, el, times, bucketSeconds); // both panes, so a candle and its volume share an x
   if (onLevel) chart.on('click', p => { const i = /^band-(\d+)$/.exec(p.name ?? '')?.[1]; if (p.componentType === 'markArea' && i !== undefined) onLevel(bands[Number(i)]); });
   // Zoomed in, the volume scale follows the stretch in view, and its labels may change width.
-  if (zoom) chart.on('datazoom', () => { const z = chart.getOption().dataZoom[0]; chart.setOption({ yAxis: [{}, volAxis(z.startValue, z.endValue)] }); align(z.startValue); });
+  const fitZoom = () => { const z = chart.getOption().dataZoom[0]; chart.setOption({ yAxis: [{}, volAxis(z.startValue, z.endValue)] }); align(z.startValue); };
+  if (zoom) chart.on('datazoom', fitZoom);
   chart.setOption({
     ...base(),
-    dataZoom: zoom ? zoomOptions([0, 1]) : undefined,
+    dataZoom: zoom ? zoomOptions([0, 1], kept) : undefined,
     grid: [{ left: 8, right, top: 12, height: `${priceH}%`, containLabel: true }, { left: 8, right, top: zoom ? '72%' : '78%', bottom: zoom ? 30 : 6, containLabel: true }],
     xAxis: [x(0), x(1)],
     yAxis: [
@@ -385,7 +390,7 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
       { type: 'bar', name: 'Volume', data: volume, xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: volColor, borderRadius: [3, 3, 0, 0] }, barMaxWidth: 10 }
     ]
   }, true);
-  align();
+  if (kept) fitZoom(); else align();
 }
 
 // Horizontal bars (categories on y), e.g. per-market breakdowns.

@@ -146,9 +146,10 @@ export function mount(el, { query, setQuery }) {
   }
   // The swatch keeps the series colour; the logo (when the asset has one) names it.
   const legendLogo = s => { if (s.id === undefined) return ''; const html = logo(s.id, s.name, 14); return html.startsWith('<img') ? html : ''; };
+  // Redrawn in place on the minute refresh, so a zoom holds; a new window or
+  // period length starts from a skeleton (update, onSeg).
   function renderVolume() {
     const node = $('main-chart'), b = series.meta.bucket_seconds;
-    node.innerHTML = '';
     // With the daily/weekly switch shown, the meta names only the span.
     $('chart-meta').textContent = BUCKET_CHOICES[w] ? `${w === 'all' ? 'All-time' : `Last ${w}`} · UTC` : `${w === 'all' ? 'All-time' : `Last ${w}`} · ${BUCKET_NAMES[b] ?? `${series.meta.bucket}`} bars · UTC`;
     const list = byMarket('volume');
@@ -171,7 +172,6 @@ export function mount(el, { query, setQuery }) {
   function renderFees() {
     const d = trendOf.fees, node = $('fees'); if (!node || !d) return;
     const sr = d.s, pts = sr.points, times = sr.times, b = sr.meta.bucket_seconds;
-    node.innerHTML = '';
     const list = feeView === 'market' ? byMarket('fees', sr) : [{ name: 'Protocol', color: SLOT_HEX[0], data: pts.map(p => num(p.protocol_fees)) }, { name: 'Insurance fund', color: SLOT_HEX[2], data: pts.map(p => num(p.insurance_fees)) }, { name: 'Reducing trades (no split)', color: OTHER_HEX, data: pts.map(unsplit) }].filter(x => x.data.some(v => v > 0));
     legendOf('fees', list);
     if (list.length) stackedBars(node, { times, series: list, bucketSeconds: b }); else node.innerHTML = empty('No fees in this window');
@@ -190,7 +190,8 @@ export function mount(el, { query, setQuery }) {
   function renderTrend(id) {
     const d = trendOf[id], node = $(id); if (!d || !node) return;
     const win = pw[id], sr = d.s, pts = sr.points, times = sr.times, b = sr.meta.bucket_seconds, h = d.p.headline, c = d.p.current;
-    node.innerHTML = '';
+    // Charts are redrawn in place on the minute refresh (their marks move, not regrow);
+    // a window switch starts from a skeleton (onSeg).
     // Open interest and TVL: axes start at zero, so a 1% move looks like one; the change over the window is in the header.
     const moved = field => { const x = seriesChange(field, sr, win); if (x === undefined) return win === 'all' ? 'now' : ''; const d = Math.abs(Number(x.toFixed(1))) < 10 ? 1 : 0; return `<span class="${signClass(x, d) || 'faint'}">${pct(x, { digits: d, sign: true })}</span> over ${win}`; };
     const cumulative = sr.meta.cumulative_complete;
@@ -412,12 +413,12 @@ export function mount(el, { query, setQuery }) {
       if (name === 'window') setQuery({ window: v === '24h' ? null : v });
       if (name === 'min') { minSize = v; try { localStorage.setItem('ps.minsize', v); } catch { /* storage unavailable */ } $('minsize').innerHTML = segSm('min', MIN_SIZES, minSize); renderTape(); }
       if (name === 'flowv') { flowView = v; $('flowview').innerHTML = segSm('flowv', FLOW_VIEWS, flowView); renderFlows(); }
-      if (name === 'bucket') { bucket = v; renderBucket(); get(seriesPath()).then(s => { if (!alive) return; series = s; renderVolume(); renderKpis(); }).catch(() => {}); return; }
+      if (name === 'bucket') { bucket = v; renderBucket(); $('main-chart').innerHTML = skChart(); get(seriesPath()).then(s => { if (!alive) return; series = s; renderVolume(); renderKpis(); }).catch(() => {}); return; }
       if (name === 'feesv') { feeView = v; $('fees-mode').innerHTML = segSm('feesv', FEE_VIEWS, feeView); renderFees(); }
     },
     onAction(a, t) { if (a === 'treset') { const id = t.dataset.v; custom.delete(id); pw[id] = w; $(`${id}-win`).innerHTML = winCtl(id); $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); return; } if (a === 'toggle') { t.classList.toggle('off'); toggleSeries($('main-chart'), t.dataset.name); } },
     onSort(id, key) { if (id !== 'markets') return; sort = { key, dir: sort.key === key && sort.dir === 'desc' ? 'asc' : 'desc' }; renderMarkets(); },
-    update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w);
+    update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w); $('main-chart').innerHTML = skChart();
       for (const id of TRENDS) { if (pw[id] === w) custom.delete(id); if (!custom.has(id) && pw[id] !== w) { pw[id] = w; $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); } $(`${id}-win`).innerHTML = winCtl(id); }
       load().catch(() => {}); get(`flows?window=${w}`).then(f => alive && renderFlows(f)).catch(() => {}); },
     destroy() { alive = false; clearInterval(timer); off.forEach(f => f()); }
