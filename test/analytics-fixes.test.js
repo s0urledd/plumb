@@ -149,6 +149,18 @@ test('protocol can be computed fresh for the live headline push', async () => {
   assert.equal(calls, 2 * first, 'computed again');
 });
 
+test('a market with nothing in the window keeps its contract state and counts zero liquidations', async () => {
+  const market = { id: 20, symbol: 'ETH', priceDecimals: 1, lotDecimals: 5, markPNS: 30000n, oraclePNS: 30000n, maintHdths: 2500n, initHdths: 500n, insuranceBalanceCNS: 1000000000n, positionBalanceCNS: 0n, longOpenInterestLNS: 0n, shortOpenInterestLNS: 0n, oiMaxLNS: 30000000n, fundingRatePct100k: 0n, status: 4, positions: new Map() };
+  const state = { block: { number: 5000n, hash: '0xab', timestamp: 1790005000 }, exchangeInfo: { collateralDecimals: 6, balanceCNS: 0n, protocolBalanceCNS: 0n, numberOfAccounts: 0n, fundingInterval: 1000n }, markets: new Map([[20, market]]), stats: {} };
+  const api = analyticsWith({ marketTotals: async () => [], protocolTotals: async () => [], traders: async () => [] }, { state });
+  const row = (await api.protocol(new URLSearchParams('window=24h'))).markets.find(x => x.id === 20);
+  assert.equal(row.max_leverage, 5);
+  assert.equal(Number(row.insurance), 1000);
+  assert.equal(row.liquidations, 0);
+  assert.equal(Number(row.liquidated), 0);
+  assert.equal(row.active, true);
+});
+
 test('wallet trips: incomplete trips have no return; meta belongs to the cached view', async () => {
   seq = 0;
   const rows = [
