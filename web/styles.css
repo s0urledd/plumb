@@ -512,3 +512,15 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .sm-trader { display: inline-flex; align-items: center; gap: 8px; }
 .sm-trader .rank-pill { min-width: 36px; }
 .sm-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ========== page: markets (market.js, markets.js) ========== */
+/* markets rules */
+/* ========== end page: markets ========== */
+
+/* ========== page: traders (traders.js, wallet.js, compare.js) ========== */
+/* traders rules */
+/* ========== end page: traders ========== */
+
+/* ========== page: risk (risk.js, liquidations.js, status.js, alerts.js) ========== */
+/* risk rules */
+/* ========== end page: risk ========== */
