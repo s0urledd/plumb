@@ -21,11 +21,10 @@ export function mount(el, { query, setQuery }) {
   let data = null, series = null, alive = true, flows = null, flowView = 'recent', lastLongLoad = 0, trendsLoaded = false;
   const tape = [], off = [];
   // The trend charts each keep their own window, independent of the one at the
-  // top (which drives the headline metrics, the volume chart and the markets).
+  // top (which drives the headline metrics, the volume chart and the activity lists).
   const TRENDS = ['oi', 'tvl', 'flows', 'traders', 'fees', 'liq', 'tpnl', 'taker'];
-  const pw = Object.fromEntries(TRENDS.map(id => [id, w]));
-  const custom = new Set(); // charts set to a window of their own; the rest follow the page
-  const winCtl = id => `${segSm(`tw:${id}`, WINDOWS, pw[id])}${custom.has(id) ? `<button class="trend-reset" data-action="treset" data-v="${id}" title="Follow the page window again">↺ ${w === 'all' ? 'All' : w.toUpperCase()}</button>` : ''}`;
+  const pw = Object.fromEntries(TRENDS.map(id => [id, '24h']));
+  const winCtl = id => segSm(`tw:${id}`, WINDOWS, pw[id]);
   const panel = (id, title, desc, extra = '') => `<section class="panel trend"><div class="panel-head"><div class="trend-id"><h2>${title} <span class="info-tip" title="${esc(desc)}">i</span></h2><div class="head-value" id="${id}-v"></div>${extra}</div><div class="trend-side"><div class="trend-ctl">${chartTools(id, id)}<span id="${id}-win" class="trend-win">${winCtl(id)}</span></div><div class="legend dots" id="${id}-lg"></div></div></div><div class="panel-body"><div class="chart sm" id="${id}">${skChart()}</div></div></section>`;
 
   el.innerHTML = `
@@ -69,8 +68,8 @@ export function mount(el, { query, setQuery }) {
       </div>
       <div class="section-label">Market share</div>
       <div class="grid g-2" id="landscape-grid">
-        <section class="panel fill"><div class="panel-head"><div><h2>Perps on Monad</h2><div class="desc">Open interest by venue</div></div><span class="meta" id="ls-chain-meta"></span></div><div class="panel-body flush fill-table" id="ls-chain">${skeleton(4)}</div></section>
-        <section class="panel"><div class="panel-head"><div><h2>Among all perps</h2><div class="desc">Open interest by venue</div></div><span class="meta" id="ls-meta"></span></div><div class="panel-body flush" id="ls-all">${skeleton(6)}</div></section>
+        <section class="panel fill"><div class="panel-head"><div><h2>Perps on Monad</h2><div class="desc">Open interest by venue</div></div><span class="meta" id="ls-chain-meta"></span></div><div class="panel-body flush fill-table ls-table" id="ls-chain">${skeleton(4)}</div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Among all perps</h2><div class="desc">Open interest by venue</div></div><span class="meta" id="ls-meta"></span></div><div class="panel-body flush ls-table" id="ls-all">${skeleton(6)}</div></section>
       </div>
     </div>`;
   const $ = id => el.querySelector(`#${id}`);
@@ -334,13 +333,13 @@ export function mount(el, { query, setQuery }) {
     $('ls-all').innerHTML = table({ id: 'ls-all', compact: true, columns: [
       { key: 'r', label: '#', render: r => `<span class="rank">${r.rank}</span>` },
       { key: 'n', label: 'Venue', render: name },
-      { key: 'o', label: 'Open interest', n: true, cls: 'cell-bar', render: r => bar(r.oi, r.share_pct / (l.top[0]?.share_pct || 1) * 100) },
+      { key: 'o', label: 'Open interest', n: true, center: true, cls: 'cell-bar', render: r => bar(r.oi, r.share_pct / (l.top[0]?.share_pct || 1) * 100) },
       { key: 's', label: 'Share', n: true, render: r => `<span class="muted">${pct(r.share_pct, { digits: 2 })}</span>` }
     ], rows: top, rowAttrs: r => (r.name === 'Perpl' ? 'class="hl"' : '') });
     $('ls-chain-meta').innerHTML = l.perpl?.share_of_chain_pct !== null && l.perpl ? `Perpl ${pct(l.perpl.share_of_chain_pct, { digits: 1 })} of ${esc(l.chain.name)} · ${src}` : src;
     $('ls-chain').innerHTML = table({ id: 'ls-chain', compact: true, emptyText: 'No venues listed', columns: [
       { key: 'n', label: 'Venue', render: name },
-      { key: 'o', label: 'Open interest', n: true, cls: 'cell-bar', render: r => bar(r.oi, r.share_pct) },
+      { key: 'o', label: 'Open interest', n: true, center: true, cls: 'cell-bar', render: r => bar(r.oi, r.share_pct) },
       { key: 's', label: 'Share', n: true, render: r => `<span class="muted">${pct(r.share_pct, { digits: 1 })}</span>` }
     ], rows: l.chain.venues, rowAttrs: r => (r.self ? 'class="hl"' : '') });
   }
@@ -389,16 +388,15 @@ export function mount(el, { query, setQuery }) {
 
   return {
     onSeg(name, v) {
-      if (name.startsWith('tw:')) { const id = name.slice(3); pw[id] = v; if (v === w) custom.delete(id); else custom.add(id); $(`${id}-win`).innerHTML = winCtl(id); $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); return; }
+      if (name.startsWith('tw:')) { const id = name.slice(3); pw[id] = v; $(`${id}-win`).innerHTML = winCtl(id); $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); return; }
       if (name === 'window') setQuery({ window: v === '24h' ? null : v });
       if (name === 'min') { minSize = v; try { localStorage.setItem('ps.minsize', v); } catch { /* storage unavailable */ } $('minsize').innerHTML = segSm('min', MIN_SIZES, minSize); renderTape(); }
       if (name === 'flowv') { flowView = v; $('flowview').innerHTML = segSm('flowv', FLOW_VIEWS, flowView); renderFlows(); }
       if (name === 'bucket') { bucket = v; renderBucket(); $('main-chart').innerHTML = skChart(); get(seriesPath()).then(s => { if (!alive) return; series = s; renderVolume(); renderKpis(); }).catch(() => {}); return; }
       if (name === 'feesv') { feeView = v; $('fees-mode').innerHTML = segSm('feesv', FEE_VIEWS, feeView); renderFees(); }
     },
-    onAction(a, t) { if (a === 'treset') { const id = t.dataset.v; custom.delete(id); pw[id] = w; $(`${id}-win`).innerHTML = winCtl(id); $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); return; } if (a === 'toggle') { t.classList.toggle('off'); toggleSeries($('main-chart'), t.dataset.name); } },
+    onAction(a, t) { if (a === 'toggle') { t.classList.toggle('off'); toggleSeries($('main-chart'), t.dataset.name); } },
     update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w); $('main-chart').innerHTML = skChart();
-      for (const id of TRENDS) { if (pw[id] === w) custom.delete(id); if (!custom.has(id) && pw[id] !== w) { pw[id] = w; $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); } $(`${id}-win`).innerHTML = winCtl(id); }
       load().catch(() => {}); get(`flows?window=${w}`).then(f => alive && renderFlows(f)).catch(() => {}); },
     destroy() { alive = false; clearInterval(timer); off.forEach(f => f()); }
   };
