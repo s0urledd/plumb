@@ -355,8 +355,10 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
   } : undefined;
   // The amounts ride on invisible mark lines, which draw above the candles, on a
   // backing that keeps them legible; at the left end, so the newest candles stay clear.
+  // precision: the default two decimals would move a line on a price under $1
+  // off the axis (0.02605 to 0.03), and it would not be drawn.
   const markLine = labelled.length ? {
-    symbol: 'none', silent: true, lineStyle: { color: 'transparent' },
+    symbol: 'none', silent: true, precision: 10, lineStyle: { color: 'transparent' },
     data: labelled.map(b => ({ yAxis: (b.lo + b.hi) / 2, label: { position: 'insideStart', distance: 4, color: b.side === 'long' ? T.long : T.short, fontSize: 10.5, backgroundColor: 'rgba(18,17,19,0.8)', padding: [2, 5], borderRadius: 4, formatter: () => `liq ${usd(b.n)}` } }))
   } : undefined;
   // Volume ticks at zero, half and a round top that the busiest bar in view nearly reaches.
