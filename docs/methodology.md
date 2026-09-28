@@ -1,6 +1,6 @@
 # Methodology
 
-Version 3 (2026-09-23). Plumb uses two sources, both read at finalized
+Version 4 (2026-09-28). Plumb uses two sources, both read at finalized
 blocks:
 
 - **History** (volume, fees, flows, liquidations, funding payments, realized
@@ -119,6 +119,7 @@ on-chain are checked against this classification on every validation run.
 | ADL queue | estimate | Perpl documents "most profitable first" without the metric; selection is off-chain |
 | Trade price, size and fee from linked fills | validated | Full history: 33,557,868 / 33,557,868 position events linked, and fee split equal to the fill fee on 18,630,950 / 18,630,950 building fills (2026-09-23) |
 | Volume | validated | 24 h maker-fill volume within 0.001 % (2026-09-21) and 0.035 % (2026-09-23) of Perpl's venue figure |
+| Protocol revenue by source | validated | Revenue plus the balance moves that are not revenue reproduce `protocolBalanceCNS` and every market's `insuranceBalanceCNS` with zero residual: 16 block ranges and 24 hourly checks, 25–28 Sep 2026 (`docs/evidence/protocol-revenue-2026-09-28.json`). Bankrupt, partial and off-book liquidations, deleverages and buy-to-liquidate were not observed |
 | Open interest and TVL from events | validated | Summed from launch, both equal the contract at the same block: all 11 markets exact, TVL to the micro-dollar (2026-09-23, `docs/evidence/integrity-2026-09-23.json`) |
 
 Not modelled: individual resting orders (only aggregate depth per price
@@ -153,7 +154,7 @@ the new side.
 | --- | --- |
 | Volume | Sum of maker-fill notional (`MakerOrderFilled(V2)`, price × size), so each match counts once. Its size equals the taker side exactly; notional agrees to rounding (about $50 over $5.27 billion). |
 | Trades | On the dashboard, matches between a maker and a taker (maker fills), each counted once. The API's `trades` counts position changes of both counterparties (open, increase, decrease, close, invert); per account, liquidations settled as taker also count. |
-| Fees | Sum of `feeCNS` on maker and taker fills, gross: maker rebates and referral shares are paid outside fills and are not deducted. Up to contract v1.1.7.4, only fills that build a position (open, increase, invert) are charged. Their split into insurance fund (`insFeeCNS`) and protocol (`protFeeCNS`) comes from the position event, and must equal the fill fee; this is checked on every building fill at ingest. A builder's share (`builderFeeCNS`) is included in the fill fee and in the protocol part, never added on top. Take rate is fees ÷ volume. From v1.1.7.5, which was not live on 2026-09-23, closes and decreases are charged as well and their position events carry no split; the insurance and protocol series would then cover opening fees only. An account's fees also include its liquidation fees (below). |
+| Fees | Sum of `feeCNS` on maker and taker fills, gross: maker rebates and referral shares are paid outside fills and are not deducted. Up to contract version 1.7.4 (release v1.1.7.4), only fills that build a position (open, increase, invert) are charged; from 1.7.5 (block 107,355,313, 2026-09-23) decreases and closes are charged too. The split of a building fill into insurance fund (`insFeeCNS`) and protocol (`protFeeCNS`) comes from the position event, and must equal the fill fee; this is checked on every building fill at ingest. Decrease and close events carry no split: it is derived from their fill with the same rule (see [Protocol revenue](#protocol-revenue)), so protocol + insurance fees equal fees. A builder's share (`builderFeeCNS`) is included in the fill fee and in the protocol part, never added on top. Take rate is fees ÷ volume. An account's fees also include its liquidation fees (below). |
 | Active traders | Distinct accounts with at least one trade in the window (each account once per window or chart bucket). |
 | New accounts | `AccountCreated` events. |
 | Deposits, withdrawals, net flow | `CollateralDeposit` and `CollateralWithdrawal` amounts; net flow is deposits − withdrawals. |
@@ -192,6 +193,67 @@ counted twice in wallet fees ($20,345). Together they change the realized
 PnL of 2,878 accounts, by up to $7,628 for one account
 (`docs/evidence/pnl-corrections-2026-09-23.json`). Neither open interest nor
 TVL depends on them, so the integrity checks above are unchanged.
+
+### Protocol revenue
+
+The exchange splits every charged fill fee, and the margin a liquidation
+leaves, between the market's insurance fund and the protocol. Plumb reports
+both shares by source (`src/revenue.js`, `src/aggregates.js`):
+
+| Source | Split |
+| --- | --- |
+| Opening fees (open, increase, invert) | The split on the position event: `protFeeCNS` to the protocol, `insFeeCNS` to the insurance fund. |
+| Reducing fees (decrease, close) | Charged from contract version 1.7.5; before, their fee was 0. The events carry no split, so the linked fill gives it: insurance = ⌈(`feeCNS` − `builderFeeCNS`) × `insAmtPer100K` ÷ 100,000⌉, protocol = `feeCNS` − insurance. Opening events follow the same rule. |
+| Liquidations on the book | X = `deltaPnlCNS` + `fundingCNS` − `posAmountCNS`, the margin left (`posAmountCNS` is minus the deposit released). If X > 0, the trader gets ⌊X × `liqUserAmtPer100K` ÷ 100,000⌋ (the event's `accAmountCNS`), the insurance fund ⌊X × `liqInsAmtPer100K` ÷ 100,000⌋ and the protocol the rest, rounding dust included. If X ≤ 0, neither gets anything. The liquidated position's own fill carries no fee. |
+
+A builder's fee stays inside the protocol's share of the fee: it is owed to
+the builder and reported on its own as `builder_fees`. Protocol revenue is
+the protocol's share of opening fees, reducing fees and liquidations.
+
+**Rates.** A market's `insAmtPer100K` is set by `FeeParamsUpdated`, its
+liquidation rates by `LiquidationParamsUpdated` (`insAmtPer100K`,
+`userAmtPer100K`), and all three by the `ContractAdded` event that lists it;
+each applies from its own block. On 2026-09-28 all 11 markets used 15,000
+(15 %) and 10,000 / 80,000 / 10,000 (insurance / trader / protocol).
+`FeeParamsUpdated` and the rates a market is added with are kept from
+version 4 on, so earlier history uses 15,000 until a change is indexed. That
+value holds on every market from 25 September, and reducing fills were free
+before 1.7.5, so earlier history does not depend on it. Liquidations before a
+market's first indexed `LiquidationParamsUpdated` use 10,000 / 80,000,
+verified from 25 September only.
+
+**Not revenue.** `TransferProtocolToAccount` (payouts to accounts, such as
+$7,259.74 to 272 accounts on 28 September), `TransferAccountToProtocol`
+(such as $152,663.75 from account 777 on 25 September),
+`ProtocolBalanceWithdraw` and `ProtocolBalanceDeposit` move the protocol
+balance but are never counted as revenue.
+
+**Verification.** Revenue by these rules, plus the balance moves above,
+reproduced the change of the contract's `protocolBalanceCNS` and of every
+market's `insuranceBalanceCNS` with zero residual on 16 block ranges from 25
+to 28 September (among them liquidations, a payout batch, sweeps and a
+protocol withdrawal) and on 24 consecutive hours from 27 September 12:00
+UTC. In those 24 hours the protocol earned $1,465.17 from opening fees,
+$1,995.73 from reducing fees and $202.46 from 16 liquidations; builder fees
+inside the protocol share were $105.65
+(`docs/evidence/protocol-revenue-2026-09-28.json`; block ranges, so a window
+by block time can differ by the trades of its edge seconds).
+
+**Not verified**, because none occurred in the checks: bankrupt liquidations
+(X ≤ 0, counted as no revenue), partial liquidations and liquidations off
+the book (the same formula applies), deleverages and buy-to-liquidate
+settlements (no revenue counted). What the payouts are for is not stated
+on-chain.
+
+**History and rollups.** The split is derived per stored row whenever
+windows and hourly rollups are summed, so no event was read from the chain
+again. Rollup version 3 adds the reducing-fee split and the liquidation
+shares as new columns (`ADD COLUMN IF NOT EXISTS … DEFAULT 0`). At start,
+hours rolled at version 2 with no charged decrease or close and no
+liquidation are carried over unchanged, and every other hour is rolled
+again from the stored events; both steps are safe to repeat. A rate change
+indexed after hours it applies to (the backfill runs newest first) rolls
+those hours again.
 
 ### Funding
 

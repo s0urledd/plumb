@@ -1,0 +1,707 @@
+{
+  "collected_at": "2026-09-28",
+  "chain_id": 143,
+  "exchange": "0x34B6552d57a35a1D042CcAe1951BD1C370112a6F",
+  "units": "CNS: AUSD x 10^6",
+  "method": "For each range, the exchange logs of blocks from_block + 1 to to_block were read from the chain (all topics except pure order-book and oracle notices; W16 without any filter), and the contract balances at from_block and to_block (getExchangeInfo protocolBalanceCNS; getPerpetualInfoV2 insuranceBalanceCNS for all 11 markets). Revenue by the rules in docs/methodology.md (Protocol revenue), plus the balance moves that are not revenue (payouts, sweeps, protocol withdrawals and deposits), must equal the change of the protocol balance, and the insurance shares must equal the change of each market insurance balance. residual = contract change - predicted change.",
+  "rates": {
+    "insAmtPer100K": 15000,
+    "liqInsAmtPer100K": 10000,
+    "liqUserAmtPer100K": 80000,
+    "liqProtocolAmtPer100K": 10000,
+    "note": "read from getInsuranceProtocolSplit and getLiquidationInfo on all 11 markets on 2026-09-28; every check from 25 Sep reconciles with these rates"
+  },
+  "windows": [
+    {
+      "window": "W01",
+      "label": "26Sep 21-22 ZEC liqs",
+      "from_block": 108280784,
+      "to_block": 108292706,
+      "liquidations": 4,
+      "protocol_balance_change": "106777598",
+      "revenue": {
+        "opening_fees": "29985888",
+        "reducing_fees": "64130352",
+        "liquidations": "12661358"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W02",
+      "label": "27Sep 03-05 quiet",
+      "from_block": 108352322,
+      "to_block": 108376170,
+      "liquidations": 0,
+      "protocol_balance_change": "87080270",
+      "revenue": {
+        "opening_fees": "35427669",
+        "reducing_fees": "51652601",
+        "liquidations": "0"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W03",
+      "label": "27Sep 09-11 quiet",
+      "from_block": 108423857,
+      "to_block": 108447699,
+      "liquidations": 0,
+      "protocol_balance_change": "133829721",
+      "revenue": {
+        "opening_fees": "54738659",
+        "reducing_fees": "79091062",
+        "liquidations": "0"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W04",
+      "label": "27Sep 14:45-15:45 ZEC liqs",
+      "from_block": 108492396,
+      "to_block": 108504311,
+      "liquidations": 3,
+      "protocol_balance_change": "299752364",
+      "revenue": {
+        "opening_fees": "91974502",
+        "reducing_fees": "140927789",
+        "liquidations": "66850073"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W05",
+      "label": "27Sep 18:45-19:50 MON liqs",
+      "from_block": 108540074,
+      "to_block": 108552981,
+      "liquidations": 4,
+      "protocol_balance_change": "223429102",
+      "revenue": {
+        "opening_fees": "53642519",
+        "reducing_fees": "96660212",
+        "liquidations": "73126371"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W06",
+      "label": "27Sep 22-01 quiet",
+      "from_block": 108578773,
+      "to_block": 108614525,
+      "liquidations": 0,
+      "protocol_balance_change": "624649783",
+      "revenue": {
+        "opening_fees": "279180052",
+        "reducing_fees": "345469731",
+        "liquidations": "0"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W07",
+      "label": "28Sep 03:50-06:40 ZEC/SOL/HYPE liqs",
+      "from_block": 108648277,
+      "to_block": 108682034,
+      "liquidations": 8,
+      "protocol_balance_change": "341127391",
+      "revenue": {
+        "opening_fees": "105608253",
+        "reducing_fees": "175182001",
+        "liquidations": "60337137"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W08",
+      "label": "28Sep 08:30-09:30 SOL_v2 liq",
+      "from_block": 108703839,
+      "to_block": 108715755,
+      "liquidations": 1,
+      "protocol_balance_change": "-7141497128",
+      "revenue": {
+        "opening_fees": "58677146",
+        "reducing_fees": "57418308",
+        "liquidations": "2145505"
+      },
+      "balance_moves_not_revenue": {
+        "payouts": "7259738087"
+      },
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W09",
+      "label": "28Sep 10-12 quiet",
+      "from_block": 108721715,
+      "to_block": 108745552,
+      "liquidations": 0,
+      "protocol_balance_change": "296468777",
+      "revenue": {
+        "opening_fees": "117262006",
+        "reducing_fees": "179206771",
+        "liquidations": "0"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W10",
+      "label": "28Sep 12:00-12:40 MON liqs",
+      "from_block": 108745552,
+      "to_block": 108753493,
+      "liquidations": 5,
+      "protocol_balance_change": "136568936",
+      "revenue": {
+        "opening_fees": "47979863",
+        "reducing_fees": "67798471",
+        "liquidations": "20790602"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W11",
+      "label": "26Sep 05:30-06:00 PUMP liq",
+      "from_block": 108095996,
+      "to_block": 108101957,
+      "liquidations": 1,
+      "protocol_balance_change": "201031932",
+      "revenue": {
+        "opening_fees": "28817264",
+        "reducing_fees": "63309276",
+        "liquidations": "108905392"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W12",
+      "label": "25Sep 23:00-23:20 MON liq",
+      "from_block": 108018492,
+      "to_block": 108022467,
+      "liquidations": 1,
+      "protocol_balance_change": "21641060",
+      "revenue": {
+        "opening_fees": "3322297",
+        "reducing_fees": "17093856",
+        "liquidations": "1224907"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W13",
+      "label": "25Sep 15:40-16:00 ZEC liq",
+      "from_block": 107931071,
+      "to_block": 107935038,
+      "liquidations": 1,
+      "protocol_balance_change": "35635469",
+      "revenue": {
+        "opening_fees": "17810707",
+        "reducing_fees": "17680001",
+        "liquidations": "144761"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W14",
+      "label": "25Sep 12:03 ProtocolBalanceWithdraw",
+      "from_block": 107887900,
+      "to_block": 107888200,
+      "liquidations": 0,
+      "protocol_balance_change": "-2999030759",
+      "revenue": {
+        "opening_fees": "457633",
+        "reducing_fees": "511608",
+        "liquidations": "0"
+      },
+      "balance_moves_not_revenue": {
+        "withdrawals": "3000000000"
+      },
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W15",
+      "label": "25Sep 22:27-22:55 TransferAccountToProtocol x2",
+      "from_block": 108012000,
+      "to_block": 108017500,
+      "liquidations": 0,
+      "protocol_balance_change": "152695347825",
+      "revenue": {
+        "opening_fees": "13828198",
+        "reducing_fees": "17772917",
+        "liquidations": "0"
+      },
+      "balance_moves_not_revenue": {
+        "sweeps_in": "152663746710"
+      },
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    },
+    {
+      "window": "W16",
+      "label": "unfiltered 28Sep MON liq 12:29-12:35",
+      "from_block": 108751300,
+      "to_block": 108752500,
+      "liquidations": 2,
+      "protocol_balance_change": "27325427",
+      "revenue": {
+        "opening_fees": "3628568",
+        "reducing_fees": "5221832",
+        "liquidations": "18475027"
+      },
+      "balance_moves_not_revenue": {},
+      "residual": "0",
+      "insurance_markets_active": 9,
+      "insurance_residual_abs": "0"
+    }
+  ],
+  "hourly": {
+    "from": "2026-09-27T12:00:00Z",
+    "to": "2026-09-28T12:00:00Z",
+    "hours": [
+      {
+        "from": "2026-09-27T12:00:00.000Z",
+        "from_block": 108459618,
+        "to_block": 108471539,
+        "protocol_balance_change": "70765769",
+        "revenue": {
+          "opening_fees": "49087133",
+          "reducing_fees": "21678636",
+          "liquidations": "0"
+        },
+        "builder_fees": "2665025",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T13:00:00.000Z",
+        "from_block": 108471539,
+        "to_block": 108483459,
+        "protocol_balance_change": "86257353",
+        "revenue": {
+          "opening_fees": "38386844",
+          "reducing_fees": "47870509",
+          "liquidations": "0"
+        },
+        "builder_fees": "7271874",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T14:00:00.000Z",
+        "from_block": 108483459,
+        "to_block": 108495374,
+        "protocol_balance_change": "208580597",
+        "revenue": {
+          "opening_fees": "73147072",
+          "reducing_fees": "135433525",
+          "liquidations": "0"
+        },
+        "builder_fees": "16112908",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T15:00:00.000Z",
+        "from_block": 108495374,
+        "to_block": 108507291,
+        "protocol_balance_change": "232695259",
+        "revenue": {
+          "opening_fees": "75237557",
+          "reducing_fees": "90607629",
+          "liquidations": "66850073"
+        },
+        "builder_fees": "6632391",
+        "liquidations": 3,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T16:00:00.000Z",
+        "from_block": 108507291,
+        "to_block": 108519211,
+        "protocol_balance_change": "75279453",
+        "revenue": {
+          "opening_fees": "31559413",
+          "reducing_fees": "43720040",
+          "liquidations": "0"
+        },
+        "builder_fees": "6342823",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T17:00:00.000Z",
+        "from_block": 108519211,
+        "to_block": 108531133,
+        "protocol_balance_change": "89688641",
+        "revenue": {
+          "opening_fees": "33838944",
+          "reducing_fees": "55849697",
+          "liquidations": "0"
+        },
+        "builder_fees": "5805087",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T18:00:00.000Z",
+        "from_block": 108531133,
+        "to_block": 108543051,
+        "protocol_balance_change": "156729939",
+        "revenue": {
+          "opening_fees": "74030227",
+          "reducing_fees": "80222580",
+          "liquidations": "2477132"
+        },
+        "builder_fees": "5070026",
+        "liquidations": 1,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T19:00:00.000Z",
+        "from_block": 108543051,
+        "to_block": 108554966,
+        "protocol_balance_change": "207451338",
+        "revenue": {
+          "opening_fees": "46135806",
+          "reducing_fees": "90666293",
+          "liquidations": "70649239"
+        },
+        "builder_fees": "3674857",
+        "liquidations": 3,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T20:00:00.000Z",
+        "from_block": 108554966,
+        "to_block": 108566849,
+        "protocol_balance_change": "94543622",
+        "revenue": {
+          "opening_fees": "44764009",
+          "reducing_fees": "49779613",
+          "liquidations": "0"
+        },
+        "builder_fees": "2479774",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T21:00:00.000Z",
+        "from_block": 108566849,
+        "to_block": 108578773,
+        "protocol_balance_change": "108211230",
+        "revenue": {
+          "opening_fees": "40853157",
+          "reducing_fees": "67358073",
+          "liquidations": "0"
+        },
+        "builder_fees": "4176984",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T22:00:00.000Z",
+        "from_block": 108578773,
+        "to_block": 108590692,
+        "protocol_balance_change": "212280781",
+        "revenue": {
+          "opening_fees": "98178851",
+          "reducing_fees": "114101930",
+          "liquidations": "0"
+        },
+        "builder_fees": "3836894",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-27T23:00:00.000Z",
+        "from_block": 108590692,
+        "to_block": 108602612,
+        "protocol_balance_change": "134799172",
+        "revenue": {
+          "opening_fees": "54704668",
+          "reducing_fees": "80094504",
+          "liquidations": "0"
+        },
+        "builder_fees": "2841420",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T00:00:00.000Z",
+        "from_block": 108602612,
+        "to_block": 108614525,
+        "protocol_balance_change": "277569830",
+        "revenue": {
+          "opening_fees": "126296533",
+          "reducing_fees": "151273297",
+          "liquidations": "0"
+        },
+        "builder_fees": "4556471",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T01:00:00.000Z",
+        "from_block": 108614525,
+        "to_block": 108626441,
+        "protocol_balance_change": "342585017",
+        "revenue": {
+          "opening_fees": "167297367",
+          "reducing_fees": "175287650",
+          "liquidations": "0"
+        },
+        "builder_fees": "3421170",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T02:00:00.000Z",
+        "from_block": 108626441,
+        "to_block": 108638346,
+        "protocol_balance_change": "165331580",
+        "revenue": {
+          "opening_fees": "61762731",
+          "reducing_fees": "103568849",
+          "liquidations": "0"
+        },
+        "builder_fees": "3310099",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T03:00:00.000Z",
+        "from_block": 108638346,
+        "to_block": 108650263,
+        "protocol_balance_change": "169992598",
+        "revenue": {
+          "opening_fees": "56815160",
+          "reducing_fees": "113177438",
+          "liquidations": "0"
+        },
+        "builder_fees": "2528430",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T04:00:00.000Z",
+        "from_block": 108650263,
+        "to_block": 108662180,
+        "protocol_balance_change": "86952238",
+        "revenue": {
+          "opening_fees": "20508158",
+          "reducing_fees": "36023956",
+          "liquidations": "30420124"
+        },
+        "builder_fees": "1460335",
+        "liquidations": 1,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T05:00:00.000Z",
+        "from_block": 108662180,
+        "to_block": 108674092,
+        "protocol_balance_change": "174255365",
+        "revenue": {
+          "opening_fees": "55970126",
+          "reducing_fees": "90838443",
+          "liquidations": "27446796"
+        },
+        "builder_fees": "4443351",
+        "liquidations": 5,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T06:00:00.000Z",
+        "from_block": 108674092,
+        "to_block": 108685989,
+        "protocol_balance_change": "109693640",
+        "revenue": {
+          "opening_fees": "38401441",
+          "reducing_fees": "68821982",
+          "liquidations": "2470217"
+        },
+        "builder_fees": "3052414",
+        "liquidations": 2,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T07:00:00.000Z",
+        "from_block": 108685989,
+        "to_block": 108697884,
+        "protocol_balance_change": "117942161",
+        "revenue": {
+          "opening_fees": "48228283",
+          "reducing_fees": "69713878",
+          "liquidations": "0"
+        },
+        "builder_fees": "2837778",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T08:00:00.000Z",
+        "from_block": 108697884,
+        "to_block": 108709796,
+        "protocol_balance_change": "107500997",
+        "revenue": {
+          "opening_fees": "54651987",
+          "reducing_fees": "52849010",
+          "liquidations": "0"
+        },
+        "builder_fees": "3548810",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T09:00:00.000Z",
+        "from_block": 108709796,
+        "to_block": 108721715,
+        "protocol_balance_change": "-7121952410",
+        "revenue": {
+          "opening_fees": "58054106",
+          "reducing_fees": "77586066",
+          "liquidations": "2145505"
+        },
+        "builder_fees": "3516281",
+        "liquidations": 1,
+        "payouts": "7259738087",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T10:00:00.000Z",
+        "from_block": 108721715,
+        "to_block": 108733634,
+        "protocol_balance_change": "126643184",
+        "revenue": {
+          "opening_fees": "54128047",
+          "reducing_fees": "72515137",
+          "liquidations": "0"
+        },
+        "builder_fees": "3834505",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      },
+      {
+        "from": "2026-09-28T11:00:00.000Z",
+        "from_block": 108733634,
+        "to_block": 108745552,
+        "protocol_balance_change": "169825593",
+        "revenue": {
+          "opening_fees": "63133959",
+          "reducing_fees": "106691634",
+          "liquidations": "0"
+        },
+        "builder_fees": "2229509",
+        "liquidations": 0,
+        "payouts": "0",
+        "residual": "0",
+        "insurance_residual": "0"
+      }
+    ],
+    "totals": {
+      "revenue": {
+        "opening_fees": "1465171579",
+        "reducing_fees": "1995730369",
+        "liquidations": "202459086"
+      },
+      "builder_fees": "105649216",
+      "liquidations": 16,
+      "payouts": "7259738087",
+      "protocol_balance_change": "-3596377053",
+      "residual": "0"
+    },
+    "checks": {
+      "unlinked": 0,
+      "buildMismatch": 0,
+      "insFormulaMiss": 0,
+      "liqAccMiss": 0,
+      "liqNonPositive": 0,
+      "liqPartial": 0,
+      "liqFillFeeNonZero": 0,
+      "unknown": 0,
+      "note": "counts over the 24 hours of cases the rules do not cover or that broke them: unlinked position events, opening splits off the event, insurance share off the ceil rule, accAmount off the 80 % rule, bankrupt (X <= 0) or partial liquidations, liquidation fills with a fee, logs with an unknown topic"
+    }
+  }
+}

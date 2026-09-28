@@ -172,7 +172,11 @@ step.
   and the liquidation fees (see the methodology): re-index to include them.
   Schema changes
   are additive. A change to rollup definitions bumps `ROLLUP_VERSION`, and
-  the rollups are recomputed from the stored events.
+  the rollups are recomputed from the stored events. Version 3 (protocol
+  revenue by source) adds columns to `agg_market_hour` at start, carries
+  over the hours without charged decreases, closes or liquidations, and
+  rolls the others again (logged as `rollup version 3: … carried over, …
+  to roll again`); windows read raw events for those hours until then.
 - **Re-index from scratch**: `docker compose down`, remove the
   `plumb_clickhouse-data` volume, then `docker compose up -d`. The event
   history is rebuilt from the chain; the 5-minute contract snapshots behind

@@ -3,7 +3,7 @@
 ## On-chain (authoritative)
 
 - Monad mainnet, chain 143. Exchange `0x34B6552d57a35a1D042CcAe1951BD1C370112a6F`
-  (contract version 1.7.4 via `getContractVersion()`, Perpl release v1.1.7.4; `ContractVersionSet` at block 95,662,781, still current on 2026-09-23), collateral AUSD
+  (contract version 1.7.4 via `getContractVersion()`, Perpl release v1.1.7.4, from `ContractVersionSet` at block 95,662,781; version 1.7.5 from block 107,355,313, 2026-09-23 about 15:20 UTC), collateral AUSD
   `0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a`, 6 decimals (via
   `getExchangeInfo()`).
 - Getters used: `getPerpetualExistsBitmap`, `getPerpetualInfoV2`,
