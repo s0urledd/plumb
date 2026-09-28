@@ -25,6 +25,7 @@ function init(el) {
     chart.__root = el.lastElementChild; // echarts appends its own root
     el.__chart = chart; registry.add(chart); observer?.observe(el);
   }
+  for (const t of ['click', 'datazoom', 'legendselectchanged']) chart.off(t); // handlers belong to the builder drawing now
   return chart;
 }
 // Exports: the plotted data (time-aligned series, as shown) and the image.
@@ -85,16 +86,16 @@ const timeAxis = (times, bucketSeconds) => {
     }
   };
 };
-// 1, 2, 2.5 or 5 times a power of ten, at or above v.
-const niceCeil = v => { const p = 10 ** Math.floor(Math.log10(v)); return [1, 2, 2.5, 5, 10].map(k => k * p).find(x => x >= v); };
+// The first step times a power of ten at or above v (by default 1, 2, 2.5 or 5).
+const niceCeil = (v, steps = [1, 2, 2.5, 5, 10]) => { const p = 10 ** Math.floor(Math.log10(v)); return steps.map(k => k * p).find(x => x >= v); };
 // Axis money: $1.5M, $900K, $0.
 export const usdAxis = v => { const n = Number(v); if (!n) return '$0'; const a = Math.abs(n); const [k, u] = a >= 1e9 ? [1e9, 'B'] : a >= 1e6 ? [1e6, 'M'] : a >= 1e3 ? [1e3, 'K'] : [1, '']; const x = a / k; return `${n < 0 ? '-' : ''}$${x >= 100 || Number.isInteger(x) ? Math.round(x) : x.toFixed(1).replace(/\.0$/, '')}${u}`; };
 const SPLIT = { lineStyle: { color: T.grid, type: [3, 4] } };
 const valueAxis = fmt => ({ type: 'value', splitNumber: 3, axisLabel: { color: T.faint, formatter: fmt, margin: 10, fontSize: 10.5 }, splitLine: SPLIT, axisLine: { show: false }, axisTick: { show: false } });
 // Tooltip rows carry the same dot as the legends.
 const row = (color, name, value) => `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7"><span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:7px;vertical-align:1px"></span>${esc(name)}</span><b style="font-weight:500;font-variant-numeric:tabular-nums">${value}</b></div>`;
-// Rounds the outer end of each stack: per bucket, the last series with a value there.
-const capped = (datas, radius) => { const top = (datas[0] ?? []).map((_, i) => datas.findLastIndex(d => num(d[i]))); return datas.map((d, s) => d.map((v, i) => (s === top[i] ? { value: v, itemStyle: { borderRadius: radius } } : v))); };
+// Rounds the outer end of each stack: per bucket, the last shown series with a value there.
+const capped = (datas, radius, shown = datas.map(() => true)) => { const top = (datas[0] ?? []).map((_, i) => datas.findLastIndex((d, s) => shown[s] && num(d[i]))); return datas.map((d, s) => d.map((v, i) => (s === top[i] ? { value: v, itemStyle: { borderRadius: radius } } : v))); };
 // The last bucket while its period is still running: its bar is drawn faded
 // and its tooltip says so, so a half-filled hour does not read as a drop.
 function partialAt(times, bucketSeconds) {
@@ -143,10 +144,10 @@ function zoomOptions(xAxisIndex = 0) {
 // A running total drawn on the bars' own axis, one segment per period: flat
 // through the gaps and climbing across that period's bar, so the line never
 // moves before the bar it adds and zooming keeps the two aligned.
-const runningTotal = (total, barMax) => ({
+const runningTotal = (total, bars) => ({
   name: CUMULATIVE, type: 'custom', yAxisIndex: 1, z: 5, data: total.map((v, i) => [i, v, i ? total[i - 1] : 0]), encode: { x: 0, y: 1 }, itemStyle: { color: '#ffffff' },
   renderItem: (_, api) => {
-    const slot = api.size([1, 0])[0], half = Math.min(barMax, slot * 0.7) / 2; // the bar's width at a 30 % category gap
+    const slot = api.size([1, 0])[0], half = Math.min(bars.barMaxWidth, slot * (1 - parseFloat(bars.barCategoryGap) / 100)) / 2; // the width the bars get
     const [x, from] = api.coord([api.value(0), api.value(2)]), to = api.coord([api.value(0), api.value(1)])[1];
     return { type: 'polyline', shape: { points: [[x - slot / 2, from], [x - half, from], [x + half, to], [x + slot / 2, to]] }, style: { stroke: 'rgba(255,255,255,0.8)', lineWidth: 1.5, fill: null, lineJoin: 'round' } };
   }
@@ -161,7 +162,10 @@ export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v
   let run = 0;
   const total = cumulative ? times.map((_, i) => (run += series.reduce((a, s) => a + (num(s.data[i]) || 0), 0))) : null;
   const partial = partialAt(times, bucketSeconds);
-  const data = capped(series.map(s => s.data), [3, 3, 0, 0]);
+  const layout = { barMaxWidth: 20, barCategoryGap: '30%' };
+  const data = shown => capped(series.map(s => s.data), [3, 3, 0, 0], shown).map(d => fade(d, partial));
+  // A series hidden from the legend hands the rounded top to the one now outermost.
+  chart.on('legendselectchanged', e => chart.setOption({ series: data(series.map(s => e.selected[s.name] !== false)).map(d => ({ data: d })) }));
   chart.setOption({
     ...base(),
     grid: { ...base().grid, right: cumulative ? 8 : 12, bottom: zoom ? 30 : 6 },
@@ -171,8 +175,8 @@ export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { total: true, exclude: CUMULATIVE, partial }) },
     dataZoom: zoom ? zoomOptions() : undefined,
     series: [
-      ...series.map((s, i) => ({ name: s.name, type: 'bar', stack: 'a', data: fade(data[i], partial), itemStyle: { color: s.color, borderColor: T.surface, borderWidth: series.length > 1 ? 0.5 : 0 }, barMaxWidth: 20, barCategoryGap: '30%', emphasis: { focus: 'series' } })),
-      ...(cumulative ? [runningTotal(total, 20)] : [])
+      ...data().map((d, i) => ({ name: series[i].name, type: 'bar', stack: 'a', data: d, itemStyle: { color: series[i].color, borderColor: T.surface, borderWidth: series.length > 1 ? 0.5 : 0 }, ...layout, emphasis: { focus: 'series' } })),
+      ...(cumulative ? [runningTotal(total, layout)] : [])
     ]
   }, true);
 }
@@ -272,11 +276,17 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
   const peak = Math.max(1, ...near.map(b => b.n));
   // Bands under 5 % of the largest are left out: the chart shows where liquidations cluster, not every position.
   const bands = near.filter(b => b.n >= peak * 0.05);
-  // Amounts on at most three bands at least 1 % of price apart: the largest of
-  // each side first, so neither side goes unlabelled, then the next largest.
-  const bySize = [...bands].sort((a, c) => c.n - a.n), leads = bySize.filter(b => bySize.find(o => o.side === b.side) === b);
-  const labelled = new Set();
-  for (const b of [...leads, ...bySize]) { if (labelled.size >= 3) break; if ([...labelled].every(o => Math.abs(o.lo - b.lo) >= mark * 0.01)) labelled.add(b); }
+  const lows = ohlc.filter(Array.isArray).map(c => c[2]), highs = ohlc.filter(Array.isArray).map(c => c[3]);
+  const yMin = bands.length ? Math.min(...lows, ...bands.map(b => b.lo)) : null, yMax = bands.length ? Math.max(...highs, ...bands.map(b => b.hi)) : null;
+  const pad = yMin !== null ? (yMax - yMin) * 0.03 : 0, ends = yMin !== null ? [yMin - pad, yMax + pad] : null;
+  const priceH = zoom ? 58 : 64; // the price grid's share of the height, in %
+  // Amounts on at most three bands, 1 % of price and a label's height (20px) apart:
+  // per side the largest band that fits goes first, so neither side goes unlabelled.
+  const gap = ends ? Math.max(mark * 0.01, 20 * (ends[1] - ends[0]) / ((chart.getHeight() || 400) * priceH / 100)) : 0;
+  const bySize = [...bands].sort((a, c) => c.n - a.n), labelled = [];
+  const fits = b => !labelled.includes(b) && labelled.every(o => Math.abs(o.lo + o.hi - b.lo - b.hi) / 2 >= gap);
+  for (const side of new Set(bySize.map(b => b.side))) { const b = bySize.find(o => o.side === side && fits(o)); if (b) labelled.push(b); }
+  for (const b of bySize) if (labelled.length < 3 && fits(b)) labelled.push(b);
   const markArea = bands.length ? {
     silent: false,
     data: bands.map((b, i) => [{
@@ -285,27 +295,35 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
       label: { show: false }
     }, { yAxis: b.hi }])
   } : undefined;
-  // The amounts ride on invisible mark lines, which draw above the candles, on a backing that keeps them legible.
-  const markLine = labelled.size ? {
+  // The amounts ride on invisible mark lines, which draw above the candles, on a
+  // backing that keeps them legible; at the left end, so the newest candles stay clear.
+  const markLine = labelled.length ? {
     symbol: 'none', silent: true, lineStyle: { color: 'transparent' },
-    data: [...labelled].map(b => ({ yAxis: (b.lo + b.hi) / 2, label: { position: 'insideEnd', distance: 4, color: b.side === 'long' ? T.long : T.short, fontSize: 10.5, backgroundColor: 'rgba(18,17,19,0.8)', padding: [2, 5], borderRadius: 4, formatter: () => `liq ${usd(b.n)}` } }))
+    data: labelled.map(b => ({ yAxis: (b.lo + b.hi) / 2, label: { position: 'insideStart', distance: 4, color: b.side === 'long' ? T.long : T.short, fontSize: 10.5, backgroundColor: 'rgba(18,17,19,0.8)', padding: [2, 5], borderRadius: 4, formatter: () => `liq ${usd(b.n)}` } }))
   } : undefined;
-  const lows = ohlc.filter(Array.isArray).map(c => c[2]), highs = ohlc.filter(Array.isArray).map(c => c[3]);
-  const yMin = bands.length ? Math.min(...lows, ...bands.map(b => b.lo)) : null, yMax = bands.length ? Math.max(...highs, ...bands.map(b => b.hi)) : null;
-  const pad = yMin !== null ? (yMax - yMin) * 0.03 : 0;
-  // Volume ticks at zero, half and top, all round, so three labels fit its short grid.
-  const vHalf = niceCeil(Math.max(1, ...volume.map(v => num(v) ?? 0)) / 2);
-  chart.off('click');
+  // Volume ticks at zero, half and a round top that the busiest bar in view nearly reaches.
+  const volAxis = (from = 0, to = volume.length - 1) => { const top = niceCeil(Math.max(1, ...volume.slice(from, to + 1).map(v => num(v) ?? 0)), [1, 1.5, 2, 3, 4, 5, 6, 8, 10]); return { min: 0, max: top, interval: top / 2 }; };
+  // Each grid sizes its gutter to its own axis labels, which would put a candle and
+  // its volume bar at different x: the narrower gutter is widened to match.
+  let lefts = [8, 8];
+  const align = (s = 0) => {
+    const plotLeft = i => { const [a, b] = [s, s + 1].map(v => chart.convertToPixel({ xAxisIndex: i }, v)); return a - (b - a) / 2; };
+    const gutters = lefts.map((l, i) => plotLeft(i) - l), next = gutters.map(g => 8 + Math.max(...gutters) - g);
+    if (next.every(Number.isFinite) && next.some((l, i) => Math.abs(l - lefts[i]) > 0.5)) { lefts = next; chart.setOption({ grid: lefts.map(left => ({ left })) }); }
+  };
   if (onLevel) chart.on('click', p => { const i = /^band-(\d+)$/.exec(p.name ?? '')?.[1]; if (p.componentType === 'markArea' && i !== undefined) onLevel(bands[Number(i)]); });
+  // Zoomed in, the volume scale follows the stretch in view, and its labels may change width.
+  if (zoom) chart.on('datazoom', () => { const z = chart.getOption().dataZoom[0]; chart.setOption({ yAxis: [{}, volAxis(z.startValue, z.endValue)] }); align(z.startValue); });
   chart.setOption({
     ...base(),
     dataZoom: zoom ? zoomOptions([0, 1]) : undefined,
-    grid: [{ left: 8, right: 12, top: 12, height: zoom ? '58%' : '64%', containLabel: true }, { left: 8, right: 12, top: zoom ? '72%' : '78%', bottom: zoom ? 30 : 6, containLabel: true }],
+    // The right margin leaves room for a date under the last candle.
+    grid: [{ left: 8, right: 20, top: 12, height: `${priceH}%`, containLabel: true }, { left: 8, right: 20, top: zoom ? '72%' : '78%', bottom: zoom ? 30 : 6, containLabel: true }],
     xAxis: [x(0), x(1)],
     yAxis: [
-      // Widened to the bands, the ends fall between round ticks: only the round ones are labelled.
-      { ...valueAxis(priceFmt), scale: true, gridIndex: 0, ...(yMin !== null ? { min: yMin - pad, max: yMax + pad, axisLabel: { ...valueAxis(priceFmt).axisLabel, showMinLabel: false, showMaxLabel: false } } : {}) },
-      { ...valueAxis(usdAxis), gridIndex: 1, min: 0, max: 2 * vHalf, interval: vHalf }
+      // Widened to the bands, the ends fall between round ticks: they go unlabelled and take no room.
+      { ...valueAxis(priceFmt), scale: true, gridIndex: 0, ...(ends ? { min: ends[0], max: ends[1], axisLabel: { ...valueAxis(priceFmt).axisLabel, formatter: v => (ends.includes(v) ? '' : priceFmt(v)) } } : {}) },
+      { ...valueAxis(usdAxis), gridIndex: 1, ...volAxis() }
     ],
     tooltip: { ...base().tooltip, formatter: params => { const c = params.find(p => p.seriesType === 'candlestick'); const v = params.find(p => p.seriesType === 'bar'); const t = params[0]?.axisValue; if (!c) return ''; const [o, cl, lo, hi] = c.value.slice(1); return `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(t) : dateTime(t) + ' UTC'}</div>${row('transparent', 'Open', priceFmt(o))}${row('transparent', 'High', priceFmt(hi))}${row('transparent', 'Low', priceFmt(lo))}${row('transparent', 'Close', priceFmt(cl))}${v ? row('transparent', 'Volume', usd(v.value)) : ''}`; } },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
@@ -314,6 +332,7 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
       { type: 'bar', name: 'Volume', data: volume, xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: volColor, borderRadius: [3, 3, 0, 0] }, barMaxWidth: 10 }
     ]
   }, true);
+  align();
 }
 
 // Horizontal bars (categories on y), e.g. per-market breakdowns.
