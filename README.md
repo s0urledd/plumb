@@ -77,7 +77,7 @@ How we know the numbers are right:
   contract splits them.
 - **Finalized blocks only**, and every window says whether its history is
   complete.
-- **24 h volume matches Perpl's own figure** within 0.04 %.
+- **24 h volume matches Perpl's own figure** within 0.1 %.
 
 Details in [methodology](docs/methodology.md) and
 [architecture](docs/architecture.md).
@@ -135,6 +135,12 @@ docker compose up -d --build  # app + ClickHouse on 127.0.0.1:8787
 docker compose --profile exec-events up -d --build   # optional, with the node's event ring
 ```
 
+No Monad node? Set both `MONAD_RPC_URL` and `ARCHIVE_RPC_URLS` to
+`https://rpc1.monad.xyz`. That public endpoint serves the 1000-block log
+ranges, finalized blocks and `eth_call` Plumb needs. It is rate-limited, so the
+history takes longer; `BACKFILL_FROM_BLOCK` indexes a shorter stretch.
+(`rpc.monad.xyz` caps log ranges at 100 blocks and will not do.)
+
 The live feed starts at once; history since launch is indexed in the
 background in one to three hours. The [runbook](docs/runbook.md) covers the
 reverse proxy, the event ring and configuration.
@@ -145,8 +151,6 @@ npm ci && npm run check && npm test   # unit tests, no network needed
 
 ## Roadmap
 
-- **Trading bot** (planned): trading on Perpl through its API, with Plumb's
-  data for signals and risk limits. Notes: [docs/bot.md](docs/bot.md).
 - **More alerts**: webhooks alongside Telegram, and alerts on a market's
   liquidation ladder.
 
@@ -158,10 +162,14 @@ Risk Tool" bounty. Checklist and demo notes:
 
 ## Credits
 
-- ABI subset from Perpl's MIT-licensed `perpl-sdk` ([abi/README.md](abi/README.md)).
-- [viem](https://github.com/wevm/viem), [Apache ECharts](https://github.com/apache/echarts),
-  [Geist](https://github.com/vercel/geist-font), [ClickHouse](https://github.com/ClickHouse/ClickHouse),
-  [Monode](https://github.com/monad-developers/monode).
+- ABI subset from Perpl's `perpl-sdk`, MIT, © 2025 Perpl Foundation
+  ([abi/README.md](abi/README.md), [licence](abi/LICENSE-perpl-sdk)).
+- [viem](https://github.com/wevm/viem) (MIT),
+  [Apache ECharts](https://github.com/apache/echarts) (Apache-2.0),
+  [Geist](https://github.com/vercel/geist-font) (SIL Open Font License 1.1),
+  [ClickHouse](https://github.com/ClickHouse/ClickHouse) (Apache-2.0),
+  [Monode](https://github.com/monad-developers/monode) (MIT, built from a
+  pinned commit in `deploy/monode`).
 - Market-share data from [DefiLlama](https://defillama.com/open-interest).
 - Market and venue logos belong to their owners
   ([sources](web/img/markets/README.md)).

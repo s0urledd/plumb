@@ -3,8 +3,7 @@
 - **Entry:** one project (the rules allow one per participant, §2.5) in
   track 01, Onchain Finance & Trading, entered for Perpl's "Best Analytics /
   Risk Tool" bounty: the dashboard, the API and the Telegram alerts (this
-  document). A trading bot for "Best use of Perpl's API" is planned, not
-  built ([bot.md](bot.md)).
+  document).
 - **Submissions:** open 2 October 2026 and close 14 October 2026, 06:59
   GMT+3 (13 October, 11:59 PM ET).
 - **Required (rules §4.1, §9):** a public repository with source, README,
@@ -137,7 +136,7 @@ Judging criteria:
 | Event history reproduces the contract | 67 million events since launch give open interest equal to the contract for all 11 markets, and TVL equal to the micro-dollar (`docs/evidence/integrity-2026-09-23.json`, live at `/api/v1/integrity`) |
 | Live positions match the contract | Reconciliation every poll; independent rescan hourly (`/api/v1/validation`) |
 | PnL and funding formulas match the contract | `docs/validation-gate.md` (557 / 557, 208 / 208) |
-| 24 h volume matches Perpl's own figure | Within 0.001 % on 2026-09-21 and 0.035 % on 2026-09-23 (all markets within 0.1 %) |
+| 24 h volume matches Perpl's own figure | Within 0.001 % on 2026-09-21, 0.035 % on 2026-09-23 and 0.049 % on 2026-09-28 (`docs/methodology.md`) |
 | A liquidation's result is the trader's balance change | The trader gets back exactly 80 % of the remaining margin (`accAmountCNS`), e.g. at block 107,162,461; the rest is counted as a fee (`test/decode.test.js`) |
 | Fees are not double counted | A builder's share is inside the fill fee and the protocol part on all 1.6 million fills that carry one (checked in ClickHouse, 2026-09-23) |
 
