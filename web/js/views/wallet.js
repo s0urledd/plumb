@@ -9,6 +9,8 @@ import { lineChart, signedBars, COLORS } from '../charts.js';
 const twinLink = rows => { const ids = {}; for (const r of rows) (ids[r.symbol] ??= new Set()).add(r.market); return r => `${mktLink(r.market, r.symbol)}${ids[r.symbol]?.size > 1 ? ` <span class="faint" title="Relisted market: the same asset under a new market id">#${esc(r.market)}</span>` : ''}`; };
 const TABS = [['overview', 'Overview'], ['positions', 'Positions'], ['trades', 'Trade history'], ['trips', 'Round trips'], ['flows', 'Deposits & withdrawals']];
 const KIND = { open: 'Open', increase: 'Add', decrease: 'Reduce', close: 'Close', invert: 'Flip', liquidation: 'Liquidated', deleverage: 'ADL', unwind: 'Unwind' };
+// "Aug 30 → Sep 6, 2026": the year once when both ends share it, so the range fits a KPI note.
+const dateSpan = (a, b) => { const x = date(a), y = date(b); return `${x.slice(-4) === y.slice(-4) ? x.slice(0, -6) : x} → ${y}`; };
 
 export function mount(el, { params, query, setQuery, navigate }) {
   const key = params[0];
@@ -45,7 +47,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
       kpi({ label: 'Win rate', value: !perf ? wait : perf.win_rate_pct === null ? '—' : pct(perf.win_rate_pct, { digits: 1 }), note: perf ? `${int(perf.wins)}W · ${int(perf.losses)}L of ${int(perf.closed_trips)} trips` : 'analysing round trips…' }),
       kpi({ label: 'Profit factor', value: !perf ? wait : perf.profit_factor === null ? '—' : perf.profit_factor.toFixed(2), note: perf ? `avg win ${usd(perf.average_win)} · loss ${usd(perf.average_loss)}` : '' }),
       kpi({ label: 'Volume', value: usd(s.volume), note: `${int(s.trades)} trades · ${pct(s.maker_share_pct, { digits: 0 })} maker` }),
-      kpi({ label: 'Max drawdown', value: !perf ? wait : `<span class="${num(perf.max_drawdown) > 0 ? 'neg' : ''}">${usd(perf.max_drawdown)}</span>`, note: perf?.drawdown_to ? `${date(perf.drawdown_from)} → ${date(perf.drawdown_to)}` : 'on closed round trips' })
+      kpi({ label: 'Max drawdown', value: !perf ? wait : `<span class="${num(perf.max_drawdown) > 0 ? 'neg' : ''}">${usd(perf.max_drawdown)}</span>`, note: perf?.drawdown_to ? dateSpan(perf.drawdown_from, perf.drawdown_to) : 'on closed round trips' })
     ].join('')}</div>`;
   }
   const POS_COLS = [
@@ -94,10 +96,12 @@ export function mount(el, { params, query, setQuery, navigate }) {
     return `<div class="panel-body"><div class="heat">${grid.map((row, d) => `<span>${days[d]}</span>${row.map((c, h) => `<i title="${days[d]} ${String(h).padStart(2, '0')}:00 UTC · ${c} trades" style="background:rgba(162,164,255,${c ? 0.12 + 0.88 * c / max : 0.04})"></i>`).join('')}`).join('')}<span></span>${Array.from({ length: 24 }, (_, h) => `<span style="text-align:center">${h % 6 === 0 ? h : ''}</span>`).join('')}</div></div>`;
   }
 
+  // The tabs sit on the page and each tab lays out its own cards, so no card
+  // is drawn inside another.
   function render() {
     const d = data;
-    el.innerHTML = `${head(d)}<div class="stack"><div id="kpi-row">${kpis(d)}</div>
-      <section class="panel">${tabs('tab', TABS, tab)}<div id="tab-body"></div></section></div>`;
+    el.innerHTML = `${head(d)}<div class="stack wallet-page"><div id="kpi-row">${kpis(d)}</div>
+      <div class="wallet-tabs">${tabs('tab', TABS, tab)}</div><div class="stack" id="tab-body"></div></div>`;
     renderTab();
   }
   const perfSkeleton = () => `<div class="panel-body">${Array.from({ length: 7 }, () => '<div class="skeleton sk-line"></div>').join('')}</div>`;
@@ -107,16 +111,19 @@ export function mount(el, { params, query, setQuery, navigate }) {
   }
   function renderTab() {
     const d = data, body = $('tab-body');
+    const block = esc(d.portfolio?.block ?? d.meta.block ?? '');
     if (tab === 'overview') {
       body.innerHTML = `
-        ${d.positions.length ? `<div class="panel-head"><h2>Open positions</h2><span class="meta">Contract state at block ${esc(d.portfolio?.block ?? d.meta.block ?? '')}</span></div><div class="panel-body flush">${table({ id: 'pos', columns: POS_COLS, rows: d.positions })}</div>` : ''}
-        <div class="panel-head"><h2>By period</h2><span class="meta">Rolling windows · rank among every account that traded in the window</span></div>
-        <div class="panel-body flush" id="periods">${periods ? periodsTable() : skeleton(4)}</div>
-        <div class="grid g-main" style="padding:16px;gap:16px">
-          <section class="panel"><div class="panel-head"><h2>Net PnL (after fees)</h2><div class="head-right">${chartTools('pnl-chart', `wallet-${d.account.id}-pnl`)}<div class="seg sm"><button data-action="pnl-cum" class="${pnlMode === 'cumulative' ? 'on' : ''}">Cumulative</button><button data-action="pnl-daily" class="${pnlMode === 'daily' ? 'on' : ''}">Daily</button><button data-action="pnl-cal" class="${pnlMode === 'calendar' ? 'on' : ''}">Calendar</button></div></div></div><div class="panel-body"><div class="chart" id="pnl-chart"></div></div></section>
+        ${d.positions.length ? `<section class="panel"><div class="panel-head"><h2>Open positions</h2><span class="meta">Contract state at block ${block}</span></div><div class="panel-body flush">${table({ id: 'pos', columns: POS_COLS, rows: d.positions })}</div></section>` : ''}
+        <section class="panel"><div class="panel-head"><h2>By period</h2><span class="meta">Rolling windows · rank among every account that traded in the window</span></div>
+          <div class="panel-body flush" id="periods">${periods ? periodsTable() : skeleton(4)}</div></section>
+        <div class="grid g-main">
+          <section class="panel trend pnl-card"><div class="panel-head"><div class="trend-id"><h2>Net PnL <span class="info-tip" title="Realized PnL (price PnL and funding) minus trading fees, per UTC day. Open positions count once they are reduced or closed.">i</span></h2><div class="head-value" id="pnl-v"></div></div>
+            <div class="trend-side"><div class="trend-ctl">${chartTools('pnl-chart', `wallet-${d.account.id}-pnl`)}<div class="seg sm"><button data-action="pnl-cum" class="${pnlMode === 'cumulative' ? 'on' : ''}">Cumulative</button><button data-action="pnl-daily" class="${pnlMode === 'daily' ? 'on' : ''}">Daily</button><button data-action="pnl-cal" class="${pnlMode === 'calendar' ? 'on' : ''}">Calendar</button></div></div><div class="legend dots" id="pnl-lg"></div></div></div>
+            <div class="panel-body"><div class="chart" id="pnl-chart"></div></div></section>
           <section class="panel"><div class="panel-head"><h2>Performance</h2><span class="meta">Closed round trips, net of fees</span></div><div id="perf">${an ? perfPanel(an.performance, d.summary) : perfSkeleton()}</div></section>
         </div>
-        <div class="grid g-2" style="padding:0 16px 16px;gap:16px">
+        <div class="grid g-2">
           <section class="panel"><div class="panel-head"><h2>Behaviour</h2><span class="meta">Rule-based, from this wallet's trades</span></div>
             <div id="insights">${an ? insightsHtml() : perfSkeleton()}</div></section>
           <section class="panel"><div class="panel-head"><h2>By market</h2><span class="meta" title="Volume and net PnL cover the whole indexed history; win rate and trips come from the analysed round trips">Volume, PnL all-time · win rate, trips from analysed trips</span></div><div class="panel-body flush">${table({ id: 'mk', compact: true, columns: [
@@ -130,18 +137,18 @@ export function mount(el, { params, query, setQuery, navigate }) {
       drawPnl();
     } else if (tab === 'positions') {
       const p = d.portfolio;
-      body.innerHTML = `${p ? `<div class="stat-grid" style="border-bottom:1px solid var(--line)">
+      body.innerHTML = `${p ? `<section class="panel"><div class="panel-head"><h2>Account</h2><span class="meta">Contract state at block ${block}</span></div><div class="stat-grid acct-grid">
           <div class="stat"><span>Balance</span><span>${usdFull(p.balance)}</span></div><div class="stat"><span>Available</span><span>${usdFull(p.available_balance ?? p.balance)}</span></div><div class="stat"><span>Locked by orders</span><span>${usdFull(p.locked_balance)}</span></div>
           <div class="stat"><span>Position margin</span><span>${usdFull(p.position_margin)}</span></div><div class="stat"><span>Account value</span><span>${usdFull(p.account_value)}</span></div>
           <div class="stat"><span>Margin usage</span><span>${pct(p.margin_usage_pct, { digits: 1 })}</span></div><div class="stat"><span>Effective leverage</span><span>${p.leverage ?? 0}x</span></div>
-        </div>` : ''}${table({ id: 'pos', columns: POS_COLS, rows: d.positions, emptyText: 'No open positions' })}`;
+        </div></section>` : ''}<section class="panel"><div class="panel-head"><h2>Open positions</h2><span class="meta">${int(d.positions.length)} open</span></div><div class="panel-body flush">${table({ id: 'pos', columns: POS_COLS, rows: d.positions, emptyText: 'No open positions' })}</div></section>`;
     } else if (tab === 'trades') {
-      body.innerHTML = `<div class="panel-head"><span class="meta">Newest first · every position change with its fill</span><a class="btn ghost" href="/api/v1/wallets/${esc(d.account.address)}/trades?format=csv&limit=10000">${ICON.download} CSV</a></div><div class="panel-body flush" id="trade-list">${skeleton(8)}</div><div class="panel-foot"><span id="trade-count"></span><button class="btn ghost" data-action="more" id="more">Load more</button></div>`;
+      body.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>Trade history</h2><div class="desc">Newest first · every position change with its fill</div></div><a class="btn ghost" href="/api/v1/wallets/${esc(d.account.address)}/trades?format=csv&limit=10000">${ICON.download} CSV</a></div><div class="panel-body flush" id="trade-list">${skeleton(8)}</div><div class="panel-foot"><span id="trade-count"></span><button class="btn ghost" data-action="more" id="more">Load more</button></div></section>`;
       if (trades.length) renderTrades(); else loadTrades();
     } else if (tab === 'trips') {
-      if (!an) { body.innerHTML = perfSkeleton(); return; }
+      if (!an) { body.innerHTML = `<section class="panel">${perfSkeleton()}</section>`; return; }
       const tripRows = [...an.open_trips.map(t => ({ ...t, open: true })), ...an.trips];
-      body.innerHTML = `<div class="panel-head"><span class="meta">Open trips first, then closed trips, newest close first</span></div>` + table({ id: 'trips', columns: [
+      body.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>Round trips</h2><div class="desc">Open trips first, then closed trips, newest close first</div></div></div>` + table({ id: 'trips', columns: [
         { key: 'm', label: 'Market', render: twinLink(tripRows) },
         { key: 's', label: 'Side', render: r => sideTag(r.side) },
         { key: 'c', label: 'Closed', render: r => (r.open ? '<span class="faint">open</span>' : `<span class="muted num">${dateTime(r.close_ts)}</span>`) },
@@ -153,22 +160,24 @@ export function mount(el, { params, query, setQuery, navigate }) {
         { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.net_pnl) },
         { key: 'r', label: 'Return', n: true, render: r => pctCell(r.return_pct) },
         { key: 'f', label: 'Outcome', render: r => (r.open ? '<span class="tag" title="Still open; PnL so far">open</span>' : r.liquidated ? '<span class="tag bad">liquidated</span>' : r.deleveraged ? '<span class="tag warn">ADL</span>' : num(r.net_pnl) > 0 ? '<span class="tag good">win</span>' : num(r.net_pnl) < 0 ? '<span class="tag">loss</span>' : '<span class="tag">flat</span>') }
-      ], rows: tripRows, rowAttrs: r => (r.open ? 'title="Still open"' : ''), emptyText: 'No round trips yet' });
+      ], rows: tripRows, rowAttrs: r => (r.open ? 'title="Still open"' : ''), emptyText: 'No round trips yet' }) + '</section>';
     } else if (tab === 'flows') {
-      body.innerHTML = `<div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div></div>` + table({ id: 'flows', columns: [
+      body.innerHTML = `<section class="panel"><div class="panel-head"><h2>Deposits and withdrawals</h2><span class="meta">Newest first</span></div><div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div></div>` + table({ id: 'flows', columns: [
         { key: 't', label: 'Time (UTC)', render: r => `<span class="muted num">${dateTime(r.ts)}</span>` },
         { key: 'k', label: 'Type', render: r => `<span class="${r.kind === 'deposit' ? 'pos' : 'neg'}">${r.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}</span>` },
         { key: 'a', label: 'Amount', n: true, render: r => usdFull(r.amount) },
         { key: 'b', label: 'Balance after', n: true, render: r => usdFull(r.balance_after) },
         { key: 'tx', label: 'Tx', render: r => `<a class="faint mono" href="${EXPLORER}/tx/${esc(r.tx)}" target="_blank" rel="noopener noreferrer">${esc(r.tx.slice(0, 10))}…</a>` }
-      ], rows: d.flows, emptyText: 'No deposits or withdrawals indexed' });
+      ], rows: d.flows, emptyText: 'No deposits or withdrawals indexed' }) + '</section>';
     }
   }
   // Daily net PnL as a calendar (weeks × weekdays, UTC), green and red by
-  // size relative to the largest day; the last 26 weeks with activity.
-  function pnlCalendar(rows) {
+  // size relative to the largest day; the last weeks with activity, as many
+  // as fit the card (up to 26), so a phone shows the latest weeks unscrolled.
+  // Returns the grid and its green and red day counts (for the header).
+  function pnlCalendar(rows, weeks = 26) {
     const byDay = new Map(rows.map(r => [Math.floor(r.t / 86400), r]));
-    const lastDay = Math.floor(rows.at(-1).t / 86400), weeks = 26;
+    const lastDay = Math.floor(rows.at(-1).t / 86400);
     const end = lastDay + (6 - ((lastDay + 3) % 7)); // Sunday closing the last week (day 0 was a Thursday)
     const start = Math.max(end - weeks * 7 + 1, Math.floor(rows[0].t / 86400) - ((Math.floor(rows[0].t / 86400) + 3) % 7));
     const max = Math.max(1, ...rows.filter(r => Math.floor(r.t / 86400) >= start).map(r => Math.abs(num(r.net_pnl) ?? 0)));
@@ -180,10 +189,12 @@ export function mount(el, { params, query, setQuery, navigate }) {
       const a = r ? 0.18 + 0.82 * Math.min(1, Math.abs(v) / max) : 0;
       const bg = !r ? 'rgba(255,255,255,0.04)' : v >= 0 ? `rgba(129,199,132,${a})` : `rgba(246,90,110,${a})`;
       cells.push(`<i style="background:${bg}" title="${esc(dateText)}${r ? ` · ${esc(usd(v, { sign: true }))} · ${int(r.trades)} trades` : ' · no closed trades'}"></i>`);
-      if ((d - start) % 7 === 0) months.push(d === start || new Date(d * 86400000).getUTCDate() <= 7 ? esc(dateText.split(' ')[0]) : '');
+      // A month is named at its first week; the first column only when its month has weeks left, so two names never touch.
+      if ((d - start) % 7 === 0) { const day = new Date(d * 86400000).getUTCDate(); months.push(day <= 7 || (d === start && day <= 21) ? esc(dateText.split(' ')[0]) : ''); }
     }
-    return `<div class="panel-body"><div class="cal-wrap"><div class="cal-days"><span></span>${['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map(x => `<span>${x}</span>`).join('')}</div><div><div class="cal-months">${months.map(m => `<span>${m}</span>`).join('')}</div><div class="cal">${cells.join('')}</div></div></div>
-      <div class="cal-foot"><span class="pos">${int(green)} green days</span> · <span class="neg">${int(red)} red days</span><span class="faint"> · UTC days, colour scaled to the largest day</span></div></div>`;
+    const html = `<div class="panel-body"><div class="cal-wrap"><div class="cal-days"><span></span>${['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map(x => `<span>${x}</span>`).join('')}</div><div><div class="cal-months">${months.map(m => `<span>${m}</span>`).join('')}</div><div class="cal">${cells.join('')}</div></div></div>
+      <div class="cal-foot faint">UTC days, colour scaled to the largest day</div></div>`;
+    return { html, green, red, weeks: Math.round((end - start + 1) / 7) };
   }
   // A 1200×630 summary card drawn on a canvas (nothing leaves the browser).
   function shareCard() {
@@ -211,12 +222,31 @@ export function mount(el, { params, query, setQuery, navigate }) {
     const a = Object.assign(document.createElement('a'), { href: c.toDataURL('image/png'), download: `plumb-${d.account.address.slice(0, 10)}.png` });
     document.body.append(a); a.click(); a.remove();
   }
+  // Trend header: all-time net PnL large, then what the chosen view adds;
+  // dots name the colours of the bars and calendar cells.
+  const DAY_KEYS = [{ name: 'Profit day', color: COLORS.long }, { name: 'Loss day', color: COLORS.short }];
+  function pnlHead(rows, note = '', keys = []) {
+    const v = $('pnl-v'), lg = $('pnl-lg');
+    const since = data.summary.first_trade ?? rows[0]?.t;
+    if (v) v.innerHTML = `<div class="hv">${pnl(data.summary.net_pnl)}</div><div class="hn">${note || `all-time, after fees${since ? ` · since ${esc(date(since))}` : ''}`}</div>`;
+    if (lg) lg.innerHTML = keys.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('');
+  }
   function drawPnl() {
     const node = $('pnl-chart');
     if (!node) return;
     const rows = data.pnl_daily ?? [];
-    if (!rows.length) { node.innerHTML = empty('No realized PnL yet'); return; }
-    if (pnlMode === 'calendar') { node.__chart?.dispose(); node.__chart = null; node.innerHTML = pnlCalendar(rows); return; }
+    if (!rows.length) { pnlHead(rows); node.innerHTML = empty('No realized PnL yet'); return; }
+    if (pnlMode === 'calendar') {
+      node.__chart?.dispose(); node.__chart = null;
+      const cal = pnlCalendar(rows, Math.max(8, Math.min(26, Math.floor((node.clientWidth - 70) / 19)))); // 16px cells, 3px gaps
+      node.innerHTML = cal.html;
+      pnlHead(rows, `<span class="pos">${int(cal.green)} profit</span> · <span class="neg">${int(cal.red)} loss</span> days in the ${int(cal.weeks)} weeks shown`, [...DAY_KEYS, { name: 'No closed trades', color: 'rgba(255,255,255,0.14)' }]);
+      return;
+    }
+    if (pnlMode === 'daily') {
+      const days = rows.filter(r => r.trades).map(r => num(r.net_pnl) ?? 0);
+      pnlHead(rows, days.length ? `best day ${pnl(Math.max(...days))} · worst day ${pnl(Math.min(...days))}` : '', DAY_KEYS);
+    } else pnlHead(rows);
     if (!node.__chart) node.innerHTML = '';
     if (pnlMode === 'cumulative') {
       const last = num(rows.at(-1).cumulative);
