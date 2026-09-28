@@ -18,6 +18,8 @@ const MAX_WALLETS = 20, MAX_CHATS = 2000, MIN_USD = 1000;
 export const LEVELS = { early: [20, 10, 5], standard: [10, 5], late: [5, 2] };
 const LEVEL_NAMES = { early: 'Early · 20% 10% 5%', standard: 'Standard · 10% 5%', late: 'Late · 5% 2%' };
 const STALE_S = 300;
+// Alerts waiting in one chat's queue; beyond this the oldest are dropped.
+const MAX_QUEUED = 20;
 const LIQ_STEPS = [1e3, 1e4, 5e4, 1e5], TRADE_STEPS = [1e4, 5e4, 1e5, 2.5e5];
 
 export const COMMANDS = [
@@ -54,15 +56,15 @@ export const fmtPrice = v => { const n = Number(v); if (v === null || v === unde
 const assetOf = s => String(s ?? '').replace(/(\s+perp|[_-]v\d+)$/i, '').trim().toUpperCase();
 const isKey = t => /^(0x[0-9a-fA-F]{40}|\d{1,9})$/.test(t);
 
-export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, resolveAccount, tradeViews, accountState, fundingSeed = async () => [], symbolOf = id => `#${id}`, marketIds = () => [], site = 'https://plumb.huginn.tech', explorer = 'https://monadvision.com', log = () => {}, now = () => Date.now(), sendGapMs = 1100 }) {
+export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, resolveAccount, tradeViews, accountState, fundingSeed = async () => [], symbolOf = id => `#${id}`, marketIds = () => [], site = 'https://plumb.huginn.tech', explorer = 'https://monadvision.com', log = () => {}, now = () => Date.now(), sendGapMs = 1100, maxChats = MAX_CHATS }) {
   const api = `https://api.telegram.org/bot${token}`;
   // chat id (string) -> { wallets: { [accountId]: address }, liqs: { min, market } | null, trades: { min, market } | null, funding: bool, levels?: 'early' | 'standard' | 'late' }
   let subs = {};
-  let offset = 0, running = false, dirty = false, riskTimer = null, pollAbort = null;
+  let offset = 0, running = false, dirty = false, riskTimer = null, pollAbort = null, riskBusy = false;
   const lastFundingSign = new Map(); // market -> -1 | 1
   const warned = new Map(); // `${chat}:${account}:${market}:${side}` -> lowest level warned
   const awaiting = new Map(); // chat -> 'watch' after the "Watch a wallet" button
-  const stats = { chats: 0, sent: 0, failed: 0, commands: 0 };
+  const stats = { chats: 0, sent: 0, failed: 0, dropped: 0, commands: 0 };
 
   // --- persistence -------------------------------------------------------------
   async function load() {
@@ -79,7 +81,12 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
   }
   const touch = () => { dirty = true; stats.chats = Object.keys(subs).length; };
   const chatOf = id => (subs[id] ??= { wallets: {}, liqs: null, trades: null, funding: false });
-  const drop = id => { if (subs[id]) { delete subs[id]; touch(); } };
+  // A new chat is refused once the service holds maxChats; existing chats keep working.
+  const full = id => !subs[id] && Object.keys(subs).length >= maxChats;
+  const FULL = 'The alert service is full right now.';
+  // Warnings sent for a chat's wallet (or all of its wallets) are forgotten when it stops watching.
+  const forget = (chat, id = null) => { const prefix = id === null ? `${chat}:` : `${chat}:${id}:`; for (const key of [...warned.keys()]) if (key.startsWith(prefix)) warned.delete(key); };
+  const drop = id => { if (subs[id]) { delete subs[id]; touch(); } forget(id); };
   const EMPTY = { wallets: {}, liqs: null, trades: null, funding: false };
   const levelsOf = chat => LEVELS[subs[chat]?.levels] ?? LEVELS.standard;
 
@@ -93,10 +100,28 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
   }
   const payload = reply => (typeof reply === 'string' ? { text: reply } : reply);
   const markup = keyboard => (keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {});
-  function send(chat, reply) {
+  // An alert carries the time of its event (`ts`, unix seconds): it is dropped
+  // if it has gone stale by the time its turn comes, and the oldest waiting
+  // alerts give way when a busy chat's queue grows past MAX_QUEUED. Replies to
+  // commands and buttons (no `ts`) are always sent.
+  const waiting = new Map(); // chat -> alert jobs not yet started
+  function send(chat, reply, ts = null) {
     const { text, keyboard } = payload(reply);
+    const job = { dropped: false };
+    if (ts !== null) {
+      const list = waiting.get(chat) ?? [];
+      list.push(job); waiting.set(chat, list);
+      if (list.length > MAX_QUEUED) { list.shift().dropped = true; stats.dropped++; }
+    }
     const prev = queues.get(chat) ?? Promise.resolve();
     const next = prev.then(async () => {
+      if (ts !== null) {
+        const list = waiting.get(chat) ?? [], i = list.indexOf(job);
+        if (i >= 0) list.splice(i, 1);
+        if (!list.length) waiting.delete(chat);
+        if (job.dropped) return;
+        if (now() / 1000 - Number(ts) > STALE_S) { stats.dropped++; return; }
+      }
       for (let attempt = 0; attempt < 3; attempt++) {
         try { await call('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...markup(keyboard) }); stats.sent++; break; }
         catch (error) {
@@ -207,16 +232,29 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
     try { acct = await resolveAccount(key); } catch { acct = null; }
     if (!acct) return '🤷 No Perpl account found for that address or id.';
     const id = String(acct.id);
-    if (remove) { if (subs[chat]) { delete subs[chat].wallets[id]; touch(); } return { text: `Stopped watching ${walletLink(acct.address, id)}.`, keyboard: [back] }; }
-    if (!subs[chat] && Object.keys(subs).length >= MAX_CHATS) return 'The alert service is full right now.';
+    if (remove) { unwatch(chat, id); return { text: `Stopped watching ${walletLink(acct.address, id)}.`, keyboard: [back] }; }
+    if (full(chat)) return FULL;
     const s = chatOf(chat);
     if (!s.wallets[id] && Object.keys(s.wallets).length >= MAX_WALLETS) return `You can watch up to ${MAX_WALLETS} wallets.`;
     s.wallets[id] = acct.address ?? null; touch();
     return { text: `👛 <b>Watching</b> ${walletLink(acct.address, id)}\nPosition changes, and a warning at ${levelsOf(chat).join('%, ')}% from liquidation.`, keyboard: [[btn('📍 Positions now', 'pos'), { text: '📊 On Plumb', url: `${site}/#/wallet/${acct.address || id}` }], back] };
   }
+  function unwatch(chat, id) {
+    if (subs[chat]) { delete subs[chat].wallets[id]; touch(); }
+    forget(chat, id);
+  }
+  // False when a new chat cannot be added.
   function setThreshold(chat, kind, min, market = null) {
-    if (min === null) { if (subs[chat]) { subs[chat][kind] = null; touch(); } return; }
+    if (min === null) { if (subs[chat]) { subs[chat][kind] = null; touch(); } return true; }
+    if (full(chat)) return false;
     chatOf(chat)[kind] = { min, market }; touch();
+    return true;
+  }
+  function setFunding(chat, on) {
+    if (!on) { if (subs[chat]) { subs[chat].funding = false; touch(); } return true; }
+    if (full(chat)) return false;
+    chatOf(chat).funding = true; touch();
+    return true;
   }
 
   async function handle(chat, text) {
@@ -249,14 +287,9 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
         if (min < MIN_USD) return `The minimum is ${usd(MIN_USD)}.`;
         const market = marketByName(args[1]);
         if (market === undefined) return `Unknown market ${escHtml(args[1])}.`;
-        setThreshold(chat, kind, min, market);
-        return menu(chat);
+        return setThreshold(chat, kind, min, market) ? menu(chat) : FULL;
       }
-      case '/funding': {
-        if (!/^off$/i.test(args[0] ?? 'on')) chatOf(chat).funding = true; else if (subs[chat]) subs[chat].funding = false;
-        touch();
-        return menu(chat);
-      }
+      case '/funding': return setFunding(chat, !/^off$/i.test(args[0] ?? 'on')) ? menu(chat) : FULL;
       default: return menu(chat);
     }
   }
@@ -272,18 +305,19 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
       case 'levels': {
         if (!arg) return [levelsScreen(chat)];
         if (!LEVELS[arg]) return [levelsScreen(chat)];
+        if (full(chat)) return [{ text: FULL, keyboard: [back] }];
         chatOf(chat).levels = arg; touch();
         return [menu(chat), LEVEL_NAMES[arg]];
       }
-      case 'unwatch': if (subs[chat]) { delete subs[chat].wallets[arg]; touch(); } return [wallets(chat), 'Stopped watching'];
+      case 'unwatch': unwatch(chat, arg); return [wallets(chat), 'Stopped watching'];
       case 'liqs': case 'trades': {
         if (!arg) return [picker(chat, what)];
         const min = arg === 'off' ? null : Number(arg);
         if (min !== null && !(Number.isFinite(min) && min >= MIN_USD)) return [picker(chat, what)];
-        setThreshold(chat, what, min, min === null ? null : subs[chat]?.[what]?.market ?? null);
+        if (!setThreshold(chat, what, min, min === null ? null : subs[chat]?.[what]?.market ?? null)) return [{ text: FULL, keyboard: [back] }];
         return [menu(chat), min === null ? 'Turned off' : `${usd(min)} and up`];
       }
-      case 'funding': { const on = !subs[chat]?.funding; if (on) chatOf(chat).funding = true; else if (subs[chat]) subs[chat].funding = false; touch(); return [menu(chat), on ? 'Funding flips on' : 'Funding flips off']; }
+      case 'funding': { const on = !subs[chat]?.funding; if (!setFunding(chat, on)) return [{ text: FULL, keyboard: [back] }]; return [menu(chat), on ? 'Funding flips on' : 'Funding flips off']; }
       default: return [menu(chat)];
     }
   }
@@ -306,6 +340,17 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
   }
   // Called with each committed range of blocks (ingest 'commit' events).
   async function onCommit(event) {
+    // Funding direction: positive rates mean longs pay. Zero keeps the last
+    // direction. It is tracked on every commit, so a later subscriber is never
+    // told about a change that happened before.
+    const flips = [];
+    for (const f of event.funding ?? []) {
+      const rate = Number(f.actual_rate) / 1000, sign = Math.sign(rate);
+      if (!sign) continue;
+      const before = lastFundingSign.get(f.market);
+      lastFundingSign.set(f.market, sign);
+      if (before !== undefined && before !== sign) flips.push(`🔁 <b>Funding flipped · ${escHtml(assetOf(symbolOf(f.market)))}</b>\n${sign > 0 ? 'Longs now pay shorts' : 'Shorts now pay longs'} · ${rate > 0 ? '+' : ''}${rate.toFixed(4)}% this interval`);
+    }
     const chats = Object.entries(subs);
     if (!chats.length) return;
     // Catching up after downtime: old events are not news.
@@ -324,31 +369,30 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
         else if (s.trades && v.role === 'taker' && v.kind !== 'liquidation' && n >= s.trades.min && (s.trades.market === null || v.market === s.trades.market)) add(chat, tradeAlert(v));
       }
     }
-    // Funding direction: positive rates mean longs pay. Zero keeps the last direction.
-    const flips = [];
-    for (const f of event.funding ?? []) {
-      const rate = Number(f.actual_rate) / 1000, sign = Math.sign(rate);
-      if (!sign) continue;
-      const before = lastFundingSign.get(f.market);
-      lastFundingSign.set(f.market, sign);
-      if (before !== undefined && before !== sign) flips.push(`🔁 <b>Funding flipped · ${escHtml(assetOf(symbolOf(f.market)))}</b>\n${sign > 0 ? 'Longs now pay shorts' : 'Shorts now pay longs'} · ${rate > 0 ? '+' : ''}${rate.toFixed(4)}% this interval`);
-    }
     if (flips.length) for (const [chat, s] of chats) if (s.funding) flips.forEach(text => add(chat, text));
-    await Promise.all([...out].map(([chat, texts]) => sendAll(chat, texts)));
+    await Promise.all([...out].map(([chat, texts]) => sendAll(chat, texts, Number(event.ts))));
   }
   // Alerts of one block range go out together; Telegram caps a message at 4096 characters.
-  function sendAll(chat, texts) {
+  function sendAll(chat, texts, ts) {
     const parts = [];
     let cur = '';
     for (const t of texts) { if (cur && cur.length + t.length + 2 > 3800) { parts.push(cur); cur = ''; } cur += (cur ? '\n\n' : '') + t; }
     if (cur) parts.push(cur);
-    return Promise.all(parts.map(p => send(chat, p)));
+    return Promise.all(parts.map(p => send(chat, p, ts)));
   }
 
-  // Positions of watched wallets against their liquidation price, from contract state.
+  // Positions of watched wallets against their liquidation price, from contract
+  // state. A run is skipped while the previous one is still going.
   async function checkRisk() {
+    if (riskBusy) return;
+    riskBusy = true;
+    try { await checkRiskOnce(); } finally { riskBusy = false; }
+  }
+  async function checkRiskOnce() {
     const byAccount = new Map();
     for (const [chat, s] of Object.entries(subs)) for (const id of Object.keys(s.wallets)) { if (!byAccount.has(id)) byAccount.set(id, []); byAccount.get(id).push(chat); }
+    // Warnings of wallets no longer watched are forgotten.
+    for (const key of [...warned.keys()]) { const [chat, id] = key.split(':'); if (subs[chat]?.wallets[id] === undefined) warned.delete(key); }
     for (const [id, chats] of byAccount) {
       let state;
       try { state = await accountState(Number(id)); } catch { continue; }
@@ -364,7 +408,9 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
           const level = levels.filter(x => d <= x).at(-1);
           if (level === undefined || (warned.get(key) ?? Infinity) <= level) continue;
           warned.set(key, level);
-          await send(chat, `${level === levels.at(-1) ? '🚨' : '⚠️'} <b>Near liquidation · ${escHtml(assetOf(p.symbol))} ${escHtml(String(p.side).toUpperCase())}</b>\n${walletLink(subs[chat]?.wallets[id], id)} · <b>${usd(p.notional)}</b> position\nMark ${fmtPrice(p.mark)} → liquidation ${fmtPrice(p.liquidation_price)}\n<b>${d.toFixed(1)}% away</b>`);
+          // Not awaited: each chat's queue keeps the order, and one slow chat does not hold up the rest.
+          // Sent without a time, so a busy queue never drops a warning.
+          send(chat, `${level === levels.at(-1) ? '🚨' : '⚠️'} <b>Near liquidation · ${escHtml(assetOf(p.symbol))} ${escHtml(String(p.side).toUpperCase())}</b>\n${walletLink(subs[chat]?.wallets[id], id)} · <b>${usd(p.notional)}</b> position\nMark ${fmtPrice(p.mark)} → liquidation ${fmtPrice(p.liquidation_price)}\n<b>${d.toFixed(1)}% away</b>`);
         }
       }
       // A closed position clears its warning.

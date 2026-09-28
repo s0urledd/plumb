@@ -63,9 +63,12 @@ export function createQueries({ ch, rollups, coverage = null }) {
   // Distinct accounts with at least one trade, overall / per market / per bucket.
   // Accounts whose first trade ever falls in each bucket of [from, to): the
   // first trade is the earliest over all history (`since`), from rolled-up
-  // hours where available and raw events elsewhere.
+  // hours where available and raw events elsewhere. The history is split at
+  // `from` as well, so no rolled-up hour straddles the window start: that
+  // hour's min(hour) would put a first trade just after `from` before it.
   async function newTraders(from, to, { bucket, since }) {
-    const s = split(since, to);
+    const before = since < from ? split(since, from) : { rolled: [], raw: [] }, inside = split(from, to);
+    const s = { rolled: [...before.rolled, ...inside.rolled], raw: [...before.raw, ...inside.raw] };
     const parts = [];
     if (s.rolled.length) parts.push(`SELECT account, min(hour) AS first FROM agg_account_hour FINAL WHERE trades > 0 AND (${cond('hour', s.rolled)}) GROUP BY account`);
     if (s.raw.length) parts.push(`SELECT account, min(ts) AS first FROM ev_account WHERE ${ACCOUNT_TRADES} AND (${cond('ts', s.raw)}) GROUP BY account`);

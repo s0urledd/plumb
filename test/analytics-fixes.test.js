@@ -316,3 +316,18 @@ test('position flow: buckets on the window grid, gaps as zero, totals from the r
   assert.equal(f.totals.opens, 2);
   await assert.rejects(api.positionFlow('777', new URLSearchParams('window=24h')), /MARKET_NOT_FOUND/);
 });
+
+test('new traders: no rolled-up hour straddles the window start', async () => {
+  const seen = [];
+  // Every complete hour rolled up, as the rollup job reports them.
+  const rolledRuns = (from, to) => { const out = []; for (let h = Math.ceil(from / 3600) * 3600; h + 3600 <= to; h += 3600) { const last = out.at(-1); if (last && last[1] === h) last[1] = h + 3600; else out.push([h, h + 3600]); } return out; };
+  const queries = createQueries({ ch: { query: async sql => { seen.push(sql); return []; } }, rollups: { rolledRuns } });
+  await queries.newTraders(5400, 14400, { bucket: 3600, since: 0 });
+  const sql = seen.pop();
+  const range = (col, a, b) => `(${col} >= toDateTime(${a}, 'UTC') AND ${col} < toDateTime(${b}, 'UTC'))`;
+  // The hour holding the window start comes from raw events on both sides of it.
+  assert.ok(sql.includes(range('hour', 0, 3600)) && sql.includes(range('hour', 7200, 14400)), sql);
+  assert.ok(sql.includes(range('ts', 3600, 5400)) && sql.includes(range('ts', 5400, 7200)), sql);
+  assert.ok(!sql.includes(range('hour', 0, 14400)) && !sql.includes(range('hour', 3600, 7200)), sql);
+  assert.match(sql, /WHERE first >= toDateTime\(5400, 'UTC'\) AND first < toDateTime\(14400, 'UTC'\)/);
+});
