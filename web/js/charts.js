@@ -235,18 +235,22 @@ export function divergingHeatmap(el, { times, rows, bucketSeconds, clamp, fmt = 
 // drawn across the price chart, longs green and shorts red, stronger where more
 // notional would be liquidated; the price axis widens to show bands within
 // `levelSpan` of the mark. onLevel(level) fires when a band is clicked.
-export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volColor = 'rgba(162,164,255,0.35)', zoom = false, levels = null, mark = null, levelSpan = 0.08, onLevel = null }) {
+export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volColor = 'rgba(162,164,255,0.35)', zoom = false, levels = null, mark = null, levelSpan = 0.04, onLevel = null }) {
   const chart = init(el);
   if (!chart) return;
   const x = i => ({ ...timeAxis(times, bucketSeconds), gridIndex: i, axisLabel: i === 0 ? { show: false } : timeAxis(times, bucketSeconds).axisLabel });
-  const bands = levels && mark ? levels.filter(l => Math.abs((l.lo + l.hi) / 2 / mark - 1) <= levelSpan).map(l => ({ ...l, n: (num(l.long) ?? 0) + (num(l.short) ?? 0), side: (num(l.long) ?? 0) >= (num(l.short) ?? 0) ? 'long' : 'short' })) : [];
-  const peak = Math.max(1, ...bands.map(b => b.n));
-  const labelled = new Set([...bands].sort((a, b) => b.n - a.n).slice(0, 4));
+  const near = levels && mark ? levels.filter(l => Math.abs((l.lo + l.hi) / 2 / mark - 1) <= levelSpan).map(l => ({ ...l, n: (num(l.long) ?? 0) + (num(l.short) ?? 0), side: (num(l.long) ?? 0) >= (num(l.short) ?? 0) ? 'long' : 'short' })) : [];
+  const peak = Math.max(1, ...near.map(b => b.n));
+  // Bands under 5 % of the largest are left out: the chart shows where liquidations cluster, not every position.
+  const bands = near.filter(b => b.n >= peak * 0.05);
+  // Amounts on the three largest bands that are at least 1 % of price apart.
+  const labelled = new Set();
+  for (const b of [...bands].sort((a, c) => c.n - a.n)) { if (labelled.size >= 3) break; if ([...labelled].every(o => Math.abs(o.lo - b.lo) >= mark * 0.01)) labelled.add(b); }
   const markArea = bands.length ? {
     silent: false,
     data: bands.map((b, i) => [{
       yAxis: b.lo, name: `band-${i}`,
-      itemStyle: { color: b.side === 'long' ? T.long : T.short, opacity: 0.07 + 0.43 * Math.sqrt(b.n / peak) },
+      itemStyle: { color: b.side === 'long' ? T.long : T.short, opacity: 0.08 + 0.5 * (b.n / peak) ** 0.8 },
       label: { show: labelled.has(b), position: 'insideRight', color: b.side === 'long' ? T.long : T.short, fontSize: 10.5, formatter: () => `liq ${usd(b.n)}` }
     }, { yAxis: b.hi }])
   } : undefined;
