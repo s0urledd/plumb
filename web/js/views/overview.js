@@ -1,6 +1,6 @@
 // Protocol overview: headline metrics for the chosen window, volume by market
-// next to the live tape, the markets table, a grid of trend charts and the
-// latest liquidations and flows.
+// next to the live tape, a grid of trend charts, the latest liquidations and
+// flows, and market share.
 import { get, stream } from '../api.js';
 import { usd, compact, int, price, pct, share, num, esc, signClass, timeOnly, ago, duration } from '../format.js';
 import { kpi, keepDots, seg, table, mkt, sideTag, addr, pnl, tradeAction, chartTools, skeleton, skChart, empty, assignColors, colorOf, hasColor, logo, ICON, OTHER_HEX, SLOT_HEX, mergeByAsset } from '../ui.js';

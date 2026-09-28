@@ -81,7 +81,7 @@ Judging criteria:
 
 ## Demo (about three minutes)
 
-1. **Header.** Point out the live pill: finalized block number and age. The
+1. **Header.** Point out the live pill: the finalized block number. The
    indexing banner goes away once history is complete.
 2. **Overview, 24h:**
    - read the KPI strip (volume, open interest, TVL, fees, traders,
@@ -110,27 +110,11 @@ Judging criteria:
 8. **Close.** Every number comes from a Monad node: events since launch and
    contract state, both at finalized blocks, and both cross-checked.
 
-## Checklist
-
-- [x] Deploy on the Huginn RPC host with `docker compose` behind TLS
-      (https://plumb.huginn.tech).
-- [x] Enable the execution event ring and the `exec-events` profile.
-- [x] Wait for the backfill to complete, then confirm on the status page
-      that the integrity check passes.
-- [x] Refresh the screenshots in `docs/images/` from the deployment.
-- [ ] Record the demo (at most 3 minutes) while the dashboard is live, so
-      the block number advances; link it in the README.
-- [x] Make the repository public.
-- [x] Link the repository in the project profile.
-- [x] Licence file, attribution and AI disclosure in the README.
-- [x] Telegram alerts live (@PlumbPerplBot).
-- [ ] Project profile: name "Plumb", one-line description and description.
-
 ## Claims and their evidence
 
 | Claim | Evidence |
 | --- | --- |
-| Every figure comes from Monad chain data | Ingest and collector read only the node and archive RPCs; `src/reference.js` (Perpl API) is off by default and used only for comparison |
+| Every Perpl figure comes from Monad chain data | Ingest and collector read only the node and archive RPCs; `src/reference.js` (Perpl API) is off by default and used only for comparison |
 | Windows are exact sums, and partial windows say so | `meta.coverage` on every windowed response; `docs/methodology.md` |
 | Trade prices, sizes and fees come from the settling fills | Full history: 33,557,868 / 33,557,868 position events linked; 18,630,950 / 18,630,950 fee splits equal |
 | Event history reproduces the contract | 67 million events since launch give open interest equal to the contract for all 11 markets, and TVL equal to the micro-dollar (`docs/evidence/integrity-2026-09-23.json`, live at `/api/v1/integrity`) |
@@ -140,8 +124,3 @@ Judging criteria:
 | A liquidation's result is the trader's balance change | The trader gets back exactly 80 % of the remaining margin (`accAmountCNS`), e.g. at block 107,162,461; the rest is counted as a fee (`test/decode.test.js`) |
 | Fees are not double counted | A builder's share is inside the fill fee and the protocol part on all 1.6 million fills that carry one (checked in ClickHouse, 2026-09-23) |
 
-Claims to avoid:
-- exact prediction of liquidation execution prices;
-- market share figures as Plumb's own measurement (they are DefiLlama's);
-- anything about accounts or periods the status page shows as not yet
-  indexed.

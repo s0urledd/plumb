@@ -11,7 +11,7 @@ from the [API](api.md).
   - fees, with the protocol share shown as revenue;
   - active traders and new accounts;
   - liquidations.
-- **Time series** per hour, four hours or day:
+- **Time series** per hour, four hours, day or week (all time):
   - trading volume stacked by market, per period or cumulative;
   - open interest and TVL;
   - deposits against withdrawals, with the net per period;
