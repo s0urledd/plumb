@@ -165,14 +165,17 @@ button, input, select { font: inherit; color: inherit; }
 /* Sideways scrollers (tables, tab rows, the phone nav) fade at each edge that
    hides more, as wide as what is hidden up to 40px: each fade runs over the
    first or last 40px of the scroll. With nothing to scroll the timeline is
-   inactive and nothing fades. */
+   inactive and nothing fades. Only with scroll timelines: elsewhere the
+   animations would run once on the clock and leave the left edge faded. */
 @property --fade-l { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @property --fade-r { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @keyframes fade-l { from { --fade-l: 0px; } to { --fade-l: 40px; } }
 @keyframes fade-r { from { --fade-r: 40px; } to { --fade-r: 0px; } }
-.table-wrap, .tabs, .nav { mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent); animation: fade-l linear both, fade-r linear both; animation-timeline: scroll(self inline); animation-range: 0 40px, calc(100% - 40px) 100%; }
-/* The desktop nav never scrolls, and a mask would clip its focus rings. */
-@media (min-width: 861px) { .nav { mask-image: none; } }
+@supports (animation-timeline: scroll()) {
+  .table-wrap, .tabs, .nav { mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent); animation: fade-l linear both, fade-r linear both; animation-timeline: scroll(self inline); animation-range: 0 40px, calc(100% - 40px) 100%; }
+  /* The desktop nav never scrolls, and a mask would clip its focus rings. */
+  @media (min-width: 861px) { .nav { mask-image: none; } }
+}
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--radius-sm); border: 0; background: var(--surface-2); box-shadow: var(--control-edge); color: var(--text); font-size: 12.5px; font-weight: 500; cursor: pointer; }
 .btn:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(162, 164, 255, 0.45); color: var(--text); }
 .btn.primary { background: var(--accent-strong); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14); }
@@ -298,11 +301,20 @@ tr.inactive td { opacity: 0.5; }
 .stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .stat { padding: 11px 16px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
 .stat:nth-child(odd) { border-right: 1px solid var(--line); }
-/* A single-column list (set inline) has no second column to divide from, and the line would sit on the card's edge. */
-.stat-grid[style*="grid-template-columns:1fr"] > .stat { border-right: 0; }
+/* A single-column list (.one) has no second column to divide from, and the line
+   would sit on the card's edge. The attribute match covers a list that still
+   sets its column inline. */
+.stat-grid.one { grid-template-columns: 1fr; }
+.stat-grid.one > .stat, .stat-grid[style*="grid-template-columns:1fr"] > .stat { border-right: 0; }
 .stat > span:first-child { color: var(--text-2); white-space: nowrap; }
 .stat > span:last-child { font-variant-numeric: tabular-nums; font-weight: 500; text-align: right; }
-@media (max-width: 640px) { .stat > span { min-width: 0; } .stat > span:first-child { white-space: normal; } }
+/* On phones the label wraps and the value stays whole on one line; when the
+   value does not fit beside the label's longest word, it moves to a line of its own. */
+@media (max-width: 640px) {
+  .stat { flex-wrap: wrap; row-gap: 2px; }
+  .stat > span:first-child { flex: 1 1 0; white-space: normal; }
+  .stat > span:last-child { flex: none; margin-left: auto; }
+}
 .insights { display: flex; flex-direction: column; gap: 8px; padding: 4px 16px 16px; }
 .insight { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-2); line-height: 1.5; }
 .insight .tag { flex: none; margin-top: 1px; min-width: 72px; justify-content: center; }
