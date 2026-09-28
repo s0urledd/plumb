@@ -17,7 +17,7 @@ export function mount(el, { query, navigate }) {
     <div class="page-head"><div><h1>Compare wallets</h1><div class="sub">Up to five wallets side by side. Add from any wallet page or paste addresses.</div></div>
       <form id="add" style="display:flex;gap:8px;flex:0 1 440px;min-width:0"><div class="search" style="margin:0;flex:1;max-width:none"><input id="add-input" placeholder="Add address or account ID" autocomplete="off" spellcheck="false"></div><button class="btn primary" type="submit">${ICON.plus} Add</button></form></div>
     <div class="stack"><section class="panel" id="table">${skeleton(10)}</section>
-    <section class="panel"><div class="panel-head"><h2>Cumulative net PnL</h2><div class="head-right"><div class="legend" id="legend"></div>${chartTools('chart', 'compare-pnl')}</div></div><div class="panel-body"><div class="chart" id="chart"></div></div></section></div>`;
+    <section class="panel trend"><div class="panel-head"><div class="trend-id"><h2>Cumulative net PnL <span class="info-tip" title="Realized PnL (price PnL and funding) minus fees, summed day by day (UTC) from each wallet's first trade">i</span></h2></div><div class="trend-side"><div class="trend-ctl">${chartTools('chart', 'compare-pnl')}</div><div class="legend dots" id="legend"></div></div></div><div class="panel-body"><div class="chart" id="chart"></div></div></section></div>`;
   const $ = s => el.querySelector(`#${s}`);
   const save = () => { try { sessionStorage.setItem('ps.compare', JSON.stringify(keys)); } catch { /* storage unavailable */ } };
 
@@ -33,7 +33,9 @@ export function mount(el, { query, navigate }) {
     if (!alive) return;
     const ws = r.wallets;
     $('chart').closest('.panel').hidden = false;
-    const col = (w, i) => w.error ? `<th class="n"><span class="neg">${esc(short(w.key))}</span><div class="sub">${esc(ERRORS[w.error] ?? 'not found')}</div></th>` : `<th class="n"><span style="display:inline-flex;align-items:center;gap:6px"><i style="width:8px;height:8px;border-radius:2px;background:${COLORS[i]}"></i><a class="mono" href="#/wallet/${esc(w.account.address)}">${esc(short(w.account.address))}</a><button class="icon-btn" data-action="remove" data-key="${esc(w.key)}" title="Remove">${ICON.x}</button></span><div class="sub">#${esc(w.account.id)}</div></th>`;
+    // Each wallet keeps its colour: a dot in its header, on each of its values on phones, and its chart line.
+    const remove = w => `<button class="icon-btn" data-action="remove" data-key="${esc(w.key)}" title="Remove">${ICON.x}</button>`;
+    const col = (w, i) => w.error ? `<th class="n"><span class="cmp-w"><span class="neg">${esc(short(w.key))}</span>${remove(w)}</span><div class="sub">${esc(ERRORS[w.error] ?? 'not found')}</div></th>` : `<th class="n" style="--c:${COLORS[i]}"><span class="cmp-w"><i></i><a class="mono" href="#/wallet/${esc(w.account.address)}">${esc(short(w.account.address))}</a>${remove(w)}</span><div class="sub">#${esc(w.account.id)}</div></th>`;
     const rows = [
       ['Account value', w => usd(w.portfolio?.account_value)],
       ['Open positions', w => int(w.positions?.length ?? 0)],
@@ -60,7 +62,9 @@ export function mount(el, { query, navigate }) {
       ['Net deposits', w => usd(w.summary.net_flow, { sign: true })],
       ['First trade', w => (w.summary.first_trade ? date(w.summary.first_trade) : '—')]
     ];
-    $('table').innerHTML = `<div class="table-wrap"><table class="t compact"><thead><tr><th>Metric</th>${ws.map(col).join('')}</tr></thead><tbody>${rows.map(([label, f]) => `<tr><td class="muted">${label}</td>${ws.map(w => `<td class="n">${w.error ? '—' : f(w)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    // On phones each metric's label sits over its values, up to three a row
+    // (four or five wallets take two rows), so no wallet is off-screen.
+    $('table').innerHTML = `<div class="table-wrap"><table class="t compact cmp" style="--cols:${ws.length > 3 ? Math.ceil(ws.length / 2) : ws.length}"><thead><tr><th class="cmp-m">Metric</th>${ws.map(col).join('')}</tr></thead><tbody>${rows.map(([label, f]) => `<tr><td class="muted cmp-m">${label}</td>${ws.map((w, i) => (w.error ? '<td class="n faint">—</td>' : `<td class="n" style="--c:${COLORS[i]}">${f(w)}</td>`)).join('')}</tr>`).join('')}</tbody></table></div>`;
     // Cumulative PnL on a shared daily axis.
     const full = await Promise.all(ws.map(w => (w.error ? null : get(`wallets/${encodeURIComponent(w.account.address)}`, { maxAge: 10000 }).catch(() => null))));
     if (!alive) return;
