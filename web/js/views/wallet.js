@@ -6,8 +6,9 @@ import { usd, usdFull, int, price, pct, num, esc, size, duration, date, dateTime
 import { kpi, tabs, table, mktLink, sideTag, pnl, pctCell, skeleton, skChart, empty, watch, ICON, EXPLORER, toast, chartTools, alertsLink, alertsBotReady } from '../ui.js';
 import { lineChart, signedBars, COLORS } from '../charts.js';
 
+const twinLink = rows => { const ids = {}; for (const r of rows) (ids[r.symbol] ??= new Set()).add(r.market); return r => `${mktLink(r.market, r.symbol)}${ids[r.symbol]?.size > 1 ? ` <span class="faint" title="Relisted market: the same asset under a new market id">#${esc(r.market)}</span>` : ''}`; };
 const TABS = [['overview', 'Overview'], ['positions', 'Positions'], ['trades', 'Trade history'], ['trips', 'Round trips'], ['flows', 'Deposits & withdrawals']];
-const KIND = { open: 'Open', increase: 'Increase', decrease: 'Decrease', close: 'Close', invert: 'Flip', liquidation: 'Liquidated', deleverage: 'ADL', unwind: 'Unwind' };
+const KIND = { open: 'Open', increase: 'Add', decrease: 'Reduce', close: 'Close', invert: 'Flip', liquidation: 'Liquidated', deleverage: 'ADL', unwind: 'Unwind' };
 
 export function mount(el, { params, query, setQuery, navigate }) {
   const key = params[0];
@@ -119,7 +120,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
           <section class="panel"><div class="panel-head"><h2>Behaviour</h2><span class="meta">Rule-based, from this wallet's trades</span></div>
             <div id="insights">${an ? insightsHtml() : perfSkeleton()}</div></section>
           <section class="panel"><div class="panel-head"><h2>By market</h2><span class="meta" title="Volume and net PnL cover the whole indexed history; win rate and trips come from the analysed round trips">Volume, PnL all-time · win rate, trips from analysed trips</span></div><div class="panel-body flush">${table({ id: 'mk', compact: true, columns: [
-            { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
+            { key: 'm', label: 'Market', render: twinLink(d.markets) },
             { key: 'v', label: 'Volume', n: true, render: r => usd(r.volume) },
             { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.net_pnl) },
             { key: 'w', label: 'Win rate', n: true, render: r => (r.win_rate_pct === null ? '—' : pct(r.win_rate_pct, { digits: 0 })) },
@@ -139,9 +140,11 @@ export function mount(el, { params, query, setQuery, navigate }) {
       if (trades.length) renderTrades(); else loadTrades();
     } else if (tab === 'trips') {
       if (!an) { body.innerHTML = perfSkeleton(); return; }
-      body.innerHTML = table({ id: 'trips', columns: [
-        { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
+      const tripRows = [...an.open_trips.map(t => ({ ...t, open: true })), ...an.trips];
+      body.innerHTML = `<div class="panel-head"><span class="meta">Open trips first, then closed trips, newest close first</span></div>` + table({ id: 'trips', columns: [
+        { key: 'm', label: 'Market', render: twinLink(tripRows) },
         { key: 's', label: 'Side', render: r => sideTag(r.side) },
+        { key: 'c', label: 'Closed', render: r => (r.open ? '<span class="faint">open</span>' : `<span class="muted num">${dateTime(r.close_ts)}</span>`) },
         { key: 'o', label: 'Opened', render: r => `<span class="muted num">${r.open_ts ? dateTime(r.open_ts) : `before ${dateTime(r.first_ts)}`}</span>` },
         { key: 'h', label: 'Held', n: true, render: r => duration(r.hold_seconds) },
         { key: 'sz', label: 'Max size', n: true, render: r => size(r.max_size) },
@@ -150,7 +153,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
         { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.net_pnl) },
         { key: 'r', label: 'Return', n: true, render: r => pctCell(r.return_pct) },
         { key: 'f', label: 'Outcome', render: r => (r.open ? '<span class="tag" title="Still open; PnL so far">open</span>' : r.liquidated ? '<span class="tag bad">liquidated</span>' : r.deleveraged ? '<span class="tag warn">ADL</span>' : num(r.net_pnl) > 0 ? '<span class="tag good">win</span>' : num(r.net_pnl) < 0 ? '<span class="tag">loss</span>' : '<span class="tag">flat</span>') }
-      ], rows: [...an.open_trips.map(t => ({ ...t, open: true })), ...an.trips], rowAttrs: r => (r.open ? 'title="Still open"' : ''), emptyText: 'No round trips yet' });
+      ], rows: tripRows, rowAttrs: r => (r.open ? 'title="Still open"' : ''), emptyText: 'No round trips yet' });
     } else if (tab === 'flows') {
       body.innerHTML = `<div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div></div>` + table({ id: 'flows', columns: [
         { key: 't', label: 'Time (UTC)', render: r => `<span class="muted num">${dateTime(r.ts)}</span>` },
