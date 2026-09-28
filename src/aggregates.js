@@ -9,8 +9,10 @@
 //   split     ins_fees / prot_fees: the split opening events carry;
 //             reduce_*: the same split of decrease and close fills, derived
 //             per row; liq_*: the insurance and protocol shares of each
-//             liquidation (revenue.js). Rates are SQL from the parameter
-//             history, constants until a change is indexed
+//             full liquidation on the book (revenue.js), liq_unsplit the
+//             other liquidations, whose split is not verified and not
+//             counted. Rates are SQL from the parameter history, constants
+//             until a change is indexed
 //   realized  deltaPnl + funding on decrease, close, invert, liquidation and
 //             deleverage events, plus the funding settled when a position is
 //             increased (the contract realizes it whenever the lot changes)
@@ -24,6 +26,9 @@ export const REALIZING = "('increase','decrease','close','invert','liquidation',
 export const FILLS = "('maker_fill','taker_fill')";
 export const REDUCING = "('decrease','close')";
 export const ACCOUNT_TRADES = `(kind IN ${USER} OR (kind = 'liquidation' AND role = 'taker'))`;
+// The only liquidations whose split was verified: on the book (flag
+// ON_BOOK = 1, schema.js) with nothing left of the position.
+export const FULL_ON_BOOK = "(kind = 'liquidation' AND bitAnd(flags, 1) = 1 AND end_lot = 0)";
 
 // Per-row revenue split in SQL, the same arithmetic as revenue.js. `r` holds
 // the rates in force as SQL (feeIns, liqIns, liqUser). The liquidation margin
@@ -51,8 +56,9 @@ export const marketDefs = (r = DEFAULT_RATES_SQL) => { const s = revenueSql(r); 
   ['prot_fees', "sumIf(prot_fee, kind IN ('open','increase','invert'))", 'sum(prot_fees)'],
   ['reduce_ins_fees', `sumIf(${s.reduceIns}, kind IN ${REDUCING})`, 'sum(reduce_ins_fees)'],
   ['reduce_prot_fees', `sumIf(fee - ${s.reduceIns}, kind IN ${REDUCING})`, 'sum(reduce_prot_fees)'],
-  ['liq_ins_fees', `sumIf(${s.liqIns}, kind = 'liquidation')`, 'sum(liq_ins_fees)'],
-  ['liq_prot_fees', `sumIf(${s.liqProt}, kind = 'liquidation')`, 'sum(liq_prot_fees)'],
+  ['liq_ins_fees', `sumIf(${s.liqIns}, ${FULL_ON_BOOK})`, 'sum(liq_ins_fees)'],
+  ['liq_prot_fees', `sumIf(${s.liqProt}, ${FULL_ON_BOOK})`, 'sum(liq_prot_fees)'],
+  ['liq_unsplit', `countIf(kind = 'liquidation' AND NOT ${FULL_ON_BOOK})`, 'sum(liq_unsplit)'],
   ['taker_buy', `sumIf(notional, kind IN ${USER} AND role = 'taker' AND buy = 1)`, 'sum(taker_buy)'],
   ['taker_sell', `sumIf(notional, kind IN ${USER} AND role = 'taker' AND buy = 0)`, 'sum(taker_sell)'],
   ['trades', `countIf(kind IN ${USER})`, 'sum(trades)'],
@@ -75,7 +81,7 @@ export const marketDefs = (r = DEFAULT_RATES_SQL) => { const s = revenueSql(r); 
 ]; };
 export const MARKET = marketDefs();
 // Rollup columns added after the table was first created (schema.js adds them to existing tables).
-export const REVENUE_COLUMNS = ['reduce_ins_fees', 'reduce_prot_fees', 'liq_ins_fees', 'liq_prot_fees'];
+export const REVENUE_COLUMNS = ['reduce_ins_fees', 'reduce_prot_fees', 'liq_ins_fees', 'liq_prot_fees', 'liq_unsplit'];
 
 export const PROTOCOL = [
   ['deposits', "sumIf(amount, kind = 'deposit')", 'sum(deposits)'],

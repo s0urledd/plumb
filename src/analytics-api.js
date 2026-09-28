@@ -115,7 +115,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
 
   // --- protocol -------------------------------------------------------------
   function sumMarkets(rows) {
-    const t = { volume: 0n, fills: 0, maker_fees: 0n, taker_fees: 0n, builder_fees: 0n, ins_fees: 0n, prot_fees: 0n, reduce_ins_fees: 0n, reduce_prot_fees: 0n, liq_ins_fees: 0n, liq_prot_fees: 0n, taker_buy: 0n, taker_sell: 0n, trades: 0, opens: 0, closes: 0, liquidations: 0, liquidated: 0n, deleverages: 0, deleveraged: 0n, realized: 0n };
+    const t = { volume: 0n, fills: 0, maker_fees: 0n, taker_fees: 0n, builder_fees: 0n, ins_fees: 0n, prot_fees: 0n, reduce_ins_fees: 0n, reduce_prot_fees: 0n, liq_ins_fees: 0n, liq_prot_fees: 0n, liq_unsplit: 0, taker_buy: 0n, taker_sell: 0n, trades: 0, opens: 0, closes: 0, liquidations: 0, liquidated: 0n, deleverages: 0, deleveraged: 0n, realized: 0n };
     for (const r of rows) for (const k of Object.keys(t)) t[k] += typeof t[k] === 'bigint' ? B(r[k]) : Number(r[k]);
     return t;
   }
@@ -131,9 +131,10 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   const protFeesOf = t => B(t.prot_fees) + B(t.reduce_prot_fees), insFeesOf = t => B(t.ins_fees) + B(t.reduce_ins_fees);
   const protRevenueOf = t => protFeesOf(t) + B(t.liq_prot_fees);
   // Revenue by source (revenue.js); builder fees are inside the protocol's fee share, owed to builders.
+  // Liquidations whose split is not verified (partial, off the book) count 0 and are counted apart.
   const revenueOf = (t, c = cd()) => {
     const part = (open, reduce, liq) => ({ total: dec(B(open) + B(reduce) + B(liq), c), opening_fees: dec(open ?? 0, c), reducing_fees: dec(reduce ?? 0, c), liquidations: dec(liq ?? 0, c) });
-    return { protocol: part(t.prot_fees, t.reduce_prot_fees, t.liq_prot_fees), insurance: part(t.ins_fees, t.reduce_ins_fees, t.liq_ins_fees), builder_fees: dec(t.builder_fees ?? 0, c) };
+    return { protocol: part(t.prot_fees, t.reduce_prot_fees, t.liq_prot_fees), insurance: part(t.ins_fees, t.reduce_ins_fees, t.liq_ins_fees), builder_fees: dec(t.builder_fees ?? 0, c), unsplit_liquidations: Number(t.liq_unsplit ?? 0) };
   };
 
   function current() {

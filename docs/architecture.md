@@ -122,7 +122,7 @@ the status page and in `/api/v1/health` (`index.decoder_checks`).
 | `chunks` | Coverage intervals with their first and last block timestamps | `from_block` |
 | `markets`, `accounts` | Market metadata; account id ↔ address from `AccountCreated` | id |
 | `funding` | `FundingEventCompleted`: rate, funding price, payment, cumulative sum | `(market, funding_block, block, log_index)` |
-| `params` | Parameter-change events (margins, fees, limits) and the rates each market is added with, as JSON | `(block, log_index)` |
+| `params` | Parameter-change events (margins, fees, limits) as JSON; `FeeParamsUpdated` and the rates a market is added with only for blocks indexed since 2026-09-28 | `(block, log_index)` |
 | `agg_market_hour`, `agg_hour`, `agg_account_hour` | Hourly rollups per market, per exchange and per account and market | hour |
 | `rollup_hours` | Which hours are rolled, with the rollup version | hour |
 | `snapshots`, `exchange_snapshots` | Contract state every 5 minutes: mark, oracle, OI, funding, insurance; TVL and account count | ts |
@@ -141,7 +141,8 @@ the two cannot drift. The integration test checks that window queries answer
 the same with and without rollups. The revenue split of decreases, closes
 and liquidations is derived per row in those definitions, with the fee and
 liquidation rates in force at each row's block (from the `params` table);
-a rate change indexed after hours it applies to rolls those hours again.
+a rate change indexed after hours it applies to marks those hours to roll
+again before the change is stored.
 
 **Windows.** A query for `[from, to)` reads rolled hours for the full hours
 inside the window and raw rows for the edges and any hour not rolled yet,

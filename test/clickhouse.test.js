@@ -52,15 +52,16 @@ test('ClickHouse ingest, rollups, windows, repair and restart', { skip: !url && 
   t.after(() => ch.exec(`DROP DATABASE IF EXISTS ${database}`, {}, {}, { db: null }));
   // An index from before rollup version 3: its market rollup table lacks the
   // revenue columns, which the migration adds in place (twice is harmless).
+  // Its one rolled hour, two days before the synthetic chain, has no events.
+  const OLD = 1789999200 - 2 * 86400;
   await ch.exec(`CREATE DATABASE ${database}`, {}, {}, { db: null });
   await ch.exec(DDL.find(s => s.includes('TABLE IF NOT EXISTS agg_market_hour')).replace(/\n\s*reduce_ins_fees[^\n]*/, ''));
-  await ch.insert('agg_market_hour', [{ hour: 1789999200, market: 1, volume: 5, computed_at: 1789999200000 }]);
+  await ch.insert('agg_market_hour', [{ hour: OLD, market: 1, volume: 5, computed_at: OLD * 1000 }]);
   await migrate(ch);
   await migrate(ch);
   const cols = (await ch.query("SELECT name FROM system.columns WHERE database = {db:String} AND table = 'agg_market_hour'", { db: database })).map(r => r.name);
   for (const c of REVENUE_COLUMNS) assert.ok(cols.includes(c), c);
   assert.equal(Number((await ch.first('SELECT liq_prot_fees AS v FROM agg_market_hour')).v), 0, 'rows rolled before read 0');
-  await ch.exec('TRUNCATE TABLE agg_market_hour');
   const fake = syntheticChain();
   const config = { exchange: EXCHANGE, deployBlock: 900n };
   const options = ingestOptions({ LIVE_LOG_RANGE: 700, ARCHIVE_LOG_RANGE: 700, LIVE_BACKFILL_CONCURRENCY: 3 });
@@ -76,13 +77,17 @@ test('ClickHouse ingest, rollups, windows, repair and restart', { skip: !url && 
   assert.equal(ingest.status.checks.feeMismatch, 0);
 
   // Every closed hour rolls up, and rollup-backed windows equal raw windows.
-  // Hours rolled at version 2 are rolled again: all of them have charged closes.
+  // Hours rolled at version 2 on the chain's day are rolled again (it has
+  // charged closes and liquidations); the old hour is carried over as it is.
   const rates = ingest.revenueParams;
   assert.equal(rates.at(20, 6000).feeIns, 20000n, 'the rate change was indexed');
-  await ch.insert('rollup_hours', [0, 1, 2].map(k => ({ hour: 1789999200 + k * 3600, version: 2, computed_at: Date.now() - 1000 })));
+  await ch.insert('rollup_hours', [OLD, ...[0, 1, 2].map(k => 1789999200 + k * 3600)].map(hour => ({ hour, version: 2, computed_at: Date.now() - 1000 })));
   const rollups = createRollups({ ch, coverage: ingest.coverage, rates });
   await rollups.run(BLOCK_TS(20000));
-  assert.equal(rollups.status.carried, 0);
+  assert.equal(rollups.status.carried, 1);
+  assert.ok(rollups.isRolled(OLD));
+  const old = await ch.first("SELECT volume, liq_prot_fees, liq_unsplit FROM agg_market_hour FINAL WHERE hour = toDateTime({h:UInt32}, 'UTC')", { h: OLD });
+  assert.deepEqual([old.volume, old.liq_prot_fees, old.liq_unsplit].map(Number), [5, 0, 0], 'a carried hour keeps its figures and reads 0 in the new columns');
   assert.ok(rollups.status.hours >= 2, `rolled ${rollups.status.hours} hours`);
   const withRollups = createQueries({ ch, rollups, coverage: ingest.coverage, rates });
   const rawOnly = createQueries({ ch, rollups: { rolledRuns: () => [] }, coverage: ingest.coverage, rates });
@@ -92,7 +97,7 @@ test('ClickHouse ingest, rollups, windows, repair and restart', { skip: !url && 
   // The revenue split summed in ClickHouse equals revenue.js row by row, with
   // the rates in force at each row: 8 closes (3 before the change) and two liquidations.
   const want = { reduce_ins_fees: 0n, reduce_prot_fees: 0n, liq_ins_fees: 0n, liq_prot_fees: 0n };
-  for (const r of await ch.query("SELECT kind, market, block, log_index, fee, builder_fee, ins_fee, prot_fee, pnl, funding, amount FROM ev WHERE kind IN ('decrease','close','liquidation')")) {
+  for (const r of await ch.query("SELECT kind, market, block, log_index, fee, builder_fee, ins_fee, prot_fee, pnl, funding, amount, flags, end_lot FROM ev WHERE kind IN ('decrease','close','liquidation')")) {
     const x = rowRevenue(r, rates.at(Number(r.market), Number(r.block), Number(r.log_index)));
     if (x.source === 'reducing') { want.reduce_ins_fees += x.ins; want.reduce_prot_fees += x.prot; } else { want.liq_ins_fees += x.ins; want.liq_prot_fees += x.prot; }
   }

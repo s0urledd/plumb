@@ -204,7 +204,7 @@ both shares by source (`src/revenue.js`, `src/aggregates.js`):
 | --- | --- |
 | Opening fees (open, increase, invert) | The split on the position event: `protFeeCNS` to the protocol, `insFeeCNS` to the insurance fund. |
 | Reducing fees (decrease, close) | Charged from contract version 1.7.5; before, their fee was 0. The events carry no split, so the linked fill gives it: insurance = ⌈(`feeCNS` − `builderFeeCNS`) × `insAmtPer100K` ÷ 100,000⌉, protocol = `feeCNS` − insurance. Opening events follow the same rule. |
-| Liquidations on the book | X = `deltaPnlCNS` + `fundingCNS` − `posAmountCNS`, the margin left (`posAmountCNS` is minus the deposit released). If X > 0, the trader gets ⌊X × `liqUserAmtPer100K` ÷ 100,000⌋ (the event's `accAmountCNS`), the insurance fund ⌊X × `liqInsAmtPer100K` ÷ 100,000⌋ and the protocol the rest, rounding dust included. If X ≤ 0, neither gets anything. The liquidated position's own fill carries no fee. |
+| Full liquidations on the book | X = `deltaPnlCNS` + `fundingCNS` − `posAmountCNS`, the margin left (`posAmountCNS` is minus the deposit released). If X > 0, the trader gets ⌊X × `liqUserAmtPer100K` ÷ 100,000⌋ (the event's `accAmountCNS`), the insurance fund ⌊X × `liqInsAmtPer100K` ÷ 100,000⌋ and the protocol the rest, rounding dust included. If X ≤ 0, Plumb counts nothing for either (not verified). The liquidated position's own fill carries no fee. |
 
 A builder's fee stays inside the protocol's share of the fee: it is owed to
 the builder and reported on its own as `builder_fees`. Protocol revenue is
@@ -213,14 +213,18 @@ the protocol's share of opening fees, reducing fees and liquidations.
 **Rates.** A market's `insAmtPer100K` is set by `FeeParamsUpdated`, its
 liquidation rates by `LiquidationParamsUpdated` (`insAmtPer100K`,
 `userAmtPer100K`), and all three by the `ContractAdded` event that lists it;
-each applies from its own block. On 2026-09-28 all 11 markets used 15,000
+each applies from its own block. The protocol gets the rest of X, so
+`liqAmtPer100K` is not read: it equals the protocol's share only while the
+three rates add up to 100,000. On 2026-09-28 all 11 markets used 15,000
 (15 %) and 10,000 / 80,000 / 10,000 (insurance / trader / protocol).
-`FeeParamsUpdated` and the rates a market is added with are kept from
-version 4 on, so earlier history uses 15,000 until a change is indexed. That
-value holds on every market from 25 September, and reducing fills were free
-before 1.7.5, so earlier history does not depend on it. Liquidations before a
-market's first indexed `LiquidationParamsUpdated` use 10,000 / 80,000,
-verified from 25 September only.
+`FeeParamsUpdated` and the rates a market is added with are indexed only for
+blocks read since 2026-09-28: new blocks, a market added later, or a full
+re-index. Elsewhere the fee split uses 15,000 until a change is indexed.
+Reducing fills were free before 1.7.5, so this matters from 23 September
+15:20 UTC; 15,000 was checked from 25 September 12:03 UTC, so the
+reducing-fee split of the 45 hours in between rests on it unchecked.
+Liquidations before a market's first indexed `LiquidationParamsUpdated` use
+10,000 / 80,000, verified from 25 September only.
 
 **Not revenue.** `TransferProtocolToAccount` (payouts to accounts, such as
 $7,259.74 to 272 accounts on 28 September), `TransferAccountToProtocol`
@@ -239,21 +243,24 @@ inside the protocol share were $105.65
 (`docs/evidence/protocol-revenue-2026-09-28.json`; block ranges, so a window
 by block time can differ by the trades of its edge seconds).
 
-**Not verified**, because none occurred in the checks: bankrupt liquidations
-(X ≤ 0, counted as no revenue), partial liquidations and liquidations off
-the book (the same formula applies), deleverages and buy-to-liquidate
-settlements (no revenue counted). What the payouts are for is not stated
-on-chain.
+**Not verified**, because none occurred in the checks, so Plumb assumes no
+rule for them: bankrupt liquidations (X ≤ 0) count as no revenue; partial
+liquidations and liquidations off the book count as no revenue and are
+reported as `unsplit_liquidations` (the contract has a separate
+buy-to-liquidate split, so the rule above may not hold for them);
+deleverages and buy-to-liquidate settlements count as no revenue. What the
+payouts are for is not stated on-chain.
 
 **History and rollups.** The split is derived per stored row whenever
 windows and hourly rollups are summed, so no event was read from the chain
 again. Rollup version 3 adds the reducing-fee split and the liquidation
 shares as new columns (`ADD COLUMN IF NOT EXISTS … DEFAULT 0`). At start,
-hours rolled at version 2 with no charged decrease or close and no
-liquidation are carried over unchanged, and every other hour is rolled
-again from the stored events; both steps are safe to repeat. A rate change
-indexed after hours it applies to (the backfill runs newest first) rolls
-those hours again.
+the hours of each UTC day rolled at version 2 with no charged decrease or
+close and no liquidation are carried over unchanged, and every other day is
+rolled again from the stored events (whole days, so the hours left to roll
+form few ranges); both steps are safe to repeat. A rate change indexed
+after hours it applies to (the backfill runs newest first) marks those
+hours to roll again before the change is stored.
 
 ### Funding
 

@@ -9,14 +9,15 @@
 //     Opening events (open, increase, invert) carry this split themselves;
 //     decrease and close carry none and get it from their linked fill.
 //     Reducing fills are charged only from contract v1.7.5 (block 107,355,313).
-//   * liquidation on the book: X = deltaPnl + funding - posAmount (the margin
-//     left); user = floor(X * user / 100000) (the event's accAmountCNS),
+//   * full liquidation on the book: X = deltaPnl + funding - posAmount (the
+//     margin left); user = floor(X * user / 100000) (the event's accAmountCNS),
 //     insurance = floor(X * ins / 100000), protocol = X - user - insurance (it
-//     keeps the rounding dust). No revenue for either when X <= 0.
+//     keeps the rounding dust, so liqAmtPer100K is not read).
 //
-// Not verified (none observed): bankrupt, partial or off-book liquidations,
-// deleverages and buy-to-liquidate. Partial and off-book liquidations use the
-// same formula; deleverages and buy-to-liquidate add nothing. Payouts
+// Not verified (none observed), so no rule is assumed: a bankrupt liquidation
+// (X <= 0) counts 0; partial and off-book liquidations count 0 and are
+// reported as unsplit (the contract has a separate buy-to-liquidate split);
+// deleverages and buy-to-liquidate settlements count nothing. Payouts
 // (TransferProtocolToAccount), sweeps (TransferAccountToProtocol) and protocol
 // balance deposits and withdrawals move the balance but are never revenue.
 
@@ -27,8 +28,9 @@ const PER = 100000n;
 // Rates in force on every market from 25 Sep 2026 (getInsuranceProtocolSplit,
 // getLiquidationInfo), used where no change is indexed. FeeParamsUpdated and
 // the rates a market was added with were not indexed before, so history uses
-// 15000 until a change is seen: reducing fills were free before v1.7.5, so
-// earlier rows do not depend on it. Liquidations before a market's first
+// 15000 until a change is seen. Reducing fills were free before v1.7.5, but
+// from then (23 Sep 15:20 UTC) to the first check (25 Sep 12:03 UTC) their
+// split rests on 15000 unchecked. Liquidations before a market's first
 // indexed LiquidationParamsUpdated use 10000 / 80000 (not verified before 25 Sep).
 export const DEFAULT_RATES = Object.freeze({ feeIns: 15000n, liqIns: 10000n, liqUser: 80000n });
 
@@ -47,13 +49,19 @@ export function liquidationSplit(x, { liqIns = DEFAULT_RATES.liqIns, liqUser = D
 // The margin a stored liquidation row leaves: decode.js keeps deltaPnl as pnl
 // and posAmount as amount, and past bankruptcy stores pnl so that this is 0.
 export const liquidationMargin = row => { const x = BigInt(row.pnl) + BigInt(row.funding) - BigInt(row.amount); return x > 0n ? x : 0n; };
+// On the book (FLAG.ON_BOOK) with nothing left: the verified case (aggregates.FULL_ON_BOOK).
+export const fullOnBook = row => (Number(row.flags) & 1) === 1 && BigInt(row.end_lot) === 0n;
 
 // Revenue of one stored ev row: { source, ins, prot }, or null for rows that carry none.
 export function rowRevenue(row, rates = DEFAULT_RATES) {
   switch (row.kind) {
     case 'open': case 'increase': case 'invert': return { source: 'opening', ins: BigInt(row.ins_fee), prot: BigInt(row.prot_fee) };
     case 'decrease': case 'close': return { source: 'reducing', ...feeSplit(BigInt(row.fee), BigInt(row.builder_fee), rates.feeIns) };
-    case 'liquidation': { const { ins, prot } = liquidationSplit(liquidationMargin(row), rates); return { source: 'liquidation', ins, prot }; }
+    case 'liquidation': {
+      if (!fullOnBook(row)) return { source: 'liquidation', ins: 0n, prot: 0n, unsplit: true };
+      const { ins, prot } = liquidationSplit(liquidationMargin(row), rates);
+      return { source: 'liquidation', ins, prot };
+    }
     default: return null;
   }
 }

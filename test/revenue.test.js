@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { feeSplit, liquidationSplit, rowRevenue, createRevenueParams, DEFAULT_RATES } from '../src/revenue.js';
-import { revenueSql, MARKET, REVENUE_COLUMNS, columns } from '../src/aggregates.js';
-import { rollupStatements, createRollups, CARRY } from '../src/rollup.js';
+import { revenueSql, MARKET, REVENUE_COLUMNS, FULL_ON_BOOK, columns } from '../src/aggregates.js';
+import { rollupStatements, createRollups, markStale, CARRY } from '../src/rollup.js';
 import { DDL, migrate, ROLLUP_VERSION } from '../src/schema.js';
 import { rowsFromLogs } from '../src/decode.js';
 import { createAnalyticsApi } from '../src/analytics-api.js';
@@ -24,6 +24,7 @@ const fns = {
   intDiv: (a, b) => a / b,
   iff: (c, a, b) => (c ? a : b),
   greatest: (a, b) => (a > b ? a : b),
+  bitAnd: (a, b) => a & b,
   after: (b, l, cb, cl) => b > cb || (b === cb && l > cl)
 };
 function sqlEval(expr, row) {
@@ -31,13 +32,14 @@ function sqlEval(expr, row) {
     .replace(/\(block, log_index\) > \((\d+), (\d+)\)/g, 'after(block, log_index, $1, $2)')
     .replace(/ AND /g, ' && ').replace(/ = /g, ' === ').replace(/\bif\(/g, 'iff(')
     .replace(/\b(\d+)\b/g, '$1n');
-  const r = Object.fromEntries(['fee', 'builder_fee', 'pnl', 'funding', 'amount', 'market', 'block', 'log_index'].map(k => [k, BigInt(row[k] ?? 0)]));
-  return new Function('f', 'r', `const { multiIf, intDiv, iff, greatest, after } = f; const { fee, builder_fee, pnl, funding, amount, market, block, log_index } = r; return ${js};`)(fns, r);
+  const r = Object.fromEntries(['fee', 'builder_fee', 'pnl', 'funding', 'amount', 'market', 'block', 'log_index', 'flags', 'end_lot'].map(k => [k, BigInt(row[k] ?? 0)]));
+  r.kind = row.kind;
+  return new Function('f', 'r', `const { multiIf, intDiv, iff, greatest, bitAnd, after } = f; const { kind, fee, builder_fee, pnl, funding, amount, market, block, log_index, flags, end_lot } = r; return ${js};`)(fns, r);
 }
 const sqlRevenue = (row, sql) => {
   const s = revenueSql(sql);
   if (row.kind === 'decrease' || row.kind === 'close') { const ins = sqlEval(s.reduceIns, row); return { ins, prot: BigInt(row.fee) - ins }; }
-  if (row.kind === 'liquidation') return { ins: sqlEval(s.liqIns, row), prot: sqlEval(s.liqProt, row) };
+  if (row.kind === 'liquidation') return sqlEval(FULL_ON_BOOK, row) ? { ins: sqlEval(s.liqIns, row), prot: sqlEval(s.liqProt, row) } : { ins: 0n, prot: 0n };
   return null;
 };
 
@@ -114,10 +116,27 @@ test('reconciled window: four ZEC liquidations and the window fees give the cont
 
 test('a bankrupt liquidation adds no revenue', () => {
   const b = logBuilder();
-  b.tx().add(...ev.takerFill(1000000n, 2000n, 0n)).add(...ev.liquidation(1, 9, LONG, 1000000n, 2000n, 0n, -300000000n, { fundingCNS: -1000000n, posAmountCNS: -200000000n }));
+  b.tx().add(...ev.takerFill(1000000n, 2000n, 0n)).add(...ev.liquidation(1, 9, LONG, 1000000n, 2000n, 0n, -300000000n, { fundingCNS: -1000000n, posAmountCNS: -200000000n, onOrderBook: true }));
   const [liq] = byKind(rowsFromLogs(b.logs, { unitsOf }).ev, 'liquidation');
   assert.deepEqual(rowRevenue(liq), { source: 'liquidation', ins: 0n, prot: 0n });
   assert.deepEqual(sqlRevenue(liq), { ins: 0n, prot: 0n });
+});
+
+test('partial and off-book liquidations are not split: no revenue, counted apart', () => {
+  // 70 USD of margin left, 80 % returned: 7 + 7 USD if it were split like the verified case.
+  const margin = { posAmountCNS: -100000000n, accAmountCNS: 56000000n };
+  const b = logBuilder();
+  b.tx().add(...ev.takerFill(5000n, 1000n, 0n)).add(...ev.liquidation(20, 11, SHORT, 5000n, 1000n, 0n, -30000000n, { ...margin, onOrderBook: true }));
+  b.tx().add(...ev.takerFill(5000n, 600n, 0n)).add(...ev.liquidation(20, 12, SHORT, 5000n, 600n, 400n, -30000000n, { ...margin, onOrderBook: true }));
+  b.tx().add(...ev.liquidation(20, 13, SHORT, 5000n, 1000n, 0n, -30000000n, margin));
+  const [full, partial, offBook] = byKind(rowsFromLogs(b.logs, { unitsOf }).ev, 'liquidation');
+  assert.deepEqual(rowRevenue(full), { source: 'liquidation', ins: 7000000n, prot: 7000000n });
+  for (const row of [partial, offBook]) {
+    assert.equal(row.fee, 14000000n, 'the account still pays its liquidation fee');
+    assert.deepEqual(rowRevenue(row), { source: 'liquidation', ins: 0n, prot: 0n, unsplit: true });
+  }
+  for (const row of [full, partial, offBook]) assert.deepEqual(sqlRevenue(row), { ins: rowRevenue(row).ins, prot: rowRevenue(row).prot });
+  assert.equal(MARKET.find(([c]) => c === 'liq_unsplit')[1], `countIf(kind = 'liquidation' AND NOT ${FULL_ON_BOOK})`);
 });
 
 test('rates follow FeeParamsUpdated and LiquidationParamsUpdated from their block, per market', () => {
@@ -185,33 +204,39 @@ function fakeRollupCh({ v2 = [], touched = [] } = {}) {
   const ch = {
     query: async (sql, params = {}) => {
       queries.push(sql);
-      if (sql === CARRY.touched) return touched.map(h => ({ h }));
+      if (sql === CARRY.touched) return touched.map(d => ({ d }));
       if (sql.includes('FROM rollup_hours')) return [...hours].filter(([, v]) => v === params.v).map(([h]) => ({ h }));
       return [];
     },
     insert: async (table, rows) => { for (const r of rows) hours.set(r.hour, r.version); },
-    exec: async (sql, { from, to }) => { if (sql.includes('agg_market_hour')) rolled.push([from, to]); if (ch.onExec) await ch.onExec(); }
+    exec: async (sql, { from, to, v }) => {
+      if (sql.startsWith('INSERT INTO rollup_hours')) { for (const [h, x] of hours) if (x === v && h + HOUR > from) hours.set(h, 0); return; } // markStale
+      if (sql.includes('agg_market_hour')) rolled.push([from, to]);
+      if (ch.onExec) await ch.onExec();
+    }
   };
   return { ch, hours, rolled, queries };
 }
-const HOUR = 3600, START = 1790985600;
+const HOUR = 3600, DAY = 86400, START = 1790985600; // a UTC day start
 const coverage = { intervals: [{ from: 1n, to: 2n, fromTs: START, toTs: START + 3 * HOUR }], hourCovered: () => true };
 const hoursOf = runs => runs.flatMap(([a, b]) => Array.from({ length: (b - a) / HOUR }, (_, i) => a + i * HOUR));
 
-test('version 3 carries over hours without reducing fees or liquidations and rolls the rest again, once', async () => {
-  assert.equal(ROLLUP_VERSION, 3);
-  const f = fakeRollupCh({ v2: [START, START + HOUR, START + 2 * HOUR], touched: [START + HOUR] });
-  const rollups = createRollups({ ch: f.ch, coverage });
+test('version 3 carries over days without reducing fees or liquidations and rolls the rest again, once', async () => {
+  assert.deepEqual([ROLLUP_VERSION, CARRY.from, CARRY.to], [3, 2, 3], 'the carry-over is only right from 2 to 3');
+  // Two days rolled at version 2; the first has a liquidation or a charged reduce.
+  const f = fakeRollupCh({ v2: [START, START + DAY].flatMap(d => Array.from({ length: 24 }, (_, i) => d + i * HOUR)), touched: [START] });
+  const cover = { intervals: [{ from: 1n, to: 2n, fromTs: START, toTs: START + 2 * DAY }], hourCovered: () => true };
+  const rollups = createRollups({ ch: f.ch, coverage: cover });
   await rollups.load();
-  assert.equal(rollups.status.carried, 2);
-  await rollups.run(START + 4 * HOUR);
-  assert.deepEqual(hoursOf(f.rolled), [START + HOUR], 'only the hour with reducing fees or liquidations');
-  assert.deepEqual([...f.hours.values()], [3, 3, 3]);
+  assert.equal(rollups.status.carried, 24);
+  await rollups.run(START + 2 * DAY + HOUR);
+  assert.deepEqual(f.rolled, [[START, START + DAY]], 'the whole touched day, as one run');
+  assert.ok([...f.hours.values()].every(v => v === 3));
   // A restart finds nothing left at version 2 and nothing to roll.
-  const again = createRollups({ ch: f.ch, coverage });
+  const again = createRollups({ ch: f.ch, coverage: cover });
   await again.load();
   assert.equal(again.status.carried, 0);
-  assert.equal(await again.run(START + 4 * HOUR), 0);
+  assert.equal(await again.run(START + 2 * DAY + HOUR), 0);
   assert.equal(f.queries.filter(q => q === CARRY.touched).length, 1, 'the events are scanned only while hours wait at version 2');
 });
 
@@ -220,22 +245,39 @@ test('a parameter change found later rolls its hours again; a run it overtakes d
   const rollups = createRollups({ ch: f.ch, coverage });
   await rollups.run(START + 4 * HOUR);
   assert.equal(rollups.status.hours, 3);
-  assert.equal(await rollups.invalidate(START + HOUR + 10), 2);
+  // Ingest marks them in the database before it stores the change, then tells the rollups.
+  await markStale(f.ch, START + HOUR + 10);
   assert.deepEqual([f.hours.get(START), f.hours.get(START + HOUR), f.hours.get(START + 2 * HOUR)], [3, 0, 0], 'kept across restarts');
+  assert.equal(rollups.invalidate(START + HOUR + 10), 2);
   f.rolled.length = 0;
   await rollups.run(START + 4 * HOUR);
   assert.deepEqual(hoursOf(f.rolled), [START + HOUR, START + 2 * HOUR]);
+  // A restart before the in-memory step (a crash, or a change found while
+  // ingest starts) still rolls them again.
+  await markStale(f.ch, START);
+  const restarted = createRollups({ ch: f.ch, coverage });
+  await restarted.load();
+  assert.equal(restarted.status.hours, 0);
   // A change arriving while hours are being rolled: they stay pending.
-  await rollups.invalidate(START);
-  f.ch.onExec = async () => { f.ch.onExec = null; await rollups.invalidate(START); };
+  rollups.invalidate(START);
+  f.ch.onExec = async () => { f.ch.onExec = null; rollups.invalidate(START); };
   await rollups.run(START + 4 * HOUR);
   assert.equal(rollups.status.hours, 0);
+  assert.deepEqual([...f.hours.values()], [0, 0, 0]);
   await rollups.run(START + 4 * HOUR);
   assert.equal(rollups.status.hours, 3);
+  // A change arriving after a run stamped its hours but before it marks them
+  // done: stale again in the database (the stamp may have landed after markStale).
+  rollups.invalidate(START);
+  const insert = f.ch.insert;
+  f.ch.insert = async (table, rows) => { await insert(table, rows); if (rows[0]?.version === 3) { f.ch.insert = insert; rollups.invalidate(START); } };
+  await rollups.run(START + 4 * HOUR);
+  assert.equal(rollups.status.hours, 0);
+  assert.deepEqual([...f.hours.values()], [0, 0, 0]);
 });
 
 test('protocol and series report protocol and insurance fees with reducing fills, and revenue by source', async () => {
-  const totals = { market: 1, volume: '5000000000', fills: '2', trades: '4', maker_fees: '100', taker_fees: '900', builder_fees: '50', ins_fees: '60', prot_fees: '440', reduce_ins_fees: '75', reduce_prot_fees: '425', liq_ins_fees: '1000', liq_prot_fees: '1002', taker_buy: '0', taker_sell: '0', opens: '1', closes: '1', liquidations: '1', liquidated: '0', deleverages: '0', deleveraged: '0', realized: '0', oi_long: '0', oi_short: '0', open_price: '0', high_price: '0', low_price: '0', close_price: '0' };
+  const totals = { market: 1, volume: '5000000000', fills: '2', trades: '4', maker_fees: '100', taker_fees: '900', builder_fees: '50', ins_fees: '60', prot_fees: '440', reduce_ins_fees: '75', reduce_prot_fees: '425', liq_ins_fees: '1000', liq_prot_fees: '1002', liq_unsplit: '2', taker_buy: '0', taker_sell: '0', opens: '1', closes: '1', liquidations: '1', liquidated: '0', deleverages: '0', deleveraged: '0', realized: '0', oi_long: '0', oi_short: '0', open_price: '0', high_price: '0', low_price: '0', close_price: '0' };
   const ingest = {
     collateralDecimals: 6, markets: new Map([[1, { symbol: 'BTC', name: 'BTC', priceDecimals: 1, lotDecimals: 5 }]]), unitsOf: () => null,
     status: { live: { to: 5000n, toTs: 1790005000, finalized: null } },
@@ -251,7 +293,7 @@ test('protocol and series report protocol and insurance fees with reducing fills
   const want = {
     protocol: { total: '0.001867', opening_fees: '0.000440', reducing_fees: '0.000425', liquidations: '0.001002' },
     insurance: { total: '0.001135', opening_fees: '0.000060', reducing_fees: '0.000075', liquidations: '0.001000' },
-    builder_fees: '0.000050'
+    builder_fees: '0.000050', unsplit_liquidations: 2
   };
   const p = await api.protocol(new URLSearchParams('window=24h'));
   const h = p.headline;
