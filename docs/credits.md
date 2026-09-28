@@ -27,4 +27,6 @@
 
 ## AI use
 
-We used an AI coding assistant to help write the code, tests and docs.
+We used an AI coding assistant to help write the code, tests and docs. The
+research, design, infrastructure, data validation and review are the team's
+own.
