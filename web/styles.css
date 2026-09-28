@@ -733,6 +733,8 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 /* Liquidations: dot legend as on trend cards, beside the tools (the page owns the window). */
 .lq-chart > .panel-head { align-items: flex-start; }
 .lq-chart .legend.dots { max-width: 560px; margin-top: 4px; }
+/* Only a message (no liquidations in the window): no reserved chart height. */
+.lq-chart .chart:has(> .empty-state) { height: auto; }
 .lq-feed-ctl { display: flex; gap: 10px; align-items: center; }
 @media (max-width: 640px) {
   .lq-chart .head-right { flex: 1 1 100%; justify-content: space-between; }

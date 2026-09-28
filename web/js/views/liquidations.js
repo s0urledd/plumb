@@ -30,18 +30,20 @@ export function mount(el, { query, setQuery }) {
     if (!alive || asked !== filters()) return;
     markets = p.markets;
     assignColors([...p.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol })));
-    const h = p.headline, row = market ? p.markets.find(m => String(m.id) === market) ?? null : null;
-    // A market filter narrows the KPIs and the chart too, not only the feed.
-    const liquidated = row ? row.liquidated : h.liquidated.value, count = row ? row.liquidations : h.liquidations.value, volume = row ? row.volume : h.volume.value;
+    const h = p.headline, row = market ? p.markets.find(m => String(m.id) === market) ?? null : null, wl = w === 'all' ? 'all-time' : w;
+    // A market filter narrows the KPIs and the chart too, not only the feed. A
+    // market with nothing in the window had no liquidations and no volume, not unknowns.
+    const liquidated = row ? row.liquidated ?? 0 : h.liquidated.value, count = row ? row.liquidations ?? 0 : h.liquidations.value, volume = row ? row.volume ?? 0 : h.volume.value;
     const largest = l.largest ?? null; // the largest inside the window, from the server
     // ADL and force closes: the headline counts them for all markets only, so
     // one market's are its feed events less its liquidations.
     adl = { key: asked, n: row ? Math.max(0, num(l.total) - (num(count) ?? 0)) : market ? null : num(h.deleverages) };
     $('kpis').innerHTML = [
-      kpi({ label: `Liquidated · ${w}${row ? ` · ${row.symbol}` : ''}`, value: usd(liquidated), delta: row || w === 'all' || p.meta.previous_complete === false ? undefined : h.liquidated.change_pct, basis: 'vs prev', basisTitle: `Compared with the previous ${w}`, invert: true, note: `${int(count)} liquidations` }),
-      kpi({ label: 'Share of volume', value: `${num(volume) ? (num(liquidated) / num(volume) * 100).toFixed(2) : '0.00'}%`, note: `of ${usd(volume)} traded` }),
+      kpi({ label: `Liquidated · ${wl}${row ? ` · ${row.symbol}` : ''}`, value: usd(liquidated), delta: row || w === 'all' || p.meta.previous_complete === false ? undefined : h.liquidated.change_pct, basis: 'vs prev', basisTitle: `Compared with the previous ${wl}`, invert: true, note: `${int(count)} ${num(count) === 1 ? 'liquidation' : 'liquidations'}` }),
+      // With no volume there is no share to take: the note says why.
+      kpi({ label: 'Share of volume', value: num(volume) ? `${(num(liquidated) / num(volume) * 100).toFixed(2)}%` : '—', note: num(volume) ? `of ${usd(volume)} traded` : `no trades in ${wl}` }),
       kpi({ label: 'ADL, force closes', value: int(adl.n), note: 'closed by the protocol', tip: 'PositionDeleveraged events: auto-deleveraging against a bankrupt position, or a force close at the mark price (flagged on the event).' }),
-      kpi({ label: `Largest · ${w === 'all' ? 'all-time' : w}`, value: largest ? usd(largest.notional) : '—', note: largest ? `${esc(largest.symbol)} ${esc(largest.side ?? '')} · ${ago(largest.ts)}` : 'none in this window' })
+      kpi({ label: `Largest · ${wl}`, value: largest ? usd(largest.notional) : '—', note: largest ? `${esc(largest.symbol)} ${esc(largest.side ?? '')} · ${ago(largest.ts)}` : 'none in this window' })
     ].join('');
     const node = $('chart'); node.innerHTML = '';
     let list;
