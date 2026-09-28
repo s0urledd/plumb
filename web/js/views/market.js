@@ -124,7 +124,7 @@ export function mount(el, { params, query, setQuery }) {
     const netChange = num(t.long_open) - num(t.long_close);
     headValue('flow', pnl(netChange), `${usd(num(t.long_open) + num(t.short_open))} opened · ${usd(num(t.long_close) + num(t.short_close))} closed · ${wl()}`);
     const moved = f.times.length && num(t.long_open) + num(t.short_open) + num(t.long_close) + num(t.short_close);
-    legendOf('flow', moved ? [{ name: 'Longs opened', color: COLORS.long }, { name: 'Longs closed', color: `${COLORS.long}80` }, { name: 'Shorts opened', color: COLORS.short }, { name: 'Shorts closed', color: `${COLORS.short}80` }, { name: 'Net change', color: '#ffffff' }] : []);
+    legendOf('flow', moved ? [{ name: 'Longs opened', color: COLORS.long }, { name: 'Longs closed', color: `${COLORS.long}80` }, { name: 'Shorts opened', color: COLORS.short }, { name: 'Shorts closed', color: `${COLORS.short}80` }, { name: 'Open interest change', color: '#ffffff' }] : []);
     if (!moved) { node.innerHTML = none('No position changes in this window'); return; }
     flowBars(node, { times: f.times, longOpen: f.long_open, longClose: f.long_close, shortOpen: f.short_open, shortClose: f.short_close, bucketSeconds: f.meta.bucket_seconds });
   }

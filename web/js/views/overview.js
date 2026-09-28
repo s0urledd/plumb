@@ -206,7 +206,7 @@ export function mount(el, { query, setQuery }) {
         break;
       case 'flows':
         headValue('flows', pnl(h.net_flow.value), `${usd(h.deposits.value)} in · ${usd(h.withdrawals.value)} out · ${winLabel(win)}`);
-        legendOf('flows', [{ name: 'Deposits', color: COLORS.long }, { name: 'Withdrawals', color: COLORS.short }, { name: 'Net', ...NET }]);
+        legendOf('flows', [{ name: 'Deposits', color: COLORS.long }, { name: 'Withdrawals', color: COLORS.short }, { name: 'Net deposits', ...NET }]); // the chart's own names, as in its tooltip
         twoSided(node, { times, bucketSeconds: b, up: { name: 'Deposits', data: pts.map(p => p.deposits) }, down: { name: 'Withdrawals', data: pts.map(p => p.withdrawals) }, net: 'Net deposits' });
         break;
       case 'traders':
@@ -247,7 +247,7 @@ export function mount(el, { query, setQuery }) {
       case 'taker': {
         const buys = d.p.markets.reduce((a, m) => a + (num(m.taker_buy) ?? 0), 0), sells = d.p.markets.reduce((a, m) => a + (num(m.taker_sell) ?? 0), 0);
         headValue('taker', buys + sells ? `${pct(buys / (buys + sells) * 100, { digits: 1 })} buys` : '—', `${usd(buys)} bought · ${usd(sells)} sold · ${winLabel(win)}`);
-        legendOf('taker', [{ name: 'Buys', color: COLORS.long }, { name: 'Sells', color: COLORS.short }, { name: 'Net', ...NET }]);
+        legendOf('taker', [{ name: 'Taker buys', color: COLORS.long }, { name: 'Taker sells', color: COLORS.short }, { name: 'Net taker buying', ...NET }]);
         twoSided(node, { times, bucketSeconds: b, up: { name: 'Taker buys', data: pts.map(p => p.taker_buy) }, down: { name: 'Taker sells', data: pts.map(p => p.taker_sell) }, net: 'Net taker buying' });
         break;
       }

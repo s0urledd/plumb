@@ -417,7 +417,7 @@ export function mirrored(el, { labels, long, short, fmt = v => usd(v), legend = 
   if (!chart) return;
   const peak = Math.max(0, ...long.map(v => num(v) ?? 0), ...short.map(v => num(v) ?? 0));
   const edge = peak > 0 ? niceCeil(peak * 1.05) : 1;
-  const longName = 'Longs exposed (price down)', shortName = 'Shorts exposed (price up)';
+  const longName = 'Longs (price down)', shortName = 'Shorts (price up)';
   // On a narrow chart the legend wraps to a second line: the bars start below it.
   const below = () => ([longName, shortName].reduce((w, n) => w + 7 + 5 + textWidth(n) + 14, 0) > el.clientWidth ? 46 : 26);
   if (!legend) chart.__png = () => ({ legend: { show: true }, grid: { top: below() } });
