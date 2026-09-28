@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compact, usd, usdFull, pct, bps, signClass, deltaHtml, duration } from '../web/js/format.js';
+import { compact, usd, usdFull, pct, bps, share, price, short, signClass, deltaHtml, duration } from '../web/js/format.js';
 
 test('compact amounts switch unit on the rounded figure', () => {
   assert.equal(usd(999.4), '$999');
@@ -44,6 +44,27 @@ test('a percentage that rounds to zero is 0 and neutral', () => {
   assert.equal(bps(null), '—');
 });
 
+test('a share too small for a decimal is <0.1%, and none is 0%', () => {
+  assert.equal(share(0.03), '<0.1%');
+  assert.equal(share(0), '0%');
+  assert.equal(share(12.34), '12.3%');
+  assert.equal(share(null), '—');
+});
+
+test('prices write out their decimals so a column lines up', () => {
+  assert.equal(price(0.029), '0.02900');
+  assert.equal(price(0.02858), '0.02858');
+  assert.equal(price(75.28), '75.280');
+  assert.equal(price(82741.35), '82,741.4');
+  assert.equal(price(0.00461691), '0.0046169');
+});
+
+test('short keys are shown whole, addresses shortened', () => {
+  assert.equal(short('0x1234'), '0x1234');
+  assert.equal(short('99999999'), '99999999');
+  assert.equal(short('0xc8d79f44912a9f55c6faf819283efcea9661d1dc'), '0xc8d7…d1dc');
+});
+
 test('a change that rounds to 0.0 % is flat', () => {
   assert.match(deltaHtml(-0.02), /class="delta flat"[^>]*> 0\.0%/);
   assert.match(deltaHtml(-5.21), /class="delta down"[^>]*>▼ 5\.2%/);
@@ -64,7 +85,9 @@ test('percentages and changes pick decimals on the rounded figure', () => {
 
 test('durations switch unit on the rounded figure', () => {
   assert.equal(duration(59.4), '59s');
-  assert.equal(duration(59.6), '1m');
+  assert.equal(duration(59.6), '1.0m');
+  assert.equal(duration(144), '2.4m');
+  assert.equal(duration(598), '10m');
   assert.equal(duration(3590), '1.0h');
   assert.equal(duration(5400), '1.5h');
   assert.equal(duration(35990), '10h');

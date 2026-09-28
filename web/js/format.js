@@ -29,12 +29,14 @@ export function usdFull(v, digits = 2) {
   return `${n < 0 && Number(Math.abs(n).toFixed(digits)) > 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 export function int(v) { const n = num(v); return n === null ? '—' : Math.round(n).toLocaleString('en-US'); }
+// Decimals follow the price's size and are always written out, so a column of
+// prices (a book, a tape) lines up: 0.02900 over 0.02858, never 0.029.
 export function price(v) {
   const n = num(v);
   if (n === null) return '—';
   const a = Math.abs(n);
   const d = a >= 1000 ? 1 : a >= 100 ? 2 : a >= 1 ? 3 : a >= 0.01 ? 5 : 7;
-  return n.toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: d });
+  return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 export function pct(v, { digits = 2, sign = false } = {}) {
   const n = num(v);
@@ -44,6 +46,8 @@ export function pct(v, { digits = 2, sign = false } = {}) {
   const t = n.toFixed(Math.abs(Number(n.toFixed(digits))) >= 100 ? 0 : digits);
   return Number(t) === 0 ? `${t.replace('-', '')}%` : `${sign && n > 0 ? '+' : ''}${t}%`;
 }
+// A share of a total: none reads 0%, and one too small for a decimal <0.1%, never 0.0%.
+export const share = v => { const n = num(v); return n === 0 ? '0%' : n !== null && n > 0 && n < 0.05 ? '<0.1%' : pct(v, { digits: 1 }); };
 // Basis points, as pct: a value that rounds to zero reads 0.0 bps, with no minus or plus.
 export function bps(v, { digits = 1, sign = false } = {}) {
   const n = num(v);
@@ -78,10 +82,11 @@ export function ago(ts) {
 export function duration(sec) {
   const s = num(sec);
   if (s === null) return '—';
-  // Unit and decimals follow the rounded figure: 59.6 s reads 1m and 23.8 h 1.0d, never 60s or 24h.
+  // Unit and decimals follow the rounded figure: 59.6 s reads 1.0m and 23.8 h
+  // 1.0d, never 60s or 24h. Under ten of a unit one decimal shows (2.4m, 1.5h).
   const fig = x => x.toFixed(Number(x.toFixed(1)) < 10 ? 1 : 0);
   if (Math.round(s) < 60) return `${Math.round(s)}s`;
-  if (Math.round(s / 60) < 60) return `${Math.round(s / 60)}m`;
+  if (Math.round(s / 60) < 60) return `${fig(s / 60)}m`;
   if (Number(fig(s / 3600)) < 24) return `${fig(s / 3600)}h`;
   return `${fig(s / 86400)}d`;
 }
@@ -97,6 +102,7 @@ export function multiple(pctValue) {
   if (n >= 1000) return `${(Math.floor(n / 10) / 10).toFixed(1)}×`;
   return n >= 100 ? `${Math.floor(n)}%` : `${(Math.floor(n * 10) / 10).toFixed(1)}%`;
 }
-export const short = a => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—');
+// A key short enough to read (an account ID, a typed fragment) is shown whole.
+export const short = a => { if (!a) return '—'; const t = String(a); return t.length > 12 ? `${t.slice(0, 6)}…${t.slice(-4)}` : t; };
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ESC[c]);

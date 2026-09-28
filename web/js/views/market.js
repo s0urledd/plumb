@@ -112,7 +112,7 @@ export function mount(el, { params, query, setQuery }) {
     else {
       let prev = null;
       const ohlc = s.points.map(x => { const c = num(x.close), o = num(x.open) ?? prev ?? c, h = num(x.high) ?? Math.max(o, c), l = num(x.low) ?? Math.min(o, c); prev = c; return c === null ? '-' : [o, c, l, h]; });
-      candles(node, { times: s.times, ohlc, volume: s.points.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/\.0+$/, ''), volColor: colorOf(id) + '99', zoom: true,
+      candles(node, { times: s.times, ohlc, volume: s.points.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''), volColor: colorOf(id) + '99', zoom: true,
         levels: showLevels ? levels?.levels ?? null : null, mark: num(levels?.mark), levelSpan: LEVEL_SPAN, onLevel: l => { const t = l.top; if (t) location.hash = `#/wallet/${t.address || t.account_id}`; } });
     }
   }
