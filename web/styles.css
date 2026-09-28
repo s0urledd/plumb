@@ -91,6 +91,8 @@ button, input, select { font: inherit; color: inherit; }
 .ticker:hover { border-color: var(--line-2); color: inherit; }
 .live { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text-2); flex: none; font-variant-numeric: tabular-nums; }
 .live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.live-ico { display: inline-flex; color: var(--text-2); margin-right: -3px; }
+.live-ico svg { width: 14px; height: 14px; }
 .live.ok .dot { background: var(--long); box-shadow: 0 0 0 0 rgba(129, 199, 132, 0.6); animation: pulse 2s infinite; }
 .live.warn .dot { background: var(--warn); }
 .live.bad .dot { background: var(--short); }
