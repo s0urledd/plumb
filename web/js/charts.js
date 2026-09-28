@@ -15,12 +15,14 @@ function init(el) {
   if (!el || !window.echarts) return null;
   let chart = el.__chart;
   // A view that re-renders clears the node (innerHTML = ''), which detaches
-  // the chart's own DOM: drop that instance and draw a fresh one.
+  // the chart's own DOM: drop that instance and draw a fresh one. A chart
+  // still attached is redrawn in place, its marks moving from where they were.
   if (chart && (chart.isDisposed() || !el.contains(chart.__root))) {
     try { observer?.unobserve(el); chart.dispose(); } catch { /* already gone */ }
     registry.delete(chart); chart = null; el.__chart = null;
   }
   if (!chart) {
+    el.replaceChildren(); // a skeleton or message in the node gives way to the chart
     chart = window.echarts.init(el, null, { renderer: 'canvas' });
     chart.__root = el.lastElementChild; // echarts appends its own root
     el.__chart = chart; registry.add(chart); observer?.observe(el);

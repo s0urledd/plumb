@@ -71,14 +71,20 @@ export function mount(el, { query, setQuery }) {
     ], rows: markets, rowAttrs: r => `class="link" data-action="pick" data-id="${r.id}"` });
     await Promise.all([ladder(), stress()]);
   }
+  // The ladder is redrawn only when its figures change, and in place, so the
+  // bars move to new values on the 5 s refresh instead of growing from zero.
+  let drawn = null;
   async function ladder() {
     if (!marketId) return;
-    const r = await get(`markets/${marketId}/ladder`, { maxAge: 5000 });
-    if (!alive) return;
+    const id = marketId, r = await get(`markets/${id}/ladder`, { maxAge: 5000 });
+    if (!alive || id !== marketId) return; // another market was picked meanwhile
     $('ladder-meta').textContent = `${r.symbol} · notional exposed at each move`;
-    const node = $('ladder'); node.innerHTML = '';
-    if (!r.ladder.length) { node.innerHTML = empty('No positions'); return; }
-    mirrored(node, { labels: r.ladder.map(x => `${x.shock_pct}%`), long: r.ladder.map(x => num(x.long.notional)), short: r.ladder.map(x => num(x.short.notional)) });
+    const labels = r.ladder.map(x => `${x.shock_pct}%`), long = r.ladder.map(x => num(x.long.notional)), short = r.ladder.map(x => num(x.short.notional));
+    const key = JSON.stringify([labels, long, short]);
+    if (key === drawn) return;
+    drawn = key;
+    if (!labels.length) { $('ladder').innerHTML = empty('No positions'); return; }
+    mirrored($('ladder'), { labels, long, short });
   }
   let stressTimer = null, stressSeq = 0, resyncing = false;
   async function stress() {

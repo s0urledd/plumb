@@ -130,7 +130,7 @@ export function mount(el, { params, query, setQuery }) {
   async function loadEntries() {
     const e = await get(`markets/${id}/entries`, { maxAge: 10000 });
     if (!alive) return;
-    const node = $('entries'); node.innerHTML = '';
+    const node = $('entries'); // redrawn in place on each refresh, like the ladder
     const L = e.long, S = e.short;
     if (!e.positions) { headValue('entries', '—'); legendOf('entries', []); node.innerHTML = none('No open positions'); return; }
     headValue('entries', `${pct((L.in_profit + S.in_profit) / e.positions * 100, { digits: 0 })}${unit('in profit')}`, `${int(L.in_profit + S.in_profit)} of ${int(e.positions)} positions · longs ${pct(L.in_profit_pct, { digits: 0 })}, shorts ${pct(S.in_profit_pct, { digits: 0 })}`);
@@ -156,7 +156,7 @@ export function mount(el, { params, query, setQuery }) {
     renderPositions(risk.top_positions ?? []);
     if (!$('calc')?.contains(document.activeElement)) renderCalc(); // not while someone types in it
     const ladder = risk.ladder ?? [];
-    const lnode = $('ladder'); lnode.innerHTML = '';
+    const lnode = $('ladder'); // redrawn in place on each refresh: the bars move rather than regrow
     const r10 = risk.risk ?? {}, open = ladder.length && (L.count + S.count) > 0;
     headValue('ladder', open ? `${usd(r10.notional_at_10pct)}${unit('on a 10% move')}` : '—', open ? `longs ${usd(r10.long_notional_at_10pct)} if the price falls · shorts ${usd(r10.short_notional_at_10pct)} if it rises` : '');
     legendOf('ladder', open ? [{ name: 'Longs (price down)', color: COLORS.long }, { name: 'Shorts (price up)', color: COLORS.short }] : []);
