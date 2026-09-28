@@ -13,6 +13,7 @@
   --surface-2: #19181c;
   --surface-3: #222127;
   --card-edge: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(255, 255, 255, 0.035), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --control-edge: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --menu: #1e1b23;
   --tooltip: #24222a;
   --line: rgba(255, 255, 255, 0.07);
@@ -52,7 +53,7 @@ a { color: inherit; text-decoration: none; }
 a:hover { color: var(--accent); }
 button, input, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
-.num, td.n, td.c, .kpi-value, .mono-num { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.num, td.n, td.c, .kpi-value { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
 .muted { color: var(--text-2); }
 .faint { color: var(--text-3); }
@@ -79,7 +80,7 @@ button, input, select { font: inherit; color: inherit; }
 .search input::placeholder { color: var(--text-3); }
 .search kbd { font: 500 11px var(--mono); color: var(--text-3); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; }
 /* z-index: the phone nav paints after the search box (flex order) and in a layer of its own (its edge fade). */
-.search-results { position: absolute; z-index: 1; top: 42px; left: 0; right: 0; background: var(--menu); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 4px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55); }
+.search-results { position: absolute; z-index: 1; top: 42px; left: 0; right: 0; background: var(--menu); border-radius: var(--radius); padding: 4px; box-shadow: var(--card-edge), 0 16px 40px rgba(0, 0, 0, 0.55); }
 .search-results a { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: var(--radius-sm); }
 .search-results a:hover, .search-results a.sel { background: var(--accent-soft); color: var(--text); }
 .search-results .empty { padding: 10px; color: var(--text-3); font-size: 13px; }
@@ -96,7 +97,7 @@ button, input, select { font: inherit; color: inherit; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(129, 199, 132, 0.55); } 70% { box-shadow: 0 0 0 7px rgba(129, 199, 132, 0); } 100% { box-shadow: 0 0 0 0 rgba(129, 199, 132, 0); } }
 
 .banner { max-width: var(--page); margin: 12px auto 0; padding: 0 var(--gutter); }
-.banner-inner { display: flex; align-items: center; gap: 14px; padding: 9px 14px; border: 1px solid rgba(162, 164, 255, 0.18); background: rgba(111, 92, 255, 0.07); border-radius: var(--radius); font-size: 13px; color: var(--text-2); }
+.banner-inner { display: flex; align-items: center; gap: 14px; padding: 10px 16px; background: linear-gradient(90deg, rgba(111, 92, 255, 0.12), rgba(111, 92, 255, 0.02) 60%), var(--surface); box-shadow: var(--card-edge); border-radius: var(--radius); font-size: 13px; color: var(--text-2); }
 .banner-inner b { color: var(--text); font-weight: 500; }
 @media (max-width: 860px) { .banner-inner { flex-wrap: wrap; gap: 6px 12px; } .banner-inner .faint { flex-basis: 100%; } .banner-inner .bar { flex: 1; } }
 .bar { flex: 0 0 180px; height: 4px; background: rgba(255, 255, 255, 0.08); border-radius: 2px; overflow: hidden; }
@@ -172,9 +173,9 @@ button, input, select { font: inherit; color: inherit; }
 .table-wrap, .tabs, .nav { mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent); animation: fade-l linear both, fade-r linear both; animation-timeline: scroll(self inline); animation-range: 0 40px, calc(100% - 40px) 100%; }
 /* The desktop nav never scrolls, and a mask would clip its focus rings. */
 @media (min-width: 861px) { .nav { mask-image: none; } }
-.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); font-size: 12.5px; font-weight: 500; cursor: pointer; }
-.btn:hover { border-color: rgba(162, 164, 255, 0.45); color: var(--text); }
-.btn.primary { background: var(--accent-strong); border-color: transparent; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--radius-sm); border: 0; background: var(--surface-2); box-shadow: var(--control-edge); color: var(--text); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.btn:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(162, 164, 255, 0.45); color: var(--text); }
+.btn.primary { background: var(--accent-strong); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14); }
 .btn.primary:hover { background: var(--accent-hover); }
 .btn.ghost { background: transparent; }
 .btn svg { width: 14px; height: 14px; }
@@ -263,7 +264,6 @@ tr.hl td { background: rgba(162, 164, 255, 0.07); }
 
 /* ---------- small components ---------- */
 .mkt { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
-.mkt .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .mkt .tk { border-radius: 50%; flex: none; box-shadow: 0 0 0 1px var(--line-2); }
 .tk-letter { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; flex: none; color: #fff; font-style: normal; font-weight: 600; line-height: 1; }
 .mkt .nm { color: var(--text-3); font-weight: 400; font-size: 12px; }
@@ -295,12 +295,11 @@ tr.inactive td { opacity: 0.5; }
 .chart { width: 100%; height: 300px; }
 .chart.sm { height: 200px; }
 .chart.lg { height: 360px; }
-.list { display: flex; flex-direction: column; }
-.list-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
-.list-row:first-child { border-top: 0; }
 .stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .stat { padding: 11px 16px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
 .stat:nth-child(odd) { border-right: 1px solid var(--line); }
+/* A single-column list (set inline) has no second column to divide from, and the line would sit on the card's edge. */
+.stat-grid[style*="grid-template-columns:1fr"] > .stat { border-right: 0; }
 .stat > span:first-child { color: var(--text-2); white-space: nowrap; }
 .stat > span:last-child { font-variant-numeric: tabular-nums; font-weight: 500; text-align: right; }
 @media (max-width: 640px) { .stat > span { min-width: 0; } .stat > span:first-child { white-space: normal; } }
@@ -328,7 +327,7 @@ tr.inactive td { opacity: 0.5; }
 @media (max-width: 900px) { .addr-full { display: none; } .addr-short { display: inline; } }
 .wallet-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 @media (max-width: 640px) { .wallet-actions { margin-left: 0; } }
-.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--tooltip); border: 1px solid var(--line-2); padding: 9px 14px; border-radius: var(--radius); font-size: 13px; opacity: 0; pointer-events: none; transition: all 0.18s; }
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--tooltip); box-shadow: var(--card-edge); padding: 9px 14px; border-radius: var(--radius); font-size: 13px; opacity: 0; pointer-events: none; transition: all 0.18s; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .foot { border-top: 1px solid var(--line); margin-top: 24px; }
 .foot-inner { max-width: var(--page); margin: 0 auto; padding: 18px var(--gutter) 28px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: var(--text-3); font-size: 12px; }
@@ -337,11 +336,11 @@ tr.inactive td { opacity: 0.5; }
 .range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--accent); }
 .range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 3px solid var(--surface); }
 .pipeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-@media (max-width: 900px) { .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .stage { padding: 14px 16px; border-left: 1px solid var(--line); }
 .stage:first-child { border-left: 0; }
+@media (max-width: 900px) { .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stage:nth-child(odd) { border-left: 0; } .stage:nth-child(n + 3) { border-top: 1px solid var(--line); } }
 .stage h3 { margin: 0 0 8px; font-size: 12px; color: var(--text-2); font-weight: 500; display: flex; align-items: center; gap: 8px; }
-.stage .v { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.stage .v { font-size: 20px; font-weight: 400; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .stage .d { font-size: 12px; color: var(--text-3); margin-top: 4px; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--text-3); }
 .status-dot.ok { background: var(--long); }
@@ -437,9 +436,9 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .co-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 1100px) { .co-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .co-grid { grid-template-columns: minmax(0, 1fr); } }
-.co-card { display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 14px; background: linear-gradient(180deg, rgba(111, 92, 255, 0.07), rgba(111, 92, 255, 0.015) 60%), var(--surface-2); border: 1px solid rgba(143, 130, 255, 0.16); border-radius: 8px; color: var(--text); font: inherit; cursor: pointer; transition: border-color .15s, background-color .15s; min-width: 0; }
-.co-card:hover { border-color: rgba(143, 130, 255, 0.4); }
-.co-card.sel { border-color: var(--accent-strong); box-shadow: 0 0 0 1px var(--accent-strong) inset; }
+.co-card { display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 14px; background: linear-gradient(180deg, rgba(111, 92, 255, 0.07), rgba(111, 92, 255, 0.015) 60%), var(--surface-2); border: 0; box-shadow: var(--card-edge); border-radius: var(--radius); color: var(--text); font: inherit; cursor: pointer; transition: box-shadow .15s, background-color .15s; min-width: 0; }
+.co-card:hover { box-shadow: 0 0 0 1px rgba(143, 130, 255, 0.4), var(--card-edge); }
+.co-card.sel { box-shadow: 0 0 0 1px var(--accent-strong), inset 0 0 0 1px var(--accent-strong), var(--card-edge); }
 .co-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .co-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .co-ic { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 30% 25%, rgba(143, 130, 255, 0.34), rgba(111, 92, 255, 0.12) 70%); box-shadow: inset 0 0 0 1px var(--shade, rgba(143, 130, 255, 0.4)); color: #cfc8ff; }
@@ -474,7 +473,7 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 /* Alerts page: the Telegram bot above the watchlist. */
 .btn.sm { height: 26px; padding: 0 9px; font-size: 12px; }
 .btn.sm svg { width: 13px; height: 13px; }
-.alerts-hero { margin-bottom: 16px; overflow: hidden; background: radial-gradient(120% 140% at 100% 0%, rgba(111, 92, 255, 0.16), rgba(111, 92, 255, 0) 55%), var(--surface); border-color: rgba(143, 130, 255, 0.22); }
+.alerts-hero { margin-bottom: 16px; overflow: hidden; background: radial-gradient(120% 140% at 100% 0%, rgba(111, 92, 255, 0.16), rgba(111, 92, 255, 0) 55%), var(--surface); }
 .alerts-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 24px; padding: 22px; align-items: center; }
 @media (max-width: 860px) { .alerts-grid { grid-template-columns: minmax(0, 1fr); padding: 18px 16px; } }
 .alerts-kicker { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent); font-weight: 500; }
