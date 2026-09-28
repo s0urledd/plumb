@@ -3,7 +3,7 @@
 // latest liquidations and flows.
 import { get, stream } from '../api.js';
 import { usd, compact, int, price, pct, num, esc, signClass, timeOnly, ago, duration } from '../format.js';
-import { kpi, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, chartTools, skeleton, skChart, empty, assignColors, colorOf, hasColor, logo, ICON, OTHER_HEX, SLOT_HEX, mergeByAsset } from '../ui.js';
+import { kpi, keepDots, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, chartTools, skeleton, skChart, empty, assignColors, colorOf, hasColor, logo, ICON, OTHER_HEX, SLOT_HEX, mergeByAsset } from '../ui.js';
 import { sparkline, stackedBars, lineChart, signedBars, twoSided, toggleSeries, COLORS, CUMULATIVE } from '../charts.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -166,7 +166,9 @@ export function mount(el, { query, setQuery }) {
   // A dot and a name per series, above the chart on the right.
   const legendOf = (id, list) => { const n = $(`${id}-lg`); if (n) n.innerHTML = list.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join(''); };
   const NET = { color: '#ffffff' };
-  function headValue(id, value, note = '') { const n = $(`${id}-v`); if (n) n.innerHTML = `<div class="hv">${value}</div>${note ? `<div class="hn">${note}</div>` : ''}`; }
+  // A note wraps only between its parts ("$267.8K insurance" stays whole), each "·" with the part before it.
+  const noteParts = note => keepDots(note.split(' · ').map(x => `<span class="nw">${x}</span>`).join(' · '));
+  function headValue(id, value, note = '') { const n = $(`${id}-v`); if (n) n.innerHTML = `<div class="hv">${value}</div>${note ? `<div class="hn">${noteParts(note)}</div>` : ''}`; }
   // Fees per period by type (protocol revenue, insurance fund) or by market.
   const unsplit = x => Math.max(0, (num(x.fees?.value ?? x.fees) ?? 0) - (num(x.protocol_fees?.value ?? x.protocol_fees) ?? 0) - (num(x.insurance_fees?.value ?? x.insurance_fees) ?? 0));
   function renderFees() {

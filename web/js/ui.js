@@ -81,9 +81,10 @@ export function addr(address, account, { star = true } = {}) {
   return `<span class="addr"><a href="#/wallet/${esc(key)}" title="${esc(address || `Account ${account}`)}">${label}</a>${address ? `<button class="icon-btn" data-copy="${esc(address)}" title="Copy address">${ICON.copy}</button>` : ''}${star ? `<button class="icon-btn ${watch.has(key) ? 'on' : ''}" data-watch="${esc(key)}" title="Watch wallet">${watch.has(key) ? ICON.star : ICON.starOff}</button>` : ''}</span>`;
 }
 // basis: what the delta compares with, shown after it ("vs prev", "in 24h").
-// A " · " in the label keeps to the word before it, so a wrapped line never starts with it.
+// A " · " in the label or the note keeps to the word before it, so a wrapped line never starts with it.
+export const keepDots = html => String(html).replaceAll(' · ', '\u00a0· ');
 export function kpi({ label, value, delta = undefined, invert = false, basis = null, basisTitle = null, note = '', spark = null, tip = null, cls = '' }) {
-  return `<div class="kpi ${cls}"><div class="kpi-label">${esc(label).replaceAll(' · ', '\u00a0· ')}${tip ? ` <span class="info-tip" title="${esc(tip)}">i</span>` : ''}</div><div class="kpi-value">${value}</div><div class="kpi-row">${delta === undefined ? '' : `${deltaHtml(delta, invert, basisTitle)}${basis ? `<span class="kpi-basis">${esc(basis)}</span>` : ''}`}<span class="kpi-note">${note}</span></div>${spark ? `<div class="spark" id="${esc(spark)}"></div>` : ''}</div>`;
+  return `<div class="kpi ${cls}"><div class="kpi-label">${keepDots(esc(label))}${tip ? ` <span class="info-tip" title="${esc(tip)}">i</span>` : ''}</div><div class="kpi-value">${value}</div><div class="kpi-row">${delta === undefined ? '' : `${deltaHtml(delta, invert, basisTitle)}${basis ? `<span class="kpi-basis">${esc(basis)}</span>` : ''}`}<span class="kpi-note">${keepDots(note)}</span></div>${spark ? `<div class="spark" id="${esc(spark)}"></div>` : ''}</div>`;
 }
 export const seg = (name, options, active) => `<div class="seg" role="group">${options.map(([v, label]) => `<button data-seg="${esc(name)}" data-v="${esc(v)}" class="${String(v) === String(active) ? 'on' : ''}">${esc(label)}</button>`).join('')}</div>`;
 export const tabs = (name, options, active) => `<div class="tabs" role="tablist">${options.map(([v, label]) => `<button role="tab" data-tab="${esc(name)}" data-v="${esc(v)}" class="${v === active ? 'on' : ''}">${esc(label)}</button>`).join('')}</div>`;
