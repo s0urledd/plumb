@@ -28,7 +28,7 @@ function init(el) {
     el.__chart = chart; registry.add(chart); observer?.observe(el);
   }
   for (const t of ['click', 'datazoom', 'legendselectchanged']) chart.off(t); // handlers belong to the builder drawing now
-  chart.__png = chart.__refit = null; // so do what the image export adds and the refit on a resize
+  chart.__refit = null; // so does the refit on a resize
   return chart;
 }
 // Exports: the plotted data (time-aligned series, as shown) and the image.
@@ -49,15 +49,35 @@ export function chartCsv(el) {
   const lines = [['time_utc', ...cols.map(c => c.name)], ...times.map((t, i) => [iso(t), ...cols.map(c => { const v = c.at(i); return v === '-' || v === null || v === undefined ? '' : v; })])];
   return lines.map(r => r.map(csvCell).join(',')).join('\n');
 }
-// A chart whose key sits in the card head draws it into the image (__png: the
-// options to add), since the file has no card around it; the page is left as it was.
+// A chart's key sits in its card head, which the file does not have: the image
+// carries it in a band above the chart, right-aligned as in the head (entries
+// switched off in the chart are left out, a note without a dot stays faint).
 export function chartPng(el) {
   const chart = el?.__chart; if (!chart) return null;
-  const extra = chart.__png?.(), was = extra && chart.getOption();
-  if (extra) chart.setOption({ ...extra, animation: false });
-  const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: T.surface });
-  if (extra) { chart.setOption(Object.fromEntries(Object.keys(extra).map(k => [k, was[k]]))); chart.setOption({ animation: was.animation }); }
-  return url;
+  const ratio = 2, src = chart.renderToCanvas({ pixelRatio: ratio, backgroundColor: T.surface });
+  const keys = [...(el.closest('.panel')?.querySelectorAll('.legend > span, .legend > .lg:not(.off)') ?? [])].map(n => ({ color: n.querySelector('i')?.style.background || null, name: n.textContent.trim() })).filter(k => k.name);
+  if (!keys.length) return src.toDataURL('image/png');
+  const width = src.width / ratio, pad = 12, lineH = 18, lines = [[]];
+  let used = 0;
+  for (const k of keys) {
+    const w = (k.color ? 13 : 0) + textWidth(k.name) + 14; // dot and its gap, name, gap to the next entry
+    if (used + w > width - 2 * pad && lines.at(-1).length) { lines.push([]); used = 0; }
+    lines.at(-1).push({ ...k, w }); used += w;
+  }
+  const band = pad + lines.length * lineH;
+  const out = Object.assign(document.createElement('canvas'), { width: src.width, height: src.height + band * ratio }), g = out.getContext('2d');
+  g.fillStyle = T.surface; g.fillRect(0, 0, out.width, out.height);
+  g.scale(ratio, ratio); g.font = `11px ${T.font}`; g.textBaseline = 'middle';
+  lines.forEach((line, j) => {
+    let x = width - pad - line.reduce((a, k) => a + k.w, 0) + 14;
+    const y = pad + j * lineH + lineH / 2;
+    for (const k of line) {
+      if (k.color) { g.fillStyle = k.color; g.beginPath(); g.arc(x + 3.5, y, 3.5, 0, 2 * Math.PI); g.fill(); x += 13; }
+      g.fillStyle = k.color ? T.text : T.faint; g.fillText(k.name, x, y); x += textWidth(k.name) + 14;
+    }
+  });
+  g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(src, 0, band * ratio);
+  return out.toDataURL('image/png');
 }
 
 // Shows or hides one series (legend chips outside the canvas drive this).
@@ -410,8 +430,8 @@ export function hbars(el, { labels, values, colors, fmt = v => usd(v) }) {
 
 
 // Mirrored bars: long exposure left of zero, short right (liquidation ladder).
-// legend: false leaves the key to a dot legend in the card head; the chart
-// then draws its own only into a PNG export.
+// legend: false leaves the key to a dot legend in the card head, which uses
+// the same names (and which a PNG export draws in).
 export function mirrored(el, { labels, long, short, fmt = v => usd(v), legend = true }) {
   const chart = init(el);
   if (!chart) return;
@@ -420,7 +440,6 @@ export function mirrored(el, { labels, long, short, fmt = v => usd(v), legend = 
   const longName = 'Longs (price down)', shortName = 'Shorts (price up)';
   // On a narrow chart the legend wraps to a second line: the bars start below it.
   const below = () => ([longName, shortName].reduce((w, n) => w + 7 + 5 + textWidth(n) + 14, 0) > el.clientWidth ? 46 : 26);
-  if (!legend) chart.__png = () => ({ legend: { show: true }, grid: { top: below() } });
   chart.setOption({
     ...base(), grid: { left: 8, right: 28, top: legend ? below() : 8, bottom: 6, containLabel: true },
     legend: { show: legend, top: 0, right: 0, icon: 'circle', itemWidth: 7, itemHeight: 7, itemGap: 14, textStyle: { color: T.text, fontSize: 11 }, data: [longName, shortName] },
