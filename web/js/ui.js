@@ -187,3 +187,16 @@ new MutationObserver(() => document.querySelectorAll('.tabs').forEach(t => { if 
 // Only a width change can turn the nav into a strip; phones also fire height-only resizes as the URL bar hides.
 let width = innerWidth;
 window.addEventListener('resize', () => { if (innerWidth !== width) { width = innerWidth; centre(nav, nav.querySelector('.active')); } });
+// Without scroll timelines (Firefox) the CSS edge fades take their widths from
+// here: how far each strip hides at either edge, up to 40px, on every scroll and
+// once a frame after the page or the window changes.
+if (!CSS.supports('animation-timeline: scroll()')) {
+  const STRIPS = '.table-wrap, .tabs, .nav';
+  const fade = s => { const past = s.scrollWidth - s.clientWidth - s.scrollLeft; s.style.setProperty('--fade-l', `${Math.min(40, Math.max(0, s.scrollLeft))}px`); s.style.setProperty('--fade-r', `${Math.min(40, Math.max(0, past))}px`); };
+  let queued = false;
+  const soon = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; document.querySelectorAll(STRIPS).forEach(fade); }); };
+  document.addEventListener('scroll', e => { if (e.target.matches?.(STRIPS)) fade(e.target); }, true);
+  window.addEventListener('resize', soon);
+  new MutationObserver(soon).observe(document.getElementById('view'), { childList: true, subtree: true });
+  soon();
+}

@@ -166,7 +166,8 @@ button, input, select { font: inherit; color: inherit; }
    hides more, as wide as what is hidden up to 40px: each fade runs over the
    first or last 40px of the scroll. With nothing to scroll the timeline is
    inactive and nothing fades. Only with scroll timelines: elsewhere the
-   animations would run once on the clock and leave the left edge faded. */
+   animations would run once on the clock and leave the left edge faded, so
+   there ui.js sets the two widths on each scroll instead (below). */
 @property --fade-l { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @property --fade-r { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @keyframes fade-l { from { --fade-l: 0px; } to { --fade-l: 40px; } }
@@ -223,17 +224,11 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---------- tables ---------- */
 .table-wrap { overflow-x: auto; }
-/* Without scroll timelines (the edge fade above), a shade marks each edge that
-   hides columns instead: the covers scroll with the table (local) and hide the
-   shades (fixed to the box) at either end, so a table that fits shows none. */
+/* Without scroll timelines (Firefox) the same edge fades, over the cells and the
+   sticky header alike, with the widths ui.js sets as the strip scrolls. */
 @supports not (animation-timeline: scroll()) {
-  .table-wrap {
-    background:
-      linear-gradient(to right, var(--surface) 45%, transparent) left / 44px 100% no-repeat local,
-      linear-gradient(to left, var(--surface) 45%, transparent) right / 44px 100% no-repeat local,
-      linear-gradient(to right, rgba(0, 0, 0, 0.6), transparent) left / 20px 100% no-repeat scroll,
-      linear-gradient(to left, rgba(0, 0, 0, 0.6), transparent) right / 20px 100% no-repeat scroll;
-  }
+  .table-wrap, .tabs, .nav { mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent); }
+  @media (min-width: 861px) { .nav { mask-image: none; } }
 }
 table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
 .t th { position: sticky; top: 0; background: var(--surface); text-align: left; font-weight: 400; font-size: 12px; color: var(--text-3); padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; user-select: none; }
