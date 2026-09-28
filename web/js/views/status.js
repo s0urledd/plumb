@@ -5,6 +5,9 @@ import { int, esc, ago, dateTime, pct, usd, num } from '../format.js';
 import { table, skeleton, empty, mkt } from '../ui.js';
 
 const dot = s => `<span class="status-dot ${s}"></span>`;
+// Exact figures from the API (block numbers, lot counts) grouped by thousands
+// like every other count on the page, their digits untouched.
+const grouped = v => (v === null || v === undefined ? '—' : esc(v).replace(/^-?\d+/, d => d.replace(/\B(?=(\d{3})+$)/g, ',')));
 
 export function mount(el) {
   let alive = true;
@@ -39,7 +42,7 @@ export function mount(el) {
     $('gen').textContent = `Updated ${new Date().toISOString().slice(11, 19)} UTC`;
     $('pipeline').innerHTML = [
       `<div class="stage"><h3>${dot(lag !== null && lag < 10 ? 'ok' : 'warn')}Live ingest</h3><div class="v">#${int(live?.to)}</div><div class="d">${lag === null ? '—' : `${lag} blocks behind finalized`} · woken by ${trigger}</div><div class="d">${int(live?.commits)} commits · ${int(live?.rows)} rows</div></div>`,
-      `<div class="stage"><h3>${dot(b?.running ? 'warn' : b?.failed?.length ? 'bad' : 'ok')}History</h3><div class="v">${b?.pct === null || b?.pct === undefined ? '100%' : pct(b.pct, { digits: 1 })}</div><div class="d">${b?.running ? `indexing · ${int(b.rate_blocks_per_s)} blocks/s` : 'complete'} · ${int(h.index?.coverage?.length)} coverage range(s)</div><div class="d">since block ${esc(h.index?.coverage?.[0]?.from ?? '—')}</div></div>`,
+      `<div class="stage"><h3>${dot(b?.running ? 'warn' : b?.failed?.length ? 'bad' : 'ok')}History</h3><div class="v">${b?.pct === null || b?.pct === undefined ? '100%' : pct(b.pct, { digits: 1 })}</div><div class="d">${b?.running ? `indexing · ${int(b.rate_blocks_per_s)} blocks/s` : 'complete'} · ${int(h.index?.coverage?.length)} coverage range(s)</div><div class="d">since block ${grouped(h.index?.coverage?.[0]?.from)}</div></div>`,
       `<div class="stage"><h3>${dot(r?.lastError ? 'bad' : 'ok')}Hourly rollups</h3><div class="v">${int(r?.hours)} h</div><div class="d">${int(r?.pending)} pending · last run ${r?.lastRunMs ?? '—'} ms</div></div>`,
       `<div class="stage"><h3>${dot(h.snapshot?.status === 'fresh' ? 'ok' : 'warn')}Contract state</h3><div class="v">#${int(h.snapshot?.block)}</div><div class="d">${esc(h.snapshot?.status ?? '')}${h.snapshot?.status_reason ? ` (${esc(h.snapshot.status_reason)})` : ''} · contract ${esc(h.snapshot?.contract_version ?? '—')} · ${int(h.collector?.polls)} polls · ${int(h.collector?.rpc_requests)} RPC requests</div><div class="d">${int(feed?.sse_clients)} live viewers</div></div>`
     ].join('');
@@ -49,15 +52,15 @@ export function mount(el) {
     // A relisted market shares its symbol with the old one; the id tells them apart.
     const seen = integ?.open_interest?.map(x => x.symbol) ?? [], twin = x => seen.filter(y => y === x.symbol).length > 1;
     // The verdict sits beside the market, so a phone sees it before the table scrolls.
-    if (ready) $('integrity').innerHTML = `<div class="panel-body faint" style="font-size:12.5px">${esc(integ.method)} Block ${esc(integ.block)}.</div>` + table({ id: 'int', compact: true, columns: [
+    if (ready) $('integrity').innerHTML = `<div class="panel-body faint" style="font-size:12.5px">${esc(integ.method)} Block ${grouped(integ.block)}.</div>` + table({ id: 'int', compact: true, columns: [
       { key: 'm', label: 'Market', render: x => `${mkt(x.market, x.symbol)}${twin(x) ? ` <span class="faint">#${esc(x.market)}</span>` : ''}` },
       { key: 'ok', label: 'Result', render: x => (x.ok ? '<span class="tag good">match</span>' : '<span class="tag bad">mismatch</span>') },
-      { key: 'l', label: 'Long lots (events / contract)', n: true, render: x => `${esc(x.events_long)} / ${esc(x.contract_long)}` },
-      { key: 's', label: 'Short lots (events / contract)', n: true, render: x => `${esc(x.events_short)} / ${esc(x.contract_short)}` }
+      { key: 'l', label: 'Long lots (events / contract)', n: true, render: x => `${grouped(x.events_long)} / ${grouped(x.contract_long)}` },
+      { key: 's', label: 'Short lots (events / contract)', n: true, render: x => `${grouped(x.events_short)} / ${grouped(x.contract_short)}` }
     ], rows: integ.open_interest }) + (integ.tvl ? `<div class="panel-foot st-tvl"><span>TVL from events ${usd(integ.tvl.events)} · contract ${usd(integ.tvl.contract)}</span>${integ.tvl.ok ? '<span class="tag good">match</span>' : '<span class="tag warn">differs</span>'}</div>` : '');
     const rec = v?.reconciliation, ver = v?.verification;
     $('checks').innerHTML = `<div class="stat-grid one">
-      <div class="stat"><span>${dot(rec?.ok ? 'ok' : 'bad')} Stored positions sum to the contract's open-interest counters</span><span>${rec ? `${rec.ok ? 'OK' : 'mismatch'} · block ${esc(rec.block)}` : '—'}</span></div>
+      <div class="stat"><span>${dot(rec?.ok ? 'ok' : 'bad')} Stored positions sum to the contract's open-interest counters</span><span>${rec ? `${rec.ok ? 'OK' : 'mismatch'} · block ${grouped(rec.block)}` : '—'}</span></div>
       <div class="stat"><span>${dot(ver?.ok ? 'ok' : ver?.ok === null ? 'warn' : 'bad')} Independent rescan of every account's position bitmap</span><span>${ver ? `${ver.ok ? 'OK' : 'mismatch'} · ${int(ver.accounts)} accounts · ${ver.at ? ago(ver.at / 1000) : ''}` : '—'}</span></div>
       <div class="stat"><span>${dot((v?.pnl_agreement ?? []).every(x => (x.agree ?? 0) === (x.checked ?? 0)) ? 'ok' : 'bad')} Position PnL recomputed and compared with getPositionsV2</span><span>${(v?.pnl_agreement ?? []).reduce((a, x) => a + (x.agree ?? 0), 0)} / ${(v?.pnl_agreement ?? []).reduce((a, x) => a + (x.checked ?? 0), 0)} agree</span></div>
     </div>`;

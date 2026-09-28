@@ -47,7 +47,7 @@ export function mount(el, { query, setQuery }) {
     const t = overview.totals;
     // Every section below is drawn from this block and the same order-book read.
     const books = overview.markets.map(m => Number(m.liquidity?.book_block ?? 0)).filter(Boolean);
-    $('block').textContent = `Contract state at block ${overview.snapshot.block}${books.length ? ` · order books read at ${Math.max(...books)}` : ''}`;
+    $('block').textContent = `Contract state at block ${int(overview.snapshot.block)}${books.length ? ` · order books read at ${int(Math.max(...books))}` : ''}`;
     $('kpis').innerHTML = [
       // Labels stay short enough for one line beside the tip on a phone.
       kpi({ label: 'Position notional', value: usd(t.total_notional), note: `${int(t.positions)} positions`, tip: 'Mark notional of every open position, longs plus shorts (open interest counts one side).' }),
@@ -118,7 +118,7 @@ export function mount(el, { query, setQuery }) {
         <div class="stat"><span>Shortfall (bad debt)</span><span class="${num(r.shortfall) > 0 ? 'neg' : ''}">${usd(r.shortfall)}</span></div><div class="stat"><span>Insurance covers</span><span>${r.insurance_coverage_pct === null ? '<span class="faint">no shortfall</span>' : `<span title="The market’s insurance fund as a multiple of this shortfall">${times(r.insurance_coverage_pct)}</span>`}</span></div>
         ${book}
       </div>
-      <div class="panel-foot risk-foot"><span>A static price shock: positions whose liquidation price lies inside the move. Real liquidations depend on the path, the book and keepers.</span><span class="faint num">Positions at block ${esc(r.block)}${stressBook ? ` · book read at ${esc(stressBook)}` : ''}</span></div>`;
+      <div class="panel-foot risk-foot"><span>A static price shock: positions whose liquidation price lies inside the move. Real liquidations depend on the path, the book and keepers.</span><span class="faint num">Positions at block ${int(r.block)}${stressBook ? ` · book read at ${int(stressBook)}` : ''}</span></div>`;
     const hits = r.positions_hit.slice(0, 8);
     $('hit-meta').textContent = `${r.symbol} ${signed(move)}${hits.length ? ` · ${hits.length < r.liquidated.count ? `${int(hits.length)} largest of ${int(r.liquidated.count)}` : `${int(hits.length)} positions`}` : ''}`;
     $('hit').innerHTML = hits.length ? table({ id: 'hit', compact: true, columns: [

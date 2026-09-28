@@ -120,7 +120,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
   }
   function renderTab() {
     const d = data, body = $('tab-body');
-    const block = esc(d.portfolio?.block ?? d.meta.block ?? '');
+    const block = int(d.portfolio?.block ?? d.meta.block);
     if (tab === 'overview') {
       body.innerHTML = `
         ${d.positions.length ? `<section class="panel"><div class="panel-head"><h2>Open positions</h2><span class="meta">Contract state at block ${block}</span></div><div class="panel-body flush">${table({ id: 'pos', columns: POS_COLS, rows: d.positions })}</div></section>` : ''}
