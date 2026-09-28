@@ -33,7 +33,7 @@ export function mount(el, { navigate }) {
     $('bot').innerHTML = `<div class="alerts-grid">
       <div class="alerts-copy">
         <div class="alerts-kicker">${ICON.bell} Telegram bot${bot ? ` · @${esc(bot)}` : ''}</div>
-        <h2>Know before you get liquidated</h2>
+        <h2>Alerts for the wallets you watch</h2>
         <div class="alerts-features">${FEATURES.map(([i, t, d]) => `<div class="alerts-f"><span class="alerts-fi">${i}</span><div><b>${t}</b><span>${d}</span></div></div>`).join('')}</div>
         ${link ? `<div class="alerts-cta"><a class="btn primary" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open @${esc(bot)} ${ICON.ext}</a><span class="faint">Free · send it a wallet address to start</span></div>` : '<div class="faint" style="margin-top:14px">Telegram alerts are not enabled on this server.</div>'}
       </div>
@@ -50,7 +50,7 @@ export function mount(el, { navigate }) {
     $('list').innerHTML = table({ id: 'watch', columns: [
       { key: 'a', label: 'Wallet', render: r => `<span class="addr"><a class="mono" href="#/wallet/${esc(r.d?.account.address ?? r.key)}">${esc(short(r.d?.account.address ?? r.key))}</a><button class="icon-btn on" data-watch="${esc(r.key)}" title="Remove">${ICON.star}</button></span>` },
       { key: 'v', label: 'Account value', n: true, render: r => usd(r.d?.portfolio?.account_value) },
-      { key: 'o', label: 'Open positions', n: true, render: r => int(r.d?.positions?.length ?? 0) },
+      { key: 'o', label: 'Open positions', n: true, render: r => int(r.d ? r.d.positions?.length ?? 0 : null) }, // a wallet that failed to load: unknown, not none
       { key: 'c', label: 'Closest liq.', n: true, render: r => { const d = r.d?.portfolio?.closest_liquidation?.distance_pct ?? null; return d === null ? '<span class="faint">—</span>' : `<span class="${d < 5 ? 'neg' : d < 15 ? 'warn-text' : 'muted'}">${d.toFixed(1)}% away</span>`; } },
       { key: 'u', label: 'Unrealized PnL', n: true, render: r => pnl(r.d?.portfolio?.unrealized_pnl) },
       { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.d?.summary.net_pnl) },

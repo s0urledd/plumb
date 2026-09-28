@@ -177,6 +177,15 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       for (const entry of windows) if (entry) multi[entry[0]] = { volume: dec(entry[1].volume, c), fees: dec(feesOf(entry[1]), c), trades: entry[1].trades, traders: entry[2] };
       multi[w] = { volume: dec(T.volume, c), fees: dec(feesOf(T), c), trades: T.trades, traders: cur.traders };
       const live = current();
+      // Contract state, the same for a market whether it traded in the window or not.
+      const liveOf = (id, lm) => ({
+        mark: price(lm.market.markPNS, id), open_interest: dec(lm.oi, c), oi_share_pct: share(lm.oi, live.oi),
+        long_positions: lm.x.long.count, short_positions: lm.x.short.count, long_position_share_pct: lm.x.long.count + lm.x.short.count ? Math.round(lm.x.long.count / (lm.x.long.count + lm.x.short.count) * 10000) / 100 : null,
+        long_leverage: lm.x.long.averageLeverageBps === null ? null : Number(lm.x.long.averageLeverageBps) / 10000, short_leverage: lm.x.short.averageLeverageBps === null ? null : Number(lm.x.short.averageLeverageBps) / 10000,
+        oi_cap_pct: lm.x.oi.utilisationBps === null ? null : Number(lm.x.oi.utilisationBps) / 100, max_leverage: Number(lm.market.initHdths) / 100,
+        funding: fundingOf(lm.market, live), insurance: dec(lm.market.insuranceBalanceCNS, c), active: lm.market.status === 4,
+        ...tradeCost(lm.x.liquidity)
+      });
       const markets = cur.markets.map(r => {
         const id = Number(r.market), lm = live?.markets.get(id);
         const vol = B(r.volume), open = B(r.open_price), close = B(r.close_price);
@@ -188,17 +197,11 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
           change_pct: open > 0n && close > 0n ? pctChange(close, open) : null,
           taker_buy: dec(r.taker_buy, c), taker_sell: dec(r.taker_sell, c), taker_buy_share_pct: share(B(r.taker_buy), B(r.taker_buy) + B(r.taker_sell)),
           liquidations: Number(r.liquidations), liquidated: dec(r.liquidated, c), realized: dec(r.realized, c),
-          ...(lm ? {
-            mark: price(lm.market.markPNS, id), open_interest: dec(lm.oi, c), oi_share_pct: share(lm.oi, live.oi),
-            long_positions: lm.x.long.count, short_positions: lm.x.short.count, long_position_share_pct: lm.x.long.count + lm.x.short.count ? Math.round(lm.x.long.count / (lm.x.long.count + lm.x.short.count) * 10000) / 100 : null,
-            long_leverage: lm.x.long.averageLeverageBps === null ? null : Number(lm.x.long.averageLeverageBps) / 10000, short_leverage: lm.x.short.averageLeverageBps === null ? null : Number(lm.x.short.averageLeverageBps) / 10000,
-            oi_cap_pct: lm.x.oi.utilisationBps === null ? null : Number(lm.x.oi.utilisationBps) / 100, max_leverage: Number(lm.market.initHdths) / 100,
-            funding: fundingOf(lm.market, live), insurance: dec(lm.market.insuranceBalanceCNS, c), active: lm.market.status === 4,
-            ...tradeCost(lm.x.liquidity)
-          } : {})
+          ...(lm ? liveOf(id, lm) : {})
         };
       });
-      for (const [id, lm] of live?.markets ?? []) if (!markets.some(x => x.id === id)) markets.push({ id, symbol: symbol(id), name: meta(id)?.name ?? null, volume: dec(0n, c), share_pct: 0, trades: 0, fills: 0, traders: 0, fees: dec(0n, c), mark: price(lm.market.markPNS, id), open_interest: dec(lm.oi, c), long_positions: lm.x.long.count, short_positions: lm.x.short.count, funding: fundingOf(lm.market, live), active: lm.market.status === 4 });
+      // A listed market with nothing in the window: zero activity (not unknown) and its contract state.
+      for (const [id, lm] of live?.markets ?? []) if (!markets.some(x => x.id === id)) markets.push({ id, symbol: symbol(id), name: meta(id)?.name ?? null, volume: dec(0n, c), share_pct: 0, trades: 0, fills: 0, traders: 0, fees: dec(0n, c), liquidations: 0, liquidated: dec(0n, c), ...liveOf(id, lm) });
       markets.sort((a, b) => Number(b.volume) - Number(a.volume) || Number(b.open_interest ?? 0) - Number(a.open_interest ?? 0));
       return {
         meta: metaOf({ window: w, from, to, coverage: coverageOf(from, to), previous_complete: prev ? ingest.coverage.spanCovered(from - len, from - 1) : null }),

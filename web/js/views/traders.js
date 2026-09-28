@@ -1,8 +1,8 @@
 // Trader leaderboard over a window: net PnL, volume, losses, liquidations,
 // with open positions from the live contract state.
 import { get } from '../api.js';
-import { usd, int, pct, num, esc, price, ago } from '../format.js';
-import { seg, table, addr, pnl, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON } from '../ui.js';
+import { usd, int, pct, num, esc, price, ago, duration } from '../format.js';
+import { seg, table, addr, pnl, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON } from '../ui.js';
 import { SEA_ICONS } from '../cohort-icons.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -19,15 +19,17 @@ export function mount(el, { query, setQuery }) {
   const LIMIT = 50;
   el.innerHTML = `
     <div class="page-head"><div><h1>Traders</h1><div class="sub">Accounts that traded in the window, ranked from indexed events (flow rankings: accounts that deposited or withdrew). Net PnL = realized PnL (price PnL + funding) − fees.</div></div></div>
-    <div class="kpis k4" id="tkpis" style="margin-bottom:16px">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:60%;margin-top:10px"></div></div>').join('')}</div>
-    <section class="panel" style="margin-bottom:16px"><div class="panel-head"><div><h2>Positioning by cohort</h2><div class="desc" id="co-desc">Open positions now, grouped by account · click a cohort for its largest wallets</div></div><div id="co-tabs">${seg('co', CO_TABS, coTab)}</div></div>
+    <div class="stack traders-page">
+    <div class="kpis k4" id="tkpis">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:60%;margin-top:10px"></div></div>').join('')}</div>
+    <section class="panel"><div class="panel-head"><div><h2>Positioning by cohort</h2><div class="desc" id="co-desc">Open positions now, grouped by account · click a cohort for its largest wallets</div></div><div id="co-tabs">${seg('co', CO_TABS, coTab)}</div></div>
       <div class="panel-body flush" id="cohorts">${skeleton(4)}</div><div id="co-detail"></div></section>
-    <section class="panel" style="margin-bottom:16px"><div class="panel-head"><div><h2>Smart money moves</h2><div class="desc" id="sm-desc">What the most profitable traders are doing now</div></div><div class="sm-ctl"><div id="sm-min">${seg('smm', SM_SIZES, smMin)}</div><div id="sm-win">${seg('smw', SM_WINDOWS, smWin)}</div></div></div>
+    <section class="panel"><div class="panel-head"><div><h2>Smart money moves</h2><div class="desc" id="sm-desc">What the most profitable traders are doing now</div></div><div class="sm-ctl"><div id="sm-min">${seg('smm', SM_SIZES, smMin)}</div><div id="sm-win">${seg('smw', SM_WINDOWS, smWin)}</div></div></div>
       <div class="panel-body flush scroll sm-list" id="moves">${skeleton(6)}</div></section>
-    <section class="panel"><div class="panel-head"><h2 id="title">Leaderboard</h2><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><span class="meta" id="meta"></span><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div>
-      <div class="panel-head" style="min-height:0;padding-top:0;flex-wrap:wrap;gap:10px"><div id="by" style="max-width:100%;min-width:0">${seg('by', SORTS, by)}</div><div id="win">${seg('window', WINDOWS, w)}</div></div>
+    <section class="panel" id="board"><div class="panel-head"><div><h2 id="title">Leaderboard</h2><div class="desc" id="meta"></div></div><div class="lb-tools"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div>
+      <div class="panel-head lb-ctl"><div id="by">${seg('by', SORTS, by)}</div><div id="win">${seg('window', WINDOWS, w)}</div></div>
       <div class="panel-body flush" id="list">${skeleton(12)}</div>
-      <div class="panel-foot"><span id="count"></span><span><button class="btn ghost" data-action="prev">← Prev</button> <button class="btn ghost" data-action="next">Next →</button></span></div></section>`;
+      <div class="panel-foot pager"><span id="count"></span><span class="pager-ctl" id="pager"></span></div></section>
+    </div>`;
   const $ = s => el.querySelector(`#${s}`);
   // At most two rule-based style tags per trader; each title gives the evidence.
   const DAYS = { '24h': 1, '7d': 7, '30d': 30 };
@@ -42,7 +44,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'rank', label: '#', render: r => `<span class="rank">${r.rank}</span>` },
     { key: 'addr', label: 'Trader', render: r => { const t = styleTags(r); return `${addr(r.address, r.account)}${t ? `<div class="sub tags">${t}</div>` : ''}`; } },
     { key: 'pnl', label: 'Net PnL', n: true, render: r => pnl(r.pnl) },
-    { key: 'roi', label: 'PnL / volume', n: true, render: r => r.roi_on_volume_bps === null ? '—' : `<span class="${r.roi_on_volume_bps > 0 ? 'pos' : r.roi_on_volume_bps < 0 ? 'neg' : ''}">${(r.roi_on_volume_bps / 100).toFixed(2)}%</span>` },
+    { key: 'roi', label: 'PnL / volume', n: true, render: r => bpsCell(r.roi_on_volume_bps) }, // in bps, as the KPI above and the wallet page
     { key: 'volume', label: 'Volume', n: true, render: r => usd(r.volume) },
     { key: 'trades', label: 'Trades', n: true, render: r => int(r.trades) },
     { key: 'maker', label: 'Maker share', n: true, render: r => pct(r.maker_share_pct, { digits: 0 }) },
@@ -50,22 +52,30 @@ export function mount(el, { query, setQuery }) {
     { key: 'liq', label: 'Liquidated', n: true, render: r => (num(r.liquidated) > 0 ? `<span class="neg">${usd(r.liquidated)}</span>` : '<span class="faint">—</span>') },
     { key: 'dep', flow: true, label: 'Deposits', n: true, render: r => (num(r.deposits) > 0 ? usd(r.deposits) : '<span class="faint">—</span>') },
     { key: 'wd', flow: true, label: 'Withdrawals', n: true, render: r => (num(r.withdrawals) > 0 ? usd(r.withdrawals) : '<span class="faint">—</span>') },
-    { key: 'net', flow: true, label: 'Net flow', n: true, render: r => { const v = (num(r.deposits) ?? 0) - (num(r.withdrawals) ?? 0); return v ? `<span class="${v > 0 ? 'pos' : 'neg'}">${usd(v, { sign: true })}</span>` : '<span class="faint">—</span>'; } },
+    { key: 'net', flow: true, label: 'Net flow', n: true, render: r => { const v = (num(r.deposits) ?? 0) - (num(r.withdrawals) ?? 0); return v ? pnl(v) : '<span class="faint">—</span>'; } },
     { key: 'open', label: 'Open now', n: true, render: r => (r.open_positions ? `${usd(r.open_notional)}<div class="sub">${r.open_positions} pos · uPnL ${usd(r.unrealized_pnl, { sign: true })}</div>` : '<span class="faint">—</span>') },
     { key: 'markets', label: 'Markets', render: r => `<span class="muted">${esc(r.markets.slice(0, 4).join(' · '))}${r.markets.length > 4 ? ` +${r.markets.length - 4}` : ''}</span>` }
   ];
+  let seq = 0;
   async function load() {
+    const asked = ++seq;
     $('list').innerHTML = skeleton(12);
-    data = await get(`leaderboard?window=${w}&by=${by}&limit=${LIMIT}&offset=${page * LIMIT}`);
-    if (!alive) return;
+    const d = await get(`leaderboard?window=${w}&by=${by}&limit=${LIMIT}&offset=${page * LIMIT}`);
+    if (!alive || asked !== seq) return; // a newer page or window was asked for meanwhile
+    data = d;
     $('title').textContent = SORTS.find(([v]) => v === by)[1];
-    $('meta').textContent = `${w === 'all' ? 'All-time' : w}${data.meta.coverage && !data.meta.coverage.complete ? ' · history still indexing' : ''}`;
+    $('meta').textContent = `${w === 'all' ? 'All-time' : `Last ${w}`}${data.meta.coverage && !data.meta.coverage.complete ? ' · history still indexing' : ''}`;
     // Flow rankings swap the fee and liquidation columns for the flows themselves.
     const flow = FLOW_SORTS.has(by), columns = COLS.filter(c => (flow ? !['fees', 'liq', 'maker'].includes(c.key) : !c.flow));
     lbColumns = columns; renderList();
-    $('count').textContent = `${int(data.total)} accounts · showing ${page * LIMIT + 1}–${page * LIMIT + data.rows.length}`;
     $('csv').href = `/api/v1/leaderboard?window=${w}&by=${by}&limit=200&format=csv`;
+    renderPager();
   }
+  // Prev is off on the first page and Next on the last; one page needs neither.
+  const pages = () => Math.max(1, Math.ceil((data?.total ?? 0) / LIMIT));
+  function renderPager() { const n = pages(); $('pager').innerHTML = n > 1 ? `<button class="btn ghost sm" data-action="prev" ${page === 0 ? 'disabled' : ''}>← Prev</button><span class="num">Page ${int(page + 1)} of ${int(n)}</span><button class="btn ghost sm" data-action="next" ${page + 1 >= n ? 'disabled' : ''}>Next →</button>` : ''; }
+  // A new page starts at the board's head, not at the foot where Next was.
+  function goTo(n) { page = n; renderPager(); load().then(() => { const top = $('board'); if (alive && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: 'start' }); }).catch(() => {}); }
   // The leaderboard page, filtered by the address typed in its search box.
   let lbColumns = null, filter = '';
   function renderList() {
@@ -73,6 +83,8 @@ export function mount(el, { query, setQuery }) {
     const f = filter.toLowerCase();
     const rows = f ? data.rows.filter(r => String(r.address ?? '').toLowerCase().includes(f) || String(r.account) === f.replace(/^#/, '')) : data.rows;
     $('list').innerHTML = table({ id: 'lb', columns: lbColumns, rows, rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"`, emptyText: f ? 'Not on this page. Press Enter to open the wallet, if it is a full address or account ID.' : 'No traders in this window' });
+    // The count says what is on screen: a filter's matches on this page, or the page's place in the ranking.
+    $('count').textContent = !data.total ? '' : f ? `${int(rows.length)} of ${int(data.rows.length)} on this page match` : `${int(data.total)} accounts · showing ${int(page * LIMIT + 1)}–${int(page * LIMIT + data.rows.length)}`;
   }
   $('lb-search').addEventListener('input', e => { filter = e.target.value.trim(); renderList(); });
   $('lb-search').addEventListener('keydown', e => { const q = e.target.value.trim(); if (e.key === 'Enter' && (/^0x[0-9a-fA-F]{40}$/.test(q) || /^\d{1,9}$/.test(q))) location.hash = `#/wallet/${q}`; });
@@ -94,14 +106,19 @@ export function mount(el, { query, setQuery }) {
     return out;
   }
   const moveAction = r => { const side = r.side === 'long' || r.side === 'short' ? r.side : ''; const opening = ['open', 'increase'].includes(r.kind) || (r.kind === 'invert'); const cls = r.kind === 'liquidation' ? 'neg' : (side === 'long') === opening ? 'pos' : 'neg'; return `<span class="${cls}">${MOVE_VERBS[r.kind] ?? r.kind} ${esc(side)}</span>${r.count > 1 ? ` <span class="tag" title="${r.count} fills over ${Math.max(1, Math.round((r.ts - r.oldest) / 60))} min">×${r.count}</span>` : ''}`; };
+  // The API returns at most this many raw fills; a busy leader can fill them all.
+  const MOVE_FILLS = 500;
   async function loadMoves() {
-    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=400`, { maxAge: 8000 });
+    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=${MOVE_FILLS}`, { maxAge: 8000 });
     if (!alive) return;
     const wl = smWin === 'all' ? 'all-time' : smWin;
-    $('sm-desc').textContent = `Latest position changes of the top ${int(m.leaders)} traders by net PnL (${wl}), last 7 days${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts left out` : ''}`;
+    // Cut off by the fill limit, the list covers less than the 7 days asked for: it says how much.
+    const oldest = m.rows.at(-1)?.ts, cut = m.rows.length >= MOVE_FILLS && oldest;
+    const span = cut ? `the last ${duration(Date.now() / 1000 - oldest)} (the latest ${int(MOVE_FILLS)} fills)` : 'last 7 days';
+    $('sm-desc').textContent = `Latest position changes of the ${int(m.leaders)} most profitable directional traders by net PnL (${wl}), ${span}${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts (by ${wl} activity) left out` : ''}`;
     $('moves').innerHTML = table({ id: 'moves', compact: true, emptyText: 'No moves by these traders in the last 7 days', columns: [
       { key: 't', label: 'When', render: r => `<span class="muted num" title="${esc(new Date(r.ts * 1000).toISOString().replace('T', ' ').slice(0, 19))} UTC">${ago(r.ts)}</span>` },
-      { key: 'a', label: 'Trader', render: r => `<span class="sm-trader"><span class="rank-pill" title="Rank by net PnL, ${esc(wl)}">#${int(r.leader.rank)}</span>${addr(r.address, r.account)}</span>` },
+      { key: 'a', label: 'Trader', render: r => `<span class="sm-trader"><span class="rank-pill" title="Rank by net PnL among all traders, ${esc(wl)}">#${int(r.leader.rank)}</span>${addr(r.address, r.account)}</span>` },
       { key: 'x', label: 'Action', render: moveAction },
       { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
       { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
@@ -120,7 +137,7 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: `Traders · ${wl}`, value: int(t.traders), note: `${usd(t.volume)} volume${partial}` }),
       kpi({ label: `Profitable · ${wl}`, value: int(t.profitable), note: `${pct(t.profitable_pct, { digits: 1 })} of traders, after fees` }),
       kpi({ label: `Traders' net PnL · ${wl}`, value: pnl(t.net_pnl), note: 'all traders, after fees', tip: 'Realized PnL (price PnL and funding) minus fees, summed over every account that traded in the window.' }),
-      kpi({ label: 'Median PnL / volume', value: t.median_pnl_per_volume_bps === null ? '—' : `<span class="${t.median_pnl_per_volume_bps > 0 ? 'pos' : t.median_pnl_per_volume_bps < 0 ? 'neg' : ''}">${t.median_pnl_per_volume_bps > 0 ? '+' : ''}${t.median_pnl_per_volume_bps.toFixed(1)} bps</span>`, note: 'the typical trader, per $ traded', tip: 'Net PnL divided by volume for each trader, then the median across traders: what the typical trader keeps or loses per dollar traded.' })
+      kpi({ label: `Median PnL / volume · ${wl}`, value: num(t.median_pnl_per_volume_bps) === null ? '—' : bpsCell(t.median_pnl_per_volume_bps), note: 'the typical trader, per $ traded', tip: 'Net PnL divided by volume for each trader, then the median across traders: what the typical trader keeps or loses per dollar traded.' })
     ].join('');
   }
 
@@ -137,6 +154,8 @@ export function mount(el, { query, setQuery }) {
     loser: stroke('<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>'),
     rekt: stroke('<path d="M12 3a8 8 0 0 0-5 14.2V20h10v-2.8A8 8 0 0 0 12 3z"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><path d="M10.5 20v-2M13.5 20v-2"/>')
   };
+  // Net exposure names its side ("short $142K"): a bare "-$142K" read like a loss.
+  const netSide = v => { const n = num(v) ?? 0; return n ? `<span class="${n > 0 ? 'pos' : 'neg'}">${n > 0 ? 'long' : 'short'} ${usd(Math.abs(n))}</span>` : '<span class="faint">flat</span>'; };
   function biasOf(s) {
     if (s === null || s === undefined) return ['No positions', 'flat', ''];
     return s >= 65 ? ['Strong long', 'long', '▲'] : s >= 55 ? ['Long', 'long', '▲'] : s <= 35 ? ['Strong short', 'short', '▼'] : s <= 45 ? ['Short', 'short', '▼'] : ['Neutral', 'flat', '◆'];
@@ -154,9 +173,9 @@ export function mount(el, { query, setQuery }) {
       return `<button type="button" class="co-card${coSel === g.key ? ' sel' : ''}" data-action="co-pick" data-key="${esc(g.key)}" aria-pressed="${coSel === g.key}">
         <div class="co-top"><span class="co-ic" style="--shade:${CO_SHADES[i % CO_SHADES.length]}">${CO_ICON[g.key] ?? ''}</span><span class="co-id"><b>${esc(g.label)}</b><span>${esc(g.rule)}</span></span><span class="co-pill ${cls}">${arrow} ${label}</span></div>
         <div class="co-count"><b>${int(g.accounts)}</b> wallets<span class="co-ls"><span class="pos">${int(g.net_long_accounts)} long</span> · <span class="neg">${int(g.net_short_accounts)} short</span></span></div>
-        <div class="co-bar" title="${pct(l, { digits: 1 })} of this cohort's open notional is long"><i style="width:${g.accounts ? l : 0}%"></i></div>
+        <div class="co-bar" title="${pct(l, { digits: 1 })} of this cohort's open notional is long">${g.accounts ? `<i style="width:${l}%"></i><i></i>` : ''}</div>
         <div class="co-ends"><span class="pos">${usd(g.long_notional)} <small>L</small></span><span class="co-share">${pct(l, { digits: 0 })} long</span><span class="neg"><small>S</small> ${usd(g.short_notional)}</span></div>
-        <div class="co-stats"><span>Net<b class="${g.net_notional >= 0 ? 'pos' : 'neg'}">${usd(g.net_notional, { sign: true })}</b></span><span>uPnL<b>${pnl(g.unrealized_pnl)}</b></span><span>In profit<b>${int(g.in_profit)}/${int(g.accounts)}</b></span></div>
+        <div class="co-stats"><span title="Long minus short open notional">Net exposure<b>${netSide(g.net_notional)}</b></span><span>uPnL<b>${pnl(g.unrealized_pnl)}</b></span><span>In profit<b>${int(g.in_profit)}/${int(g.accounts)}</b></span></div>
         <div class="co-mks">${markets || '<span class="faint">No open positions</span>'}</div>
       </button>`;
     };
@@ -166,7 +185,7 @@ export function mount(el, { query, setQuery }) {
     $('co-detail').innerHTML = g ? `<div class="panel-head" style="min-height:0;padding-top:12px"><h2 style="font-size:12.5px;color:var(--text-2);font-weight:500">${esc(g.label)}: largest wallets</h2><button class="btn ghost" data-action="co-close">Close</button></div>${table({ id: 'co-top', compact: true, emptyText: 'No accounts', columns: [
       { key: 'a', label: 'Wallet', render: a => addr(a.address, a.account) },
       { key: 'n', label: 'Open notional', n: true, render: a => usd(a.notional) },
-      { key: 'd', label: 'Net direction', n: true, render: a => `<span class="${a.net >= 0 ? 'pos' : 'neg'}">${usd(a.net, { sign: true })}</span>` },
+      { key: 'd', label: 'Net exposure', n: true, render: a => netSide(a.net) },
       { key: 'u', label: 'uPnL', n: true, render: a => pnl(a.upnl) },
       { key: 'p', label: 'Net PnL (history)', n: true, render: a => (a.pnl === null ? '<span class="faint">—</span>' : pnl(a.pnl)) }
     ], rows: g.top, rowAttrs: a => `class="link" data-href="#/wallet/${esc(a.address || a.account)}"` })}` : '';
@@ -181,7 +200,7 @@ export function mount(el, { query, setQuery }) {
   loadSummary().catch(() => { $('tkpis').innerHTML = ''; });
   return {
     onSeg(name, v) { if (name === 'smm') { smMin = v; $('sm-min').innerHTML = seg('smm', SM_SIZES, smMin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'smw') { smWin = v; $('sm-win').innerHTML = seg('smw', SM_WINDOWS, smWin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'co') { coTab = v; coSel = null; $('co-tabs').innerHTML = seg('co', CO_TABS, coTab); renderCohorts(); return; } if (name === 'window') setQuery({ window: v === '7d' ? null : v }); if (name === 'by') setQuery({ by: v === 'pnl' ? null : v }); },
-    onAction(a, t) { if (a === 'co-pick') { coSel = coSel === t.dataset.key ? null : t.dataset.key; renderCohorts(); return; } if (a === 'co-close') { coSel = null; renderCohorts(); return; } if (a === 'next' && data && (page + 1) * LIMIT < data.total) { page++; load().catch(() => {}); } if (a === 'prev' && page > 0) { page--; load().catch(() => {}); } },
+    onAction(a, t) { if (a === 'co-pick') { coSel = coSel === t.dataset.key ? null : t.dataset.key; renderCohorts(); return; } if (a === 'co-close') { coSel = null; renderCohorts(); return; } if (a === 'next' && data && page + 1 < pages()) goTo(page + 1); if (a === 'prev' && page > 0) goTo(page - 1); },
     update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '7d'; by = SORTS.some(([v]) => v === q.get('by')) ? q.get('by') : 'pnl'; page = 0; $('win').innerHTML = seg('window', WINDOWS, w); $('by').innerHTML = seg('by', SORTS, by); load().catch(() => {}); loadSummary().catch(() => {}); },
     destroy() { alive = false; clearInterval(coTimer); clearInterval(smTimer); }
   };
