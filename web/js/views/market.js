@@ -69,6 +69,14 @@ export function mount(el, { params, query, setQuery }) {
   }
 
   let levels = null; // liquidation bands from contract state, drawn on the candles
+  // The sides of the bands candles() draws, by its filter: within the span of the mark,
+  // at least 5% of the largest band, each coloured by the side with more notional.
+  const LEVEL_SPAN = 0.04;
+  const levelSides = lv => {
+    const mark = num(lv?.mark), near = mark ? (lv.levels ?? []).filter(l => Math.abs((l.lo + l.hi) / 2 / mark - 1) <= LEVEL_SPAN).map(l => [num(l.long) ?? 0, num(l.short) ?? 0]) : [];
+    const peak = Math.max(1, ...near.map(([a, b]) => a + b));
+    return new Set(near.filter(([a, b]) => a + b >= peak * 0.05).map(([a, b]) => (a >= b ? 'long' : 'short')));
+  };
   async function load() {
     const [p, s, lv] = await Promise.all([get(`protocol?window=${w}`), get(`protocol/series?window=${w}&market=${id}`), get(`markets/${id}/liq-levels`, { maxAge: 10000 }).catch(() => null)]);
     levels = lv;
@@ -90,11 +98,12 @@ export function mount(el, { params, query, setQuery }) {
     const pts = s.points.filter(x => x.close !== null);
     // No volume in the window (an inactive market carries its last close): say so instead of a flat line.
     const traded = pts.length > 0 && s.points.some(x => num(x.volume) > 0);
-    headValue('candles', price(row.mark ?? row.close), closed() ? 'last mark · not open for trading' : [num(row.change_pct) === null ? '' : `${pctCell(row.change_pct)} ${wl()}`, row.low ? `range ${price(row.low)} – ${price(row.high)}` : '', `${esc(s.meta.bucket)} candles, UTC`].filter(Boolean).join(' · '));
+    headValue('candles', price(row.mark ?? row.close), closed() ? 'last mark · not open for trading' : [num(row.change_pct) === null ? '' : `${pctCell(row.change_pct)} ${wl()}`, row.low ? `range ${price(row.low)} – ${price(row.high)}` : '', traded ? `${esc(s.meta.bucket)} candles, UTC` : ''].filter(Boolean).join(' · '));
     // Liquidation levels need candles to sit on and open positions to come from.
     const withLevels = traded && !closed();
-    const near = levels?.levels.some(l => Math.abs((l.lo + l.hi) / 2 / num(levels.mark) - 1) <= 0.04);
-    legendOf('candles', !withLevels || !showLevels || !levels ? [] : near ? [{ name: 'Long liq. levels', color: COLORS.long }, { name: 'Short liq. levels', color: COLORS.short }] : [{ name: 'No liquidation levels within 4%' }]);
+    // The legend names only the sides drawn.
+    const sides = withLevels && showLevels && levels ? levelSides(levels) : null;
+    legendOf('candles', !sides ? [] : sides.size ? [sides.has('long') && { name: 'Long liq. levels', color: COLORS.long }, sides.has('short') && { name: 'Short liq. levels', color: COLORS.short }].filter(Boolean) : [{ name: `No liquidation levels within ${LEVEL_SPAN * 100}%` }]);
     $('lvl-toggle').hidden = !withLevels;
     const node = $('candles'); node.innerHTML = '';
     if (!traded) node.innerHTML = none('No trades in this window');
@@ -102,7 +111,7 @@ export function mount(el, { params, query, setQuery }) {
       let prev = null;
       const ohlc = s.points.map(x => { const c = num(x.close), o = num(x.open) ?? prev ?? c, h = num(x.high) ?? Math.max(o, c), l = num(x.low) ?? Math.min(o, c); prev = c; return c === null ? '-' : [o, c, l, h]; });
       candles(node, { times: s.times, ohlc, volume: s.points.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/\.0+$/, ''), volColor: colorOf(id) + '99', zoom: true,
-        levels: showLevels ? levels?.levels ?? null : null, mark: num(levels?.mark), onLevel: l => { const t = l.top; if (t) location.hash = `#/wallet/${t.address || t.account_id}`; } });
+        levels: showLevels ? levels?.levels ?? null : null, mark: num(levels?.mark), levelSpan: LEVEL_SPAN, onLevel: l => { const t = l.top; if (t) location.hash = `#/wallet/${t.address || t.account_id}`; } });
     }
   }
   // Exact flows from position events: what other dashboards infer from price and open interest.
@@ -303,10 +312,10 @@ export function mount(el, { params, query, setQuery }) {
     ], rows: tape.slice(0, 60), rowAttrs: r => `class="${r.fresh ? 'flash' : ''}"` });
   }
   const off = stream.on('trades', rows => { const mine = rows.filter(r => r.market === id); if (!mine.length) return; tape = [...mine.reverse().map(r => ({ ...r, fresh: true })), ...tape].slice(0, 60); renderTrades(tape); tape.forEach(r => { r.fresh = false; }); });
-  const timer = setInterval(() => { loadRisk().catch(() => {}); loadBook().catch(() => {}); loadEntries().catch(() => {}); if (w === '24h') { load().catch(() => {}); loadFlow().catch(() => {}); } }, 20000);
+  let timer = null;
   load().catch(error => { $('kpis').innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; });
-  // The panels wait for the market row (the same request as load's, shared), so
-  // an inactive market says so in each of them; an unknown market loads none.
+  // The panels and the refresh wait for the market row (the same request as load's,
+  // shared), so an inactive market says so in each of them; an unknown market loads none.
   const known = get(`protocol?window=${w}`).then(p => { row = p.markets.find(m => m.id === id) ?? null; return Boolean(row); }, () => true);
   known.then(found => {
     if (!found || !alive) return;
@@ -316,11 +325,12 @@ export function mount(el, { params, query, setQuery }) {
     loadBook().catch(() => {});
     loadFunding().catch(() => { $('funding').innerHTML = empty('Unavailable'); });
     loadFeeds().catch(() => {});
+    timer = setInterval(() => { loadRisk().catch(() => {}); loadBook().catch(() => {}); loadEntries().catch(() => {}); if (w === '24h') { load().catch(() => {}); loadFlow().catch(() => {}); } }, 20000);
   });
   return {
     onSeg(name, v) { if (name === 'lvl') { showLevels = v === 'on'; $('lvl-toggle').innerHTML = segSm('lvl', LEVEL_TOGGLE, v); load().catch(() => {}); return; } if (name === 'window') setQuery({ window: v === '24h' ? null : v }); },
     onAction(a, t) { if (a === 'calc-side') { calc.side = t.dataset.v; calc.exit = null; renderCalc(); } },
-    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); loadFeeds().catch(() => {}); loadFlow().catch(() => {}); },
+    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); known.then(found => { if (found) { loadFeeds().catch(() => {}); loadFlow().catch(() => {}); } }); },
     destroy() { alive = false; el.removeEventListener('change', onCalcChange); off(); clearInterval(timer); }
   };
 }
