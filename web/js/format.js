@@ -39,8 +39,9 @@ export function price(v) {
 export function pct(v, { digits = 2, sign = false } = {}) {
   const n = num(v);
   if (n === null) return '—';
-  // A value that rounds to zero reads 0, with no minus or plus (never "-0.00%").
-  const t = n.toFixed(Math.abs(n) >= 100 ? 0 : digits);
+  // Decimals follow the rounded figure (99.996 reads 100%, never 100.00%), and a
+  // value that rounds to zero reads 0, with no minus or plus (never "-0.00%").
+  const t = n.toFixed(Math.abs(Number(n.toFixed(digits))) >= 100 ? 0 : digits);
   return Number(t) === 0 ? `${t.replace('-', '')}%` : `${sign && n > 0 ? '+' : ''}${t}%`;
 }
 export function size(v) { const n = num(v); if (n === null) return '—'; const a = Math.abs(n); return n.toLocaleString('en-US', { maximumFractionDigits: a >= 100 ? 2 : a >= 1 ? 4 : 6 }); }
@@ -51,11 +52,12 @@ export function deltaHtml(change, invert = false, title = null) {
   const n = num(change);
   if (n === null) return '<span class="delta flat">—</span>';
   // Direction follows the change as shown: one that rounds to 0.0 % is flat.
-  const r = Number(n.toFixed(Math.abs(n) >= 100 ? 0 : 1));
+  // Decimals follow the rounded figure too: 99.96 reads 100%, like 100.
+  const dp = Math.abs(Number(n.toFixed(1))) >= 100 ? 0 : 1, r = Number(n.toFixed(dp));
   const good = invert ? r < 0 : r > 0, bad = invert ? r > 0 : r < 0;
   const cls = good ? 'up' : bad ? 'down' : 'flat';
   // Past +1000 % (from a near-empty previous window) a multiple reads better: "×113".
-  const text = n >= 1000 ? `×${Math.round(1 + n / 100)}` : `${Math.abs(r).toFixed(Math.abs(n) >= 100 ? 0 : 1)}%`;
+  const text = r >= 1000 ? `×${Math.round(1 + n / 100)}` : `${Math.abs(r).toFixed(dp)}%`;
   return `<span class="delta ${cls}" title="${esc(title ?? `${pct(n, { digits: 1 })} on the previous period`)}">${r > 0 ? '▲' : r < 0 ? '▼' : ''} ${text}</span>`;
 }
 export function ago(ts) {
@@ -69,10 +71,12 @@ export function ago(ts) {
 export function duration(sec) {
   const s = num(sec);
   if (s === null) return '—';
-  if (s < 60) return `${Math.round(s)}s`;
-  if (s < 3600) return `${Math.round(s / 60)}m`;
-  if (s < 86400) return `${(s / 3600).toFixed(s < 36000 ? 1 : 0)}h`;
-  return `${(s / 86400).toFixed(s < 864000 ? 1 : 0)}d`;
+  // Unit and decimals follow the rounded figure: 59.6 s reads 1m and 23.8 h 1.0d, never 60s or 24h.
+  const fig = x => x.toFixed(Number(x.toFixed(1)) < 10 ? 1 : 0);
+  if (Math.round(s) < 60) return `${Math.round(s)}s`;
+  if (Math.round(s / 60) < 60) return `${Math.round(s / 60)}m`;
+  if (Number(fig(s / 3600)) < 24) return `${fig(s / 3600)}h`;
+  return `${fig(s / 86400)}d`;
 }
 const pad = n => String(n).padStart(2, '0');
 export function dateTime(ts) { if (!ts) return '—'; const d = new Date(Number(ts) * 1000); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; }
