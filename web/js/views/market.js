@@ -27,7 +27,7 @@ export function mount(el, { params, query, setQuery }) {
     <div class="stack">
       <div class="kpis m-kpis" id="kpis"></div>
       <div class="grid g-main">
-        ${panel('candles', 'Price and volume', 'Candles from fills with volume below, UTC. Bands: prices at which open positions would be liquidated, stronger where more notional sits; click one to open its largest wallet.', { ctl: `<span id="lvl-toggle">${segSm('lvl', LEVEL_TOGGLE, 'on')}</span>`, cls: 'm-price' })}
+        ${panel('candles', 'Price and volume', 'Candles from fills with volume below, UTC. Bands: prices at which open positions would be liquidated, stronger where more notional sits; click one to open its largest wallet.', { ctl: `<span id="lvl-toggle" hidden>${segSm('lvl', LEVEL_TOGGLE, 'on')}</span>`, cls: 'm-price' })}
         <section class="panel"><div class="panel-head"><h2>Positioning</h2><span class="meta">Live positions</span></div><div id="positioning">${skeleton(8)}</div></section>
       </div>
       <div class="grid g-2">
@@ -99,7 +99,8 @@ export function mount(el, { params, query, setQuery }) {
     // No volume in the window (an inactive market carries its last close): say so instead of a flat line.
     const traded = pts.length > 0 && s.points.some(x => num(x.volume) > 0);
     headValue('candles', price(row.mark ?? row.close), closed() ? 'last mark · not open for trading' : [num(row.change_pct) === null ? '' : `${pctCell(row.change_pct)} ${wl()}`, row.low ? `range ${price(row.low)} – ${price(row.high)}` : '', traded ? `${esc(s.meta.bucket)} candles, UTC` : ''].filter(Boolean).join(' · '));
-    // Liquidation levels need candles to sit on and open positions to come from.
+    // Liquidation levels need candles to sit on and open positions to come from;
+    // the switch stays hidden until then, so a closed market never shows it.
     const withLevels = traded && !closed();
     // The legend names only the sides drawn.
     const sides = withLevels && showLevels && levels ? levelSides(levels) : null;
