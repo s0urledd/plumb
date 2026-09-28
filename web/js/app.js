@@ -1,7 +1,7 @@
 // Shell: hash router, header (search, live status), event delegation, the
 // server-sent event stream and the indexing banner.
 import { get, stream } from './api.js';
-import { esc, short, int, dateTime, price } from './format.js';
+import { esc, short, int, dateTime, price, pct, signClass } from './format.js';
 import { watch, toast, ICON, assignColors, download, logo, setAlertsBot } from './ui.js';
 import { disposeAll, chartCsv, chartPng } from './charts.js';
 
@@ -149,7 +149,7 @@ function renderTicker(markets) {
   ticker.hidden = false;
   ticker.href = `#/markets/${m.id}`;
   ticker.title = 'MON mark price on Perpl · change over 24 hours';
-  ticker.innerHTML = `${logo(m.id, 'MON', 16)}<span class="tp">$${esc(price(p))}</span>${Number.isFinite(ch) ? `<span class="${ch > 0 ? 'pos' : ch < 0 ? 'neg' : 'faint'}">${ch > 0 ? '+' : ''}${ch.toFixed(2)}%</span>` : ''}`;
+  ticker.innerHTML = `${logo(m.id, 'MON', 16)}<span class="tp">$${esc(price(p))}</span>${Number.isFinite(ch) ? `<span class="${signClass(ch) || 'faint'}">${pct(ch, { sign: true })}</span>` : ''}`;
 }
 stream.on('protocol', p => renderTicker(p.markets));
 get('protocol?window=24h', { maxAge: 5000 }).then(p => renderTicker(p.markets)).catch(() => {});

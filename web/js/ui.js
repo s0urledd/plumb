@@ -1,7 +1,7 @@
 // Small UI components rendered as HTML strings (every dynamic value goes
 // through esc) plus the watchlist store, market colour assignment and the
 // sideways-scrolling nav and tab strips.
-import { esc, short, num, usd, pct, deltaHtml, signClass } from './format.js';
+import { esc, short, num, usd, pct, bps, deltaHtml, signClass } from './format.js';
 
 export const ICON = {
   cube: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l5.4 3.1v6.2L8 14.2l-5.4-3.1V4.9z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M2.6 4.9L8 8l5.4-3.1M8 8v6.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
@@ -112,6 +112,7 @@ export function fundingCell(f, { apr = true } = {}) {
   return `<span class="${signClass(rate, 4)}">${pct(rate, { digits: 4, sign: true })}</span>${apr ? `<div class="sub">${pct(f.apr_pct, { digits: 1, sign: true })} APR</div>` : ''}`;
 }
 export const pctCell = (v, sign = true) => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${sign ? signClass(v) : ''}">${pct(v, { sign })}</span>`);
+export const bpsCell = v => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${signClass(v, 1)}">${bps(v, { sign: true })}</span>`);
 export const skeleton = (rows = 6) => `<div class="panel-body">${Array.from({ length: rows }, (_, i) => `<div class="skeleton sk-line" style="width:${92 - (i % 3) * 14}%"></div>`).join('')}</div>`;
 export const skChart = () => '<div class="panel-body"><div class="skeleton sk-block"></div></div>';
 export const empty = text => `<div class="empty-state">${esc(text)}</div>`;

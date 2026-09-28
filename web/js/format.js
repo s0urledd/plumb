@@ -44,6 +44,13 @@ export function pct(v, { digits = 2, sign = false } = {}) {
   const t = n.toFixed(Math.abs(Number(n.toFixed(digits))) >= 100 ? 0 : digits);
   return Number(t) === 0 ? `${t.replace('-', '')}%` : `${sign && n > 0 ? '+' : ''}${t}%`;
 }
+// Basis points, as pct: a value that rounds to zero reads 0.0 bps, with no minus or plus.
+export function bps(v, { digits = 1, sign = false } = {}) {
+  const n = num(v);
+  if (n === null) return '—';
+  const t = n.toFixed(digits);
+  return Number(t) === 0 ? `${t.replace('-', '')} bps` : `${sign && n > 0 ? '+' : ''}${t} bps`;
+}
 export function size(v) { const n = num(v); if (n === null) return '—'; const a = Math.abs(n); return n.toLocaleString('en-US', { maximumFractionDigits: a >= 100 ? 2 : a >= 1 ? 4 : 6 }); }
 // Colour for a signed value as shown at `digits` decimals: one that rounds to zero is neutral.
 export const signClass = (v, digits = 2) => { const n = num(v), r = n === null ? 0 : Number(n.toFixed(digits)); return r > 0 ? 'pos' : r < 0 ? 'neg' : ''; };

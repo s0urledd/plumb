@@ -1,7 +1,7 @@
 // One market: price candles and volume, positioning, funding history,
 // liquidation ladder from live positions, top traders and recent trades.
 import { get, stream } from '../api.js';
-import { usd, int, price, pct, num, esc, size, timeOnly, dateTime, duration } from '../format.js';
+import { usd, int, price, pct, num, esc, size, signClass, timeOnly, dateTime, duration } from '../format.js';
 import { kpi, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, skeleton, skChart, empty, colorOf, chartTools, logo } from '../ui.js';
 import { candles, signedBars, mirrored, flowBars, entryProfile, COLORS } from '../charts.js';
 
@@ -120,7 +120,7 @@ export function mount(el, { params, query, setQuery }) {
     if (!alive) return;
     const t = f.totals, node = $('flow'); node.innerHTML = '';
     const netChange = num(t.long_open) - num(t.long_close);
-    headValue('flow', `<span class="${netChange > 0 ? 'pos' : netChange < 0 ? 'neg' : ''}">${usd(netChange, { sign: true })}</span>`, `${usd(num(t.long_open) + num(t.short_open))} opened · ${usd(num(t.long_close) + num(t.short_close))} closed · ${wl()}`);
+    headValue('flow', pnl(netChange), `${usd(num(t.long_open) + num(t.short_open))} opened · ${usd(num(t.long_close) + num(t.short_close))} closed · ${wl()}`);
     const moved = f.times.length && num(t.long_open) + num(t.short_open) + num(t.long_close) + num(t.short_close);
     legendOf('flow', moved ? [{ name: 'Longs opened', color: COLORS.long }, { name: 'Longs closed', color: `${COLORS.long}80` }, { name: 'Shorts opened', color: COLORS.short }, { name: 'Shorts closed', color: `${COLORS.short}80` }, { name: 'Net change', color: '#ffffff' }] : []);
     if (!moved) { node.innerHTML = none('No position changes in this window'); return; }
@@ -237,7 +237,7 @@ export function mount(el, { params, query, setQuery }) {
         <div class="stat"><span>Liquidation price</span><span class="${dist < 5 ? 'neg' : dist < 15 ? 'warn-text' : ''}">${liq > 0 ? price(liq) : '—'}</span></div>
         <div class="stat"><span>From mark</span><span>${liq > 0 ? `${pct(dist, { digits: 1 })} ${long ? 'down' : 'up'}` : '—'}</span></div>
         <div class="stat"><span>PnL at exit</span><span>${pnl(pnlAtExit)}</span></div>
-        <div class="stat"><span>Return on margin</span><span class="${pnlAtExit >= 0 ? 'pos' : 'neg'}">${pct(pnlAtExit / margin * 100, { digits: 1, sign: true })}</span></div>
+        <div class="stat"><span>Return on margin</span><span class="${signClass(pnlAtExit / margin * 100, 1)}">${pct(pnlAtExit / margin * 100, { digits: 1, sign: true })}</span></div>
       </div>
       <div class="faint calc-note">An estimate before fees and funding. Live positions carry their own deposit, so their liquidation prices (above) differ slightly.</div></div>`;
   }

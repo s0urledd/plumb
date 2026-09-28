@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compact, usd, usdFull, pct, signClass, deltaHtml, duration } from '../web/js/format.js';
+import { compact, usd, usdFull, pct, bps, signClass, deltaHtml, duration } from '../web/js/format.js';
 
 test('compact amounts switch unit on the rounded figure', () => {
   assert.equal(usd(999.4), '$999');
@@ -38,6 +38,10 @@ test('a percentage that rounds to zero is 0 and neutral', () => {
   assert.equal(signClass(0.00004, 4), '');
   assert.equal(signClass(0.0004, 4), 'pos');
   assert.equal(signClass(null), '');
+  assert.equal(bps(-0.04, { sign: true }), '0.0 bps');
+  assert.equal(bps(2.66, { sign: true }), '+2.7 bps');
+  assert.equal(bps(-2.66), '-2.7 bps');
+  assert.equal(bps(null), '—');
 });
 
 test('a change that rounds to 0.0 % is flat', () => {

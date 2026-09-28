@@ -61,7 +61,7 @@ export function mount(el, { query, setQuery }) {
     const p95 = mags.length ? mags[Math.min(mags.length - 1, Math.floor(mags.length * 0.95))] : 0;
     const clamp = [10, 20, 25, 50, 100, 200].find(x => x >= p95) ?? 200;
     el.querySelector('#f-desc').textContent += ` · scale ±${clamp}% APR`;
-    divergingHeatmap(node, { times, rows, bucketSeconds: b, clamp, labels: ['longs pay', 'shorts pay'], fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(1)}% APR` });
+    divergingHeatmap(node, { times, rows, bucketSeconds: b, clamp, labels: ['longs pay', 'shorts pay'], fmt: v => `${pct(v, { digits: 1, sign: true })} APR` });
   }
   // 24h follows every push; longer windows refetch at most every 15 s.
   let lastLongLoad = 0;

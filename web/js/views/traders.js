@@ -2,7 +2,7 @@
 // with open positions from the live contract state.
 import { get } from '../api.js';
 import { usd, int, pct, num, esc, price, ago } from '../format.js';
-import { seg, table, addr, pnl, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON } from '../ui.js';
+import { seg, table, addr, pnl, pctCell, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON } from '../ui.js';
 import { SEA_ICONS } from '../cohort-icons.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -44,7 +44,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'rank', label: '#', render: r => `<span class="rank">${r.rank}</span>` },
     { key: 'addr', label: 'Trader', render: r => { const t = styleTags(r); return `${addr(r.address, r.account)}${t ? `<div class="sub tags">${t}</div>` : ''}`; } },
     { key: 'pnl', label: 'Net PnL', n: true, render: r => pnl(r.pnl) },
-    { key: 'roi', label: 'PnL / volume', n: true, render: r => r.roi_on_volume_bps === null ? '—' : `<span class="${r.roi_on_volume_bps > 0 ? 'pos' : r.roi_on_volume_bps < 0 ? 'neg' : ''}">${(r.roi_on_volume_bps / 100).toFixed(2)}%</span>` },
+    { key: 'roi', label: 'PnL / volume', n: true, render: r => pctCell(num(r.roi_on_volume_bps) === null ? null : r.roi_on_volume_bps / 100) },
     { key: 'volume', label: 'Volume', n: true, render: r => usd(r.volume) },
     { key: 'trades', label: 'Trades', n: true, render: r => int(r.trades) },
     { key: 'maker', label: 'Maker share', n: true, render: r => pct(r.maker_share_pct, { digits: 0 }) },
@@ -52,7 +52,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'liq', label: 'Liquidated', n: true, render: r => (num(r.liquidated) > 0 ? `<span class="neg">${usd(r.liquidated)}</span>` : '<span class="faint">—</span>') },
     { key: 'dep', flow: true, label: 'Deposits', n: true, render: r => (num(r.deposits) > 0 ? usd(r.deposits) : '<span class="faint">—</span>') },
     { key: 'wd', flow: true, label: 'Withdrawals', n: true, render: r => (num(r.withdrawals) > 0 ? usd(r.withdrawals) : '<span class="faint">—</span>') },
-    { key: 'net', flow: true, label: 'Net flow', n: true, render: r => { const v = (num(r.deposits) ?? 0) - (num(r.withdrawals) ?? 0); return v ? `<span class="${v > 0 ? 'pos' : 'neg'}">${usd(v, { sign: true })}</span>` : '<span class="faint">—</span>'; } },
+    { key: 'net', flow: true, label: 'Net flow', n: true, render: r => { const v = (num(r.deposits) ?? 0) - (num(r.withdrawals) ?? 0); return v ? pnl(v) : '<span class="faint">—</span>'; } },
     { key: 'open', label: 'Open now', n: true, render: r => (r.open_positions ? `${usd(r.open_notional)}<div class="sub">${r.open_positions} pos · uPnL ${usd(r.unrealized_pnl, { sign: true })}</div>` : '<span class="faint">—</span>') },
     { key: 'markets', label: 'Markets', render: r => `<span class="muted">${esc(r.markets.slice(0, 4).join(' · '))}${r.markets.length > 4 ? ` +${r.markets.length - 4}` : ''}</span>` }
   ];
@@ -131,7 +131,7 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: `Traders · ${wl}`, value: int(t.traders), note: `${usd(t.volume)} volume${partial}` }),
       kpi({ label: `Profitable · ${wl}`, value: int(t.profitable), note: `${pct(t.profitable_pct, { digits: 1 })} of traders, after fees` }),
       kpi({ label: `Traders' net PnL · ${wl}`, value: pnl(t.net_pnl), note: 'all traders, after fees', tip: 'Realized PnL (price PnL and funding) minus fees, summed over every account that traded in the window.' }),
-      kpi({ label: 'Median PnL / volume', value: t.median_pnl_per_volume_bps === null ? '—' : `<span class="${t.median_pnl_per_volume_bps > 0 ? 'pos' : t.median_pnl_per_volume_bps < 0 ? 'neg' : ''}">${t.median_pnl_per_volume_bps > 0 ? '+' : ''}${t.median_pnl_per_volume_bps.toFixed(1)} bps</span>`, note: 'the typical trader, per $ traded', tip: 'Net PnL divided by volume for each trader, then the median across traders: what the typical trader keeps or loses per dollar traded.' })
+      kpi({ label: 'Median PnL / volume', value: num(t.median_pnl_per_volume_bps) === null ? '—' : bpsCell(t.median_pnl_per_volume_bps), note: 'the typical trader, per $ traded', tip: 'Net PnL divided by volume for each trader, then the median across traders: what the typical trader keeps or loses per dollar traded.' })
     ].join('');
   }
 

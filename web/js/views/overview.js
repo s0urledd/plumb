@@ -2,8 +2,8 @@
 // next to the live tape, the markets table, a grid of trend charts and the
 // latest liquidations and flows.
 import { get, stream } from '../api.js';
-import { usd, compact, int, price, pct, num, esc, timeOnly, ago, duration } from '../format.js';
-import { kpi, seg, table, mkt, sideTag, addr, ratio, pctCell, fundingCell, fundingTip, tradeAction, chartTools, skeleton, skChart, empty, assignColors, colorOf, hasColor, logo, ICON, OTHER_HEX, SLOT_HEX, mergeByAsset } from '../ui.js';
+import { usd, compact, int, price, pct, num, esc, signClass, timeOnly, ago, duration } from '../format.js';
+import { kpi, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, chartTools, skeleton, skChart, empty, assignColors, colorOf, hasColor, logo, ICON, OTHER_HEX, SLOT_HEX, mergeByAsset } from '../ui.js';
 import { sparkline, stackedBars, lineChart, signedBars, twoSided, toggleSeries, COLORS, CUMULATIVE } from '../charts.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -192,7 +192,7 @@ export function mount(el, { query, setQuery }) {
     const win = pw[id], sr = d.s, pts = sr.points, times = sr.times, b = sr.meta.bucket_seconds, h = d.p.headline, c = d.p.current;
     node.innerHTML = '';
     // Open interest and TVL: axes start at zero, so a 1% move looks like one; the change over the window is in the header.
-    const moved = field => { const x = seriesChange(field, sr, win); return x === undefined ? (win === 'all' ? 'now' : '') : `<span class="${x > 0 ? 'pos' : x < 0 ? 'neg' : 'faint'}">${x > 0 ? '+' : ''}${x.toFixed(Math.abs(x) < 10 ? 1 : 0)}%</span> over ${win}`; };
+    const moved = field => { const x = seriesChange(field, sr, win); if (x === undefined) return win === 'all' ? 'now' : ''; const d = Math.abs(Number(x.toFixed(1))) < 10 ? 1 : 0; return `<span class="${signClass(x, d) || 'faint'}">${pct(x, { digits: d, sign: true })}</span> over ${win}`; };
     const cumulative = sr.meta.cumulative_complete;
     switch (id) {
       case 'oi':
@@ -204,7 +204,7 @@ export function mount(el, { query, setQuery }) {
         if (cumulative) lineChart(node, { times, series: [{ name: 'TVL', color: SLOT_HEX[0], data: pts.map(p => num(p.tvl)) }], bucketSeconds: b }); else node.innerHTML = empty(historyNote());
         break;
       case 'flows':
-        headValue('flows', `<span class="${num(h.net_flow.value) >= 0 ? 'pos' : 'neg'}">${usd(h.net_flow.value, { sign: true })}</span>`, `${usd(h.deposits.value)} in · ${usd(h.withdrawals.value)} out · ${winLabel(win)}`);
+        headValue('flows', pnl(h.net_flow.value), `${usd(h.deposits.value)} in · ${usd(h.withdrawals.value)} out · ${winLabel(win)}`);
         legendOf('flows', [{ name: 'Deposits', color: COLORS.long }, { name: 'Withdrawals', color: COLORS.short }, { name: 'Net', ...NET }]);
         twoSided(node, { times, bucketSeconds: b, up: { name: 'Deposits', data: pts.map(p => p.deposits) }, down: { name: 'Withdrawals', data: pts.map(p => p.withdrawals) }, net: 'Net deposits' });
         break;
@@ -237,7 +237,7 @@ export function mount(el, { query, setQuery }) {
         // Header figures come from the window's own totals, not from summing the
         // chart's buckets; 'after fees' is the Traders page's figure for the same window.
         const total = num(h.realized_pnl?.value ?? h.realized_pnl) ?? 0;
-        const value = `<span class="${total >= 0 ? 'pos' : 'neg'}">${usd(total, { sign: true })}</span>`;
+        const value = pnl(total);
         headValue('tpnl', value, winLabel(win));
         get(`traders/summary?window=${win}`, { maxAge: 20000 }).then(t => { if (alive && t && pw.tpnl === win) headValue('tpnl', value, `${winLabel(win)} · after fees ${usd(t.net_pnl, { sign: true })}`); }).catch(() => {});
         signedBars(node, { times, values: pts.map(p => num(p.realized_pnl)), bucketSeconds: b, name: 'Trader realized PnL' });
@@ -325,7 +325,7 @@ export function mount(el, { query, setQuery }) {
     $('flowlist').innerHTML = rows.length ? table({ id: 'flowlist', compact: true, columns: [
       { key: 'a', label: 'Wallet', render: r => addr(r.address, r.account, { star: false }) },
       { key: 'v', label: inbound ? 'Deposited' : 'Withdrew', n: true, render: r => usd(inbound ? r.deposits : r.withdrawals) },
-      { key: 'n', label: 'Net', n: true, render: r => `<span class="${num(r.net) >= 0 ? 'pos' : 'neg'}">${usd(r.net, { sign: true })}</span>` }
+      { key: 'n', label: 'Net', n: true, render: r => pnl(r.net) }
     ], rows, rowAttrs: link }) : empty(`No ${inbound ? 'deposits' : 'withdrawals'} in this window`);
   }
   function renderWindows() {
