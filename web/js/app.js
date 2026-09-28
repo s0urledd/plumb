@@ -38,7 +38,11 @@ export function setQuery(patch) {
   route(true);
 }
 
+// Each navigation takes a number; a view module that loads after a newer
+// navigation started is not mounted.
+let navigation = 0;
 async function route(queryOnly = false) {
+  const nav = ++navigation;
   const { path, query } = parseHash();
   const hit = routes.find(([re]) => re.test(path));
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === `#${path.match(/^\/[a-z]*/)?.[0] ?? '/'}` || (path === '/' && a.dataset.nav === 'overview') || ((path.startsWith('/wallet') || path.startsWith('/compare')) && a.dataset.nav === 'traders') || (path.startsWith('/markets') && a.dataset.nav === 'markets') || (path.startsWith('/watchlist') && a.dataset.nav === 'alerts')));
@@ -47,8 +51,10 @@ async function route(queryOnly = false) {
   const key = `${hit[0]}:${params.join('/')}`;
   if (queryOnly && current?.key === key && current.instance?.update) { current.instance.update(query); return; }
   current?.instance?.destroy?.();
+  current = null;
   disposeAll();
   const mod = await hit[1]();
+  if (nav !== navigation) return;
   view.innerHTML = '';
   window.scrollTo({ top: 0 });
   const instance = mod.mount(view, { params, query, navigate, setQuery });

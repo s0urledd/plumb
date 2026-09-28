@@ -21,10 +21,12 @@ export function mount(el, { query, setQuery }) {
   const PAGE = 50;
   let page = 0;
   const feedPath = (n = page) => `liquidations?limit=${PAGE}&offset=${n * PAGE}&window=${w}${market ? `&market=${market}` : ''}`;
+  // Responses for a window or market that has since changed are dropped.
+  const filters = () => `${w}|${market}`;
   async function load() {
-    const mq = market ? `&market=${market}` : '';
+    const mq = market ? `&market=${market}` : '', asked = filters();
     const [p, s, l] = await Promise.all([get(`protocol?window=${w}`), get(`protocol/series?window=${w}${mq}`), get(feedPath(0))]);
-    if (!alive) return;
+    if (!alive || asked !== filters()) return;
     markets = p.markets;
     assignColors([...p.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol })));
     const h = p.headline, row = market ? p.markets.find(m => String(m.id) === market) ?? null : null;
@@ -74,14 +76,15 @@ export function mount(el, { query, setQuery }) {
     ], rows, rowAttrs: r => `class="link ${r.fresh ? 'flash' : ''}" data-href="#/wallet/${esc(r.address || r.account)}"`, emptyText: 'No liquidations indexed in this range' }) + pager;
   }
   async function goTo(n) {
+    const asked = filters();
     const l = await get(feedPath(n), { maxAge: 3000 });
-    if (!alive) return;
+    if (!alive || asked !== filters()) return;
     page = n; renderFeed(l);
     const top = $('feed').closest('section');
     if (top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: 'start' });
   }
   $('mf').addEventListener('change', e => setQuery({ market: e.target.value || null }));
-  const off = stream.on('liquidations', () => { if (page !== 0) return; get(feedPath(0), { maxAge: 0 }).then(l => { if (alive && page === 0) renderFeed({ ...l, rows: l.rows.map((r, i) => ({ ...r, fresh: i === 0 })) }); }).catch(() => {}); });
+  const off = stream.on('liquidations', () => { if (page !== 0) return; const asked = filters(); get(feedPath(0), { maxAge: 0 }).then(l => { if (alive && page === 0 && asked === filters()) renderFeed({ ...l, rows: l.rows.map((r, i) => ({ ...r, fresh: i === 0 })) }); }).catch(() => {}); });
   load().catch(error => { $('feed').innerHTML = empty(error.message); });
   return {
     onAction(a) { if (a === 'prev' && page > 0) goTo(page - 1).catch(() => {}); if (a === 'next') goTo(page + 1).catch(() => {}); },
