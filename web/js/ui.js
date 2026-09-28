@@ -1,6 +1,6 @@
 // Small UI components rendered as HTML strings (every dynamic value goes
 // through esc) plus the watchlist store and market colour assignment.
-import { esc, short, num, usd, pct, deltaHtml } from './format.js';
+import { esc, short, num, usd, pct, deltaHtml, signClass } from './format.js';
 
 export const ICON = {
   cube: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l5.4 3.1v6.2L8 14.2l-5.4-3.1V4.9z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M2.6 4.9L8 8l5.4-3.1M8 8v6.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
@@ -91,7 +91,7 @@ export function ratio(long, short) {
   const lp = Math.round(l / t * 100);
   return `<div class="ratio-wrap"><div class="ratio"><i class="l" style="width:${lp}%"></i><i class="s" style="width:${100 - lp}%"></i></div><div class="lbl"><span>${lp}% L</span><span>${100 - lp}% S</span></div></div>`;
 }
-export const pnl = v => { const n = num(v); return n === null ? '—' : `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : ''}">${usd(v, { sign: true })}</span>`; };
+export const pnl = v => (num(v) === null ? '—' : `<span class="${signClass(v)}">${usd(v, { sign: true })}</span>`);
 // What the taker did, from the position event behind the fill. Colour
 // follows direction (buying is green); flips name the new side.
 const VERBS = { open: 'Open', increase: 'Add', decrease: 'Reduce', close: 'Close', invert: 'Flip to', deleverage: 'ADL', unwind: 'Unwind' };
@@ -107,9 +107,9 @@ export function fundingCell(f, { apr = true } = {}) {
   const rate = num(f?.rate_8h_pct);
   if (rate === null) return '<span class="faint">—</span>';
   if (rate === 0) return '<span class="faint" title="Flat: the contract set no funding for this interval">0% · flat</span>';
-  return `<span class="${rate > 0 ? 'pos' : 'neg'}">${pct(rate, { digits: 4, sign: true })}</span>${apr ? `<div class="sub">${pct(f.apr_pct, { digits: 1, sign: true })} APR</div>` : ''}`;
+  return `<span class="${signClass(rate, 4)}">${pct(rate, { digits: 4, sign: true })}</span>${apr ? `<div class="sub">${pct(f.apr_pct, { digits: 1, sign: true })} APR</div>` : ''}`;
 }
-export const pctCell = (v, sign = true) => { const n = num(v); return n === null ? '<span class="faint">—</span>' : `<span class="${sign ? (n > 0 ? 'pos' : n < 0 ? 'neg' : '') : ''}">${pct(v, { sign })}</span>`; };
+export const pctCell = (v, sign = true) => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${sign ? signClass(v) : ''}">${pct(v, { sign })}</span>`);
 export const skeleton = (rows = 6) => `<div class="panel-body">${Array.from({ length: rows }, (_, i) => `<div class="skeleton sk-line" style="width:${92 - (i % 3) * 14}%"></div>`).join('')}</div>`;
 export const skChart = () => '<div class="panel-body"><div class="skeleton sk-block"></div></div>';
 export const empty = text => `<div class="empty-state">${esc(text)}</div>`;
