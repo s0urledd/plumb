@@ -78,7 +78,8 @@ button, input, select { font: inherit; color: inherit; }
 .search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font-size: 13px; }
 .search input::placeholder { color: var(--text-3); }
 .search kbd { font: 500 11px var(--mono); color: var(--text-3); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; }
-.search-results { position: absolute; top: 42px; left: 0; right: 0; background: var(--menu); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 4px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55); }
+/* z-index: the phone nav paints after the search box (flex order) and in a layer of its own (its edge fade). */
+.search-results { position: absolute; z-index: 1; top: 42px; left: 0; right: 0; background: var(--menu); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 4px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55); }
 .search-results a { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: var(--radius-sm); }
 .search-results a:hover, .search-results a.sel { background: var(--accent-soft); color: var(--text); }
 .search-results .empty { padding: 10px; color: var(--text-3); font-size: 13px; }
@@ -127,7 +128,7 @@ button, input, select { font: inherit; color: inherit; }
 /* Phones: the nav becomes a second, horizontally scrolling row. */
 @media (max-width: 860px) {
   .top-inner { height: auto; min-height: 56px; flex-wrap: wrap; gap: 6px 12px; padding-top: 10px; padding-bottom: 4px; }
-  .nav { order: 3; width: 100%; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) 4px; }
+  .nav { order: 3; width: calc(100% + 2 * var(--gutter)); overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) 4px; }
   .nav::-webkit-scrollbar { display: none; }
   .nav a { flex: none; padding: 6px 10px; }
   .search { min-width: 0; }
@@ -144,8 +145,6 @@ button, input, select { font: inherit; color: inherit; }
 @media (max-width: 640px) {
   .panel-head { flex-wrap: wrap; }
   .panel-head .meta { flex: 1 1 100%; }
-  .kpi-row { flex-wrap: wrap; row-gap: 2px; }
-  .kpi-note { white-space: normal; }
 }
 .panel-body { padding: 0 18px 18px; }
 .panel-body.flush { padding: 0; }
@@ -157,11 +156,22 @@ button, input, select { font: inherit; color: inherit; }
 .seg button { border: 0; background: transparent; color: var(--text-2); padding: 5px 11px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 500; cursor: pointer; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .seg button:hover { color: var(--text); }
 .seg button.on { background: rgba(162, 164, 255, 0.16); color: #e4e4ff; box-shadow: inset 0 0 0 1px rgba(162, 164, 255, 0.28); }
-.tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--line); padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
+.tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--line); padding: 0 16px; overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs button { border: 0; background: none; padding: 12px 0 11px; color: var(--text-2); font-weight: 500; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; flex: none; }
 .tabs button:hover { color: var(--text); }
 .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+/* Sideways scrollers (tables, tab rows, the phone nav) fade at each edge that
+   hides more, as wide as what is hidden up to 40px: each fade runs over the
+   first or last 40px of the scroll. With nothing to scroll the timeline is
+   inactive and nothing fades. */
+@property --fade-l { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --fade-r { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@keyframes fade-l { from { --fade-l: 0px; } to { --fade-l: 40px; } }
+@keyframes fade-r { from { --fade-r: 40px; } to { --fade-r: 0px; } }
+.table-wrap, .tabs, .nav { mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent); animation: fade-l linear both, fade-r linear both; animation-timeline: scroll(self inline); animation-range: 0 40px, calc(100% - 40px) 100%; }
+/* The desktop nav never scrolls, and a mask would clip its focus rings. */
+@media (min-width: 861px) { .nav { mask-image: none; } }
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); font-size: 12.5px; font-weight: 500; cursor: pointer; }
 .btn:hover { border-color: rgba(162, 164, 255, 0.45); color: var(--text); }
 .btn.primary { background: var(--accent-strong); border-color: transparent; }
@@ -177,30 +187,45 @@ button, input, select { font: inherit; color: inherit; }
 @media (hover: none) { .chart-tools { opacity: 1; } }
 .head-right { display: flex; align-items: flex-start; gap: 10px; }
 
-/* ---------- KPIs (Nado-style, no boxes) ---------- */
+/* ---------- KPIs: separate cards, the sparkline full-bleed at the bottom ---------- */
 .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
 .kpis.k4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.kpis.k5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .kpis.k7 { grid-template-columns: repeat(7, minmax(0, 1fr)); }
-@media (max-width: 1100px) { .kpis, .kpis.k5, .kpis.k7 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .kpis, .kpis.k4, .kpis.k5, .kpis.k7 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Rows are always full: six cards go 3 + 3, then 2 + 2 + 2; seven go 4 + 4
+   and then 2 + 2 + 2 + 2, the first card taking two cells. */
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpis.k7 { grid-template-columns: repeat(4, minmax(0, 1fr)); } .kpis.k7 > :first-child { grid-column: span 2; } }
+@media (max-width: 640px) { .kpis, .kpis.k4, .kpis.k7 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .kpi { padding: 16px 18px 0; min-width: 0; position: relative; background: var(--surface); border-radius: var(--radius); box-shadow: var(--card-edge); overflow: hidden; display: flex; flex-direction: column; }
 .kpi:not(:has(.spark)) { padding-bottom: 16px; }
-.kpi-label { color: var(--text-2); font-size: 13px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+/* Labels and notes wrap rather than cut; the info tip follows the label's last word. */
+.kpi-label { color: var(--text-2); font-size: 13px; line-height: 18px; text-wrap: balance; }
+.kpi-label .info-tip { margin-left: 2px; vertical-align: -1px; }
 .kpi-value { font-size: 28px; font-weight: 400; letter-spacing: -0.03em; margin-top: 8px; white-space: nowrap; line-height: 1.1; }
-.kpi-row { display: flex; align-items: baseline; gap: 6px; margin-top: 6px; min-height: 18px; font-size: 12px; }
-.kpi-row { flex-wrap: wrap; row-gap: 2px; }
-.kpi-note { color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-basis: 100%; min-width: 0; }
-.kpi-basis { color: var(--text-3); }
+.kpi-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin-top: 6px; min-height: 18px; font-size: 12px; }
+.kpi-note { color: var(--text-3); font-size: 12px; flex-basis: 100%; min-width: 0; text-wrap: balance; }
+/* What a KPI's change compares with. */
+.kpi-basis { color: var(--text-3); font-size: 11px; margin-left: -4px; white-space: nowrap; flex: none; }
 .kpi .spark { height: 44px; margin: auto -18px 0; padding-top: 10px; }
 .delta { font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
 .delta.up { color: var(--long); }
 .delta.down { color: var(--short); }
 .delta.flat { color: var(--text-3); }
-.info-tip { display: inline-flex; width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--text-3); color: var(--text-3); font-size: 9px; align-items: center; justify-content: center; cursor: help; }
+.info-tip { display: inline-flex; flex: none; width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--text-3); color: var(--text-3); font-size: 9px; align-items: center; justify-content: center; cursor: help; }
 
 /* ---------- tables ---------- */
 .table-wrap { overflow-x: auto; }
+/* Without scroll timelines (the edge fade above), a shade marks each edge that
+   hides columns instead: the covers scroll with the table (local) and hide the
+   shades (fixed to the box) at either end, so a table that fits shows none. */
+@supports not (animation-timeline: scroll()) {
+  .table-wrap {
+    background:
+      linear-gradient(to right, var(--surface) 45%, transparent) left / 44px 100% no-repeat local,
+      linear-gradient(to left, var(--surface) 45%, transparent) right / 44px 100% no-repeat local,
+      linear-gradient(to right, rgba(0, 0, 0, 0.6), transparent) left / 20px 100% no-repeat scroll,
+      linear-gradient(to left, rgba(0, 0, 0, 0.6), transparent) right / 20px 100% no-repeat scroll;
+  }
+}
 table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
 .t th { position: sticky; top: 0; background: var(--surface); text-align: left; font-weight: 400; font-size: 12px; color: var(--text-3); padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; user-select: none; }
 .t th.n, .t td.n { text-align: right; }
@@ -325,7 +350,11 @@ tr.inactive td { opacity: 0.5; }
 .doc { font-size: 13.5px; color: var(--text-2); line-height: 1.6; padding: 0 16px 16px; }
 .doc code { font-family: var(--mono); font-size: 12px; color: var(--text); background: rgba(255, 255, 255, 0.05); padding: 1px 4px; border-radius: 3px; }
 .doc h3 { color: var(--text); font-size: 13.5px; margin: 16px 0 6px; }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+/* The edge fades only follow scrolling, so they are not stopped. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
+  :not(.table-wrap, .tabs, .nav), ::before, ::after { animation: none !important; }
+}
 /* panels whose body scrolls inside the row height set by a sibling */
 .panel.fill { display: flex; flex-direction: column; }
 .panel.fill > .scroll { flex: 1 1 0; min-height: 0; overflow: auto; }
@@ -501,8 +530,6 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .pager { align-items: center; }
 .pager-ctl { display: inline-flex; align-items: center; gap: 10px; color: var(--text-2); }
 
-/* What a KPI's change compares with. */
-.kpi-basis { color: var(--text-3); font-size: 11px; margin-left: -4px; white-space: nowrap; flex: none; }
 /* A trend chart on a window of its own: one click back to the page window. */
 .trend-win { display: inline-flex; align-items: center; gap: 6px; }
 .trend-reset { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 11.5px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }

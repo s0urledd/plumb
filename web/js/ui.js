@@ -1,5 +1,6 @@
 // Small UI components rendered as HTML strings (every dynamic value goes
-// through esc) plus the watchlist store and market colour assignment.
+// through esc) plus the watchlist store, market colour assignment and the
+// sideways-scrolling nav and tab strips.
 import { esc, short, num, usd, pct, deltaHtml, signClass } from './format.js';
 
 export const ICON = {
@@ -171,3 +172,14 @@ export function mergeByAsset(rows, fields) {
   }
   return [...byName.values()];
 }
+
+// --- sideways strips: on narrow screens the nav and tab rows scroll sideways ------------------
+// The current page's link, and a tab row's open tab when the row first renders,
+// are scrolled to the middle so neither sits off-screen (the edge fades are CSS).
+const nav = document.querySelector('.nav'), seen = new WeakSet();
+const centre = (strip, item) => { if (item && strip.scrollWidth > strip.clientWidth) strip.scrollTo({ left: strip.scrollLeft + item.getBoundingClientRect().left - strip.getBoundingClientRect().left - (strip.clientWidth - item.offsetWidth) / 2 }); };
+new MutationObserver(() => centre(nav, nav.querySelector('.active'))).observe(nav, { subtree: true, attributeFilter: ['class'] });
+new MutationObserver(() => document.querySelectorAll('.tabs').forEach(t => { if (!seen.has(t)) { seen.add(t); centre(t, t.querySelector('.on')); } })).observe(document.getElementById('view'), { childList: true, subtree: true });
+// Only a width change can turn the nav into a strip; phones also fire height-only resizes as the URL bar hides.
+let width = innerWidth;
+window.addEventListener('resize', () => { if (innerWidth !== width) { width = innerWidth; centre(nav, nav.querySelector('.active')); } });
