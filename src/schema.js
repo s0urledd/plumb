@@ -54,7 +54,10 @@ const evColumns = `
 // Flags on ev rows.
 export const FLAG = { ON_BOOK: 1, FORCE_CLOSE: 2, UNLINKED: 4, WITHOUT_PAYMENT: 8 };
 
-const revenueColumns = REVENUE_COLUMNS.map(c => `${c} Int64 DEFAULT 0`).join(', ');
+// Amounts are Int64; the count of unsplit liquidations is a count like the others (a UInt64
+// count unioned with an Int64 rollup column becomes a Variant that sum() rejects).
+const revenueType = c => (c === 'liq_unsplit' ? 'UInt32' : 'Int64');
+const revenueColumns = REVENUE_COLUMNS.map(c => `${c} ${revenueType(c)} DEFAULT 0`).join(', ');
 
 // Version 3 adds the reducing-fee split and the liquidation shares
 // (rollup.js carries over the hours they do not change).
@@ -124,7 +127,7 @@ export const DDL = [
     computed_at DateTime64(3, 'UTC')
   ) ENGINE = ReplacingMergeTree(computed_at) ORDER BY (hour, market)`,
   // Added in rollup version 3; rows rolled before read 0 until rolled again.
-  `ALTER TABLE agg_market_hour ${REVENUE_COLUMNS.map(c => `ADD COLUMN IF NOT EXISTS ${c} Int64 DEFAULT 0`).join(', ')}`,
+  `ALTER TABLE agg_market_hour ${REVENUE_COLUMNS.map(c => `ADD COLUMN IF NOT EXISTS ${c} ${revenueType(c)} DEFAULT 0`).join(', ')}`,
 
   `CREATE TABLE IF NOT EXISTS agg_hour (
     hour DateTime('UTC'),

@@ -189,7 +189,8 @@ test('the market rollup has every aggregate column; an existing table gains the 
   const create = DDL.find(s => s.includes('CREATE TABLE IF NOT EXISTS agg_market_hour'));
   for (const c of columns(MARKET).split(', ')) assert.match(create, new RegExp(`[\\s(,]${c} `), c);
   const alter = DDL.find(s => s.startsWith('ALTER TABLE agg_market_hour'));
-  for (const c of REVENUE_COLUMNS) assert.ok(alter.includes(`ADD COLUMN IF NOT EXISTS ${c} Int64 DEFAULT 0`), c);
+  // Amounts are Int64; the unsplit count is a UInt32 like the other counts.
+  for (const c of REVENUE_COLUMNS) assert.ok(alter.includes(`ADD COLUMN IF NOT EXISTS ${c} ${c === 'liq_unsplit' ? 'UInt32' : 'Int64'} DEFAULT 0`), c);
   const ran = [];
   await migrate({ database: 'perpl', exec: async sql => { ran.push(sql); } });
   assert.ok(ran.indexOf(alter) > ran.indexOf(create), 'the table exists before it is altered');
