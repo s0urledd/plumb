@@ -63,7 +63,7 @@ export function mount(el, { params, query, setQuery }) {
       kpi({ label: 'Liquidated', value: usd(row.liquidated), note: `${int(row.liquidations)} events` })
     ].join('');
     const pts = s.points.filter(x => x.close !== null);
-    $('c-meta').textContent = `${s.meta.bucket} candles from fills · UTC${showLevels && levels?.levels?.length ? ' · bands: liquidation levels' : ''}`;
+    $('c-meta').textContent = `${s.meta.bucket} candles from fills · UTC${!showLevels || !levels ? '' : levels.levels.some(l => Math.abs((l.lo + l.hi) / 2 / num(levels.mark) - 1) <= 0.04) ? ' · bands: liquidation levels' : ' · no liquidation levels within 4%'}`;
     const node = $('candles'); node.innerHTML = '';
     // No volume in the window (an inactive market carries its last close): say so instead of a flat line.
     if (!pts.length || !s.points.some(x => num(x.volume) > 0)) node.innerHTML = empty(row.active === false ? 'This market is not open for trading' : 'No trades in this window');
