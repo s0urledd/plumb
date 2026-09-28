@@ -33,6 +33,8 @@ test('API reports syncing before bootstrap and serves snapshot-pinned data after
   const early = await get('/api/v1/overview');
   assert.equal(early.status, 503);
   assert.equal(early.body.snapshot.status, 'syncing');
+  // Market views that need contract state say so too, rather than "not found".
+  for (const path of ['/api/v1/markets/1/liq-levels', '/api/v1/markets/1/entries']) assert.equal((await get(path)).body.error, 'SYNCING', path);
   assert.equal((await get('/api/v1/health')).status, 200);
   await collector.bootstrap('test');
   await collector.backfillHistory();
