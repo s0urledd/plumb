@@ -515,6 +515,18 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 
 /* ========== page: markets (market.js, markets.js) ========== */
 /* markets rules */
+/* Market KPI notes carry two figures ("$4.6M bought · $4.8M sold"): they wrap rather than lose one. */
+.m-kpis .kpi-note { white-space: normal; }
+/* Price and volume: the chart takes the height the Positioning panel gives the
+   row, so the card has no empty space under it; contain keeps the canvas from
+   holding the row open once that panel shrinks. */
+.panel.m-price { display: flex; flex-direction: column; }
+.m-price > .panel-body { flex: 1; display: flex; flex-direction: column; }
+.m-price .chart { flex: 1 1 auto; height: auto; min-height: 360px; contain: size; }
+/* Only a message (no trades): no reserved chart height when the panel stands alone. */
+.m-price .chart:has(> .empty-state) { min-height: 0; contain: none; }
+/* A small unit after a head figure ("in profit", "per 8h"). */
+.head-value .m-unit { margin-left: 6px; font-size: 13px; color: var(--text-3); letter-spacing: 0; }
 /* ========== end page: markets ========== */
 
 /* ========== page: traders (traders.js, wallet.js, compare.js) ========== */
