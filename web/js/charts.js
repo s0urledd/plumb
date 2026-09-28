@@ -4,7 +4,7 @@
 import { usd, compact, dateTime, date, num, esc } from './format.js';
 
 const T = {
-  text: 'rgba(224,225,255,0.70)', faint: 'rgba(255,255,255,0.42)', grid: 'rgba(255,255,255,0.05)', axis: 'rgba(255,255,255,0.10)',
+  text: 'rgba(224,225,255,0.70)', faint: 'rgba(255,255,255,0.42)', grid: 'rgba(255,255,255,0.045)', axis: 'rgba(255,255,255,0.10)',
   accent: '#a2a4ff', long: '#81c784', short: '#f65a6e', tooltip: '#1c1b20', border: 'rgba(255,255,255,0.10)', surface: '#121113', font: 'Geist, ui-sans-serif, system-ui, sans-serif'
 };
 export const COLORS = T;
@@ -89,8 +89,12 @@ const timeAxis = (times, bucketSeconds) => {
 const niceCeil = v => { const p = 10 ** Math.floor(Math.log10(v)); return [1, 2, 2.5, 5, 10].map(k => k * p).find(x => x >= v); };
 // Axis money: $1.5M, $900K, $0.
 export const usdAxis = v => { const n = Number(v); if (!n) return '$0'; const a = Math.abs(n); const [k, u] = a >= 1e9 ? [1e9, 'B'] : a >= 1e6 ? [1e6, 'M'] : a >= 1e3 ? [1e3, 'K'] : [1, '']; const x = a / k; return `${n < 0 ? '-' : ''}$${x >= 100 || Number.isInteger(x) ? Math.round(x) : x.toFixed(1).replace(/\.0$/, '')}${u}`; };
-const valueAxis = fmt => ({ type: 'value', splitNumber: 3, axisLabel: { color: T.faint, formatter: fmt, margin: 10, fontSize: 10.5 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.045)', type: [3, 4] } }, axisLine: { show: false }, axisTick: { show: false } });
-const row = (color, name, value) => `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7"><span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:7px"></span>${esc(name)}</span><b style="font-weight:500;font-variant-numeric:tabular-nums">${value}</b></div>`;
+const SPLIT = { lineStyle: { color: T.grid, type: [3, 4] } };
+const valueAxis = fmt => ({ type: 'value', splitNumber: 3, axisLabel: { color: T.faint, formatter: fmt, margin: 10, fontSize: 10.5 }, splitLine: SPLIT, axisLine: { show: false }, axisTick: { show: false } });
+// Tooltip rows carry the same dot as the legends.
+const row = (color, name, value) => `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7"><span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:7px;vertical-align:1px"></span>${esc(name)}</span><b style="font-weight:500;font-variant-numeric:tabular-nums">${value}</b></div>`;
+// Rounds the outer end of each stack: per bucket, the last series with a value there.
+const capped = (datas, radius) => { const top = (datas[0] ?? []).map((_, i) => datas.findLastIndex(d => num(d[i]))); return datas.map((d, s) => d.map((v, i) => (s === top[i] ? { value: v, itemStyle: { borderRadius: radius } } : v))); };
 // The last bucket while its period is still running: its bar is drawn faded
 // and its tooltip says so, so a half-filled hour does not read as a drop.
 function partialAt(times, bucketSeconds) {
@@ -111,7 +115,8 @@ function tooltip(fmt, bucketSeconds, { total = false, exclude = null, partial = 
     const head = `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(t) : dateTime(t) + ' UTC'}${running}</div>`;
     const rows = list.filter(p => p.value !== null && p.value !== undefined && p.value !== 0 && p.value !== '-').sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 10);
     const sum = list.reduce((a, p) => a + (num(p.value) ?? 0), 0);
-    const foot = [total && list.length > 1 ? row('transparent', 'Total', fmt(sum)) : '', extra && extra.value !== null && extra.value !== undefined ? row('#ffffff', extra.seriesName, fmt(extra.value)) : ''].join('');
+    const ev = Array.isArray(extra?.value) ? extra.value[1] : extra?.value; // a drawn running total is [index, total, previous]
+    const foot = [total && rows.length > 1 ? row('transparent', 'Total', fmt(sum)) : '', ev !== null && ev !== undefined ? row('#ffffff', extra.seriesName, fmt(ev)) : ''].join('');
     return head + rows.map(p => row(p.color, p.seriesName, fmt(p.value))).join('') + (foot ? `<div style="border-top:1px solid ${T.border};margin-top:4px;padding-top:4px">${foot}</div>` : '');
   };
 }
@@ -135,6 +140,18 @@ function zoomOptions(xAxisIndex = 0) {
   ];
 }
 
+// A running total drawn on the bars' own axis, one segment per period: flat
+// through the gaps and climbing across that period's bar, so the line never
+// moves before the bar it adds and zooming keeps the two aligned.
+const runningTotal = (total, barMax) => ({
+  name: CUMULATIVE, type: 'custom', yAxisIndex: 1, z: 5, data: total.map((v, i) => [i, v, i ? total[i - 1] : 0]), encode: { x: 0, y: 1 }, itemStyle: { color: '#ffffff' },
+  renderItem: (_, api) => {
+    const slot = api.size([1, 0])[0], half = Math.min(barMax, slot * 0.7) / 2; // the bar's width at a 30 % category gap
+    const [x, from] = api.coord([api.value(0), api.value(2)]), to = api.coord([api.value(0), api.value(1)])[1];
+    return { type: 'polyline', shape: { points: [[x - slot / 2, from], [x - half, from], [x + half, to], [x + slot / 2, to]] }, style: { stroke: 'rgba(255,255,255,0.8)', lineWidth: 1.5, fill: null, lineJoin: 'round' } };
+  }
+});
+
 // Stacked bars over time (one series per market, colour follows the market).
 // cumulative: a running total of all series as a line on a right-hand axis.
 // zoom: a range slider under the chart.
@@ -144,6 +161,7 @@ export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v
   let run = 0;
   const total = cumulative ? times.map((_, i) => (run += series.reduce((a, s) => a + (num(s.data[i]) || 0), 0))) : null;
   const partial = partialAt(times, bucketSeconds);
+  const data = capped(series.map(s => s.data), [3, 3, 0, 0]);
   chart.setOption({
     ...base(),
     grid: { ...base().grid, right: cumulative ? 8 : 12, bottom: zoom ? 30 : 6 },
@@ -153,8 +171,8 @@ export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { total: true, exclude: CUMULATIVE, partial }) },
     dataZoom: zoom ? zoomOptions() : undefined,
     series: [
-      ...series.map((s, i) => ({ name: s.name, type: 'bar', stack: 'a', data: fade(s.data, partial), itemStyle: { color: s.color, borderRadius: i === series.length - 1 ? [3, 3, 0, 0] : 0, borderColor: T.surface, borderWidth: series.length > 1 ? 0.5 : 0 }, barMaxWidth: 20, barCategoryGap: '30%', emphasis: { focus: 'series' } })),
-      ...(cumulative ? [{ name: CUMULATIVE, type: 'line', yAxisIndex: 1, data: total, symbol: 'none', smooth: 0.2, lineStyle: { color: 'rgba(255,255,255,0.8)', width: 1.5 }, itemStyle: { color: '#ffffff' }, z: 5 }] : [])
+      ...series.map((s, i) => ({ name: s.name, type: 'bar', stack: 'a', data: fade(data[i], partial), itemStyle: { color: s.color, borderColor: T.surface, borderWidth: series.length > 1 ? 0.5 : 0 }, barMaxWidth: 20, barCategoryGap: '30%', emphasis: { focus: 'series' } })),
+      ...(cumulative ? [runningTotal(total, 20)] : [])
     ]
   }, true);
 }
@@ -199,7 +217,7 @@ export function signedBars(el, { times, values, bucketSeconds, name = 'Value', f
   chart.setOption({
     ...base(), xAxis, yAxis: valueAxis(yFmt),
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { partial }) },
-    series: [{ name, type: 'bar', data: fade(values.map(v => ({ value: v, itemStyle: { color: (num(v) ?? 0) >= 0 ? T.long : T.short, borderRadius: (num(v) ?? 0) >= 0 ? [2, 2, 0, 0] : [0, 0, 2, 2] } })), partial), barMaxWidth: 18 }]
+    series: [{ name, type: 'bar', data: fade(values.map(v => ({ value: v, itemStyle: { color: (num(v) ?? 0) >= 0 ? T.long : T.short, borderRadius: (num(v) ?? 0) >= 0 ? [3, 3, 0, 0] : [0, 0, 3, 3] } })), partial), barMaxWidth: 18 }]
   }, true);
 }
 
@@ -215,8 +233,8 @@ export function twoSided(el, { times, up, down, net = 'Net', bucketSeconds, fmt 
     legend: { show: false, data: [up.name, down.name, net] },
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { partial }) },
     series: [
-      { name: up.name, type: 'bar', stack: 's', data: fade(upData, partial), itemStyle: { color: up.color ?? T.long, borderRadius: [2, 2, 0, 0] }, barMaxWidth: 18 },
-      { name: down.name, type: 'bar', stack: 's', data: fade(downData, partial), itemStyle: { color: down.color ?? T.short, borderRadius: [0, 0, 2, 2] }, barMaxWidth: 18 },
+      { name: up.name, type: 'bar', stack: 's', data: fade(upData, partial), itemStyle: { color: up.color ?? T.long, borderRadius: [3, 3, 0, 0] }, barMaxWidth: 18 },
+      { name: down.name, type: 'bar', stack: 's', data: fade(downData, partial), itemStyle: { color: down.color ?? T.short, borderRadius: [0, 0, 3, 3] }, barMaxWidth: 18 },
       { name: net, type: 'line', data: upData.map((v, i) => v + downData[i]), symbol: 'none', lineStyle: { color: '#ffffff', width: 1.25, opacity: 0.75 }, itemStyle: { color: '#ffffff' }, z: 5 }
     ]
   }, true);
@@ -254,20 +272,29 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
   const peak = Math.max(1, ...near.map(b => b.n));
   // Bands under 5 % of the largest are left out: the chart shows where liquidations cluster, not every position.
   const bands = near.filter(b => b.n >= peak * 0.05);
-  // Amounts on the three largest bands that are at least 1 % of price apart.
+  // Amounts on at most three bands at least 1 % of price apart: the largest of
+  // each side first, so neither side goes unlabelled, then the next largest.
+  const bySize = [...bands].sort((a, c) => c.n - a.n), leads = bySize.filter(b => bySize.find(o => o.side === b.side) === b);
   const labelled = new Set();
-  for (const b of [...bands].sort((a, c) => c.n - a.n)) { if (labelled.size >= 3) break; if ([...labelled].every(o => Math.abs(o.lo - b.lo) >= mark * 0.01)) labelled.add(b); }
+  for (const b of [...leads, ...bySize]) { if (labelled.size >= 3) break; if ([...labelled].every(o => Math.abs(o.lo - b.lo) >= mark * 0.01)) labelled.add(b); }
   const markArea = bands.length ? {
     silent: false,
     data: bands.map((b, i) => [{
       yAxis: b.lo, name: `band-${i}`,
       itemStyle: { color: b.side === 'long' ? T.long : T.short, opacity: 0.08 + 0.5 * (b.n / peak) ** 0.8 },
-      label: { show: labelled.has(b), position: 'insideRight', color: b.side === 'long' ? T.long : T.short, fontSize: 10.5, formatter: () => `liq ${usd(b.n)}` }
+      label: { show: false }
     }, { yAxis: b.hi }])
+  } : undefined;
+  // The amounts ride on invisible mark lines, which draw above the candles, on a backing that keeps them legible.
+  const markLine = labelled.size ? {
+    symbol: 'none', silent: true, lineStyle: { color: 'transparent' },
+    data: [...labelled].map(b => ({ yAxis: (b.lo + b.hi) / 2, label: { position: 'insideEnd', distance: 4, color: b.side === 'long' ? T.long : T.short, fontSize: 10.5, backgroundColor: 'rgba(18,17,19,0.8)', padding: [2, 5], borderRadius: 4, formatter: () => `liq ${usd(b.n)}` } }))
   } : undefined;
   const lows = ohlc.filter(Array.isArray).map(c => c[2]), highs = ohlc.filter(Array.isArray).map(c => c[3]);
   const yMin = bands.length ? Math.min(...lows, ...bands.map(b => b.lo)) : null, yMax = bands.length ? Math.max(...highs, ...bands.map(b => b.hi)) : null;
   const pad = yMin !== null ? (yMax - yMin) * 0.03 : 0;
+  // Volume ticks at zero, half and top, all round, so three labels fit its short grid.
+  const vHalf = niceCeil(Math.max(1, ...volume.map(v => num(v) ?? 0)) / 2);
   chart.off('click');
   if (onLevel) chart.on('click', p => { const i = /^band-(\d+)$/.exec(p.name ?? '')?.[1]; if (p.componentType === 'markArea' && i !== undefined) onLevel(bands[Number(i)]); });
   chart.setOption({
@@ -275,12 +302,16 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
     dataZoom: zoom ? zoomOptions([0, 1]) : undefined,
     grid: [{ left: 8, right: 12, top: 12, height: zoom ? '58%' : '64%', containLabel: true }, { left: 8, right: 12, top: zoom ? '72%' : '78%', bottom: zoom ? 30 : 6, containLabel: true }],
     xAxis: [x(0), x(1)],
-    yAxis: [{ ...valueAxis(priceFmt), scale: true, gridIndex: 0, ...(yMin !== null ? { min: yMin - pad, max: yMax + pad } : {}) }, { ...valueAxis(usdAxis), gridIndex: 1, splitNumber: 2 }],
+    yAxis: [
+      // Widened to the bands, the ends fall between round ticks: only the round ones are labelled.
+      { ...valueAxis(priceFmt), scale: true, gridIndex: 0, ...(yMin !== null ? { min: yMin - pad, max: yMax + pad, axisLabel: { ...valueAxis(priceFmt).axisLabel, showMinLabel: false, showMaxLabel: false } } : {}) },
+      { ...valueAxis(usdAxis), gridIndex: 1, min: 0, max: 2 * vHalf, interval: vHalf }
+    ],
     tooltip: { ...base().tooltip, formatter: params => { const c = params.find(p => p.seriesType === 'candlestick'); const v = params.find(p => p.seriesType === 'bar'); const t = params[0]?.axisValue; if (!c) return ''; const [o, cl, lo, hi] = c.value.slice(1); return `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(t) : dateTime(t) + ' UTC'}</div>${row('transparent', 'Open', priceFmt(o))}${row('transparent', 'High', priceFmt(hi))}${row('transparent', 'Low', priceFmt(lo))}${row('transparent', 'Close', priceFmt(cl))}${v ? row('transparent', 'Volume', usd(v.value)) : ''}`; } },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     series: [
-      { type: 'candlestick', data: ohlc, xAxisIndex: 0, yAxisIndex: 0, itemStyle: { color: T.long, color0: T.short, borderColor: T.long, borderColor0: T.short }, barMaxWidth: 10, markArea, z: 3 },
-      { type: 'bar', name: 'Volume', data: volume, xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: volColor }, barMaxWidth: 10 }
+      { type: 'candlestick', data: ohlc, xAxisIndex: 0, yAxisIndex: 0, itemStyle: { color: T.long, color0: T.short, borderColor: T.long, borderColor0: T.short }, barMaxWidth: 10, markArea, markLine, z: 3 },
+      { type: 'bar', name: 'Volume', data: volume, xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: volColor, borderRadius: [3, 3, 0, 0] }, barMaxWidth: 10 }
     ]
   }, true);
 }
@@ -293,9 +324,13 @@ export function hbars(el, { labels, values, colors, fmt = v => usd(v) }) {
     ...base(), grid: { left: 8, right: 60, top: 6, bottom: 6, containLabel: true },
     xAxis: { type: 'value', show: false }, yAxis: { type: 'category', data: labels, inverse: true, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: T.text } },
     tooltip: { ...base().tooltip, trigger: 'item', formatter: p => row(p.color, p.name, fmt(p.value)) },
-    series: [{ type: 'bar', data: values.map((v, i) => ({ value: v, itemStyle: { color: colors[i], borderRadius: [0, 2, 2, 0] } })), barMaxWidth: 14, label: { show: true, position: 'right', color: T.text, formatter: p => fmt(p.value), fontSize: 11 } }]
+    series: [{ type: 'bar', data: values.map((v, i) => ({ value: v, itemStyle: { color: colors[i], borderRadius: [0, 3, 3, 0] } })), barMaxWidth: 14, label: { show: true, position: 'right', color: T.text, formatter: p => fmt(p.value), fontSize: 11 } }]
   }, true);
 }
+
+// Width of a label in the chart font, to tell whether a legend fits on one line.
+let ruler;
+const textWidth = (s, px = 11) => { ruler ??= document.createElement('canvas').getContext('2d'); ruler.font = `${px}px ${T.font}`; return ruler.measureText(s).width; };
 
 // Mirrored bars: long exposure left of zero, short right (liquidation ladder).
 export function mirrored(el, { labels, long, short, fmt = v => usd(v) }) {
@@ -303,16 +338,19 @@ export function mirrored(el, { labels, long, short, fmt = v => usd(v) }) {
   if (!chart) return;
   const peak = Math.max(0, ...long.map(v => num(v) ?? 0), ...short.map(v => num(v) ?? 0));
   const edge = peak > 0 ? niceCeil(peak * 1.05) : 1;
+  const longName = 'Longs exposed (price down)', shortName = 'Shorts exposed (price up)';
+  // On a narrow chart the legend wraps to a second line: the bars start below it.
+  const wraps = [longName, shortName].reduce((w, n) => w + 7 + 5 + textWidth(n) + 14, 0) > el.clientWidth;
   chart.setOption({
-    ...base(), grid: { left: 8, right: 28, top: 26, bottom: 6, containLabel: true },
-    legend: { top: 0, right: 0, itemWidth: 8, itemHeight: 8, textStyle: { color: T.text }, data: ['Longs exposed (price down)', 'Shorts exposed (price up)'] },
+    ...base(), grid: { left: 8, right: 28, top: wraps ? 46 : 26, bottom: 6, containLabel: true },
+    legend: { top: 0, right: 0, icon: 'circle', itemWidth: 7, itemHeight: 7, itemGap: 14, textStyle: { color: T.text, fontSize: 11 }, data: [longName, shortName] },
     // Symmetric around zero so both sides read on the same scale.
-    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, showMinLabel: false, showMaxLabel: false, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
+    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, fontSize: 10.5, hideOverlap: true, showMinLabel: false, showMaxLabel: false, formatter: v => usdAxis(Math.abs(v)) }, splitLine: SPLIT },
     yAxis: { type: 'category', data: labels, inverse: true, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.text } },
     tooltip: { ...base().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => `<div style="color:${T.faint};margin-bottom:4px">Price moves ${ps[0].axisValue}</div>` + ps.map(p => row(p.color, p.seriesName, fmt(Math.abs(p.value)))).join('') },
     series: [
-      { name: 'Longs exposed (price down)', type: 'bar', stack: 'x', data: long.map(v => -v), itemStyle: { color: T.long, borderRadius: [2, 0, 0, 2] }, barMaxWidth: 14 },
-      { name: 'Shorts exposed (price up)', type: 'bar', stack: 'x', data: short, itemStyle: { color: T.short, borderRadius: [0, 2, 2, 0] }, barMaxWidth: 14 }
+      { name: longName, type: 'bar', stack: 'x', data: long.map(v => -v), itemStyle: { color: T.long, borderRadius: [3, 0, 0, 3] }, barMaxWidth: 14 },
+      { name: shortName, type: 'bar', stack: 'x', data: short, itemStyle: { color: T.short, borderRadius: [0, 3, 3, 0] }, barMaxWidth: 14 }
     ]
   }, true);
 }
@@ -326,7 +364,8 @@ export function flowBars(el, { times, longOpen, longClose, shortOpen, shortClose
   const n = a => a.map(v => num(v) ?? 0);
   const lo = n(longOpen), lc = n(longClose), so = n(shortOpen), sc = n(shortClose);
   const net = lo.map((v, i) => v - lc[i]); // long and short open interest move together
-  const bar = (name, data, color, stack, radius) => ({ name, type: 'bar', stack, data: fade(data, partial), itemStyle: { color, borderRadius: radius }, barMaxWidth: 18, emphasis: { focus: 'series' } });
+  const opens = capped([lo, so], [3, 3, 0, 0]), closes = capped([lc.map(v => -v), sc.map(v => -v)], [0, 0, 3, 3]);
+  const bar = (name, data, color, stack) => ({ name, type: 'bar', stack, data: fade(data, partial), itemStyle: { color }, barMaxWidth: 18, emphasis: { focus: 'series' } });
   chart.setOption({
     ...base(), xAxis: timeAxis(times, bucketSeconds), yAxis: valueAxis(v => yFmt(Math.abs(v)) === '$0' ? '$0' : `${v < 0 ? '-' : ''}${yFmt(Math.abs(v))}`),
     legend: { show: false },
@@ -338,8 +377,8 @@ export function flowBars(el, { times, longOpen, longClose, shortOpen, shortClose
         + `<div style="border-top:1px solid ${T.border};margin-top:4px;padding-top:4px">${row('#ffffff', 'Open interest change', `${net[i] > 0 ? '+' : ''}${fmt(net[i])}`)}</div>`;
     } },
     series: [
-      bar('Longs opened', lo, T.long, 'open', 0), bar('Shorts opened', so, T.short, 'open', [2, 2, 0, 0]),
-      bar('Longs closed', lc.map(v => -v), T.long + '80', 'close', 0), bar('Shorts closed', sc.map(v => -v), T.short + '80', 'close', [0, 0, 2, 2]),
+      bar('Longs opened', opens[0], T.long, 'open'), bar('Shorts opened', opens[1], T.short, 'open'),
+      bar('Longs closed', closes[0], T.long + '80', 'close'), bar('Shorts closed', closes[1], T.short + '80', 'close'),
       { name: 'Open interest change', type: 'line', data: net, symbol: 'none', lineStyle: { color: '#ffffff', width: 1.25, opacity: 0.8 }, itemStyle: { color: '#ffffff' }, z: 5 }
     ]
   }, true);
@@ -357,13 +396,13 @@ export function entryProfile(el, { bins, mark, priceFmt = v => String(v), fmt = 
   const edge = niceCeil(peak * 1.05);
   chart.setOption({
     ...base(), grid: { left: 8, right: 20, top: 8, bottom: 6, containLabel: true },
-    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, hideOverlap: true, formatter: v => usdAxis(Math.abs(v)) }, splitLine: { lineStyle: { color: T.grid } } },
-    yAxis: { type: 'category', data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.faint, hideOverlap: true, interval: i => i % 4 === 0 || Boolean(bins[i]?.edge) } }, // the mark has its own line label
+    xAxis: { type: 'value', min: -edge, max: edge, axisLabel: { color: T.faint, fontSize: 10.5, hideOverlap: true, showMinLabel: false, showMaxLabel: false, formatter: v => usdAxis(Math.abs(v)) }, splitLine: SPLIT },
+    yAxis: { type: 'category', data: labels, axisTick: { show: false }, axisLine: { lineStyle: { color: T.axis } }, axisLabel: { color: T.faint, fontSize: 10.5, hideOverlap: true, interval: i => i % 4 === 0 || Boolean(bins[i]?.edge) } }, // the mark has its own line label
     tooltip: { ...base().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => { const b = bins[ps[0].dataIndex]; const range = b.edge === 'below' ? `below ${priceFmt(b.hi)}` : b.edge === 'above' ? `above ${priceFmt(b.lo)}` : `${priceFmt(b.lo)} – ${priceFmt(b.hi)}`; return `<div style="color:${T.faint};margin-bottom:4px">Entry ${range}</div>${row(T.long, `Longs · ${b.long_count}`, fmt(b.long))}${row(T.short, `Shorts · ${b.short_count}`, fmt(b.short))}`; } },
     series: [
-      { name: 'Longs', type: 'bar', stack: 'x', data: bins.map(b => num(b.long) ?? 0), itemStyle: { color: T.long, borderRadius: [0, 2, 2, 0] }, barCategoryGap: '20%',
+      { name: 'Longs', type: 'bar', stack: 'x', data: bins.map(b => num(b.long) ?? 0), itemStyle: { color: T.long, borderRadius: [0, 3, 3, 0] }, barCategoryGap: '20%',
         markLine: markIndex < 0 ? undefined : { symbol: 'none', silent: true, label: { formatter: `Mark ${priceFmt(mark)}`, color: T.text, position: 'insideStartTop', fontSize: 11 }, lineStyle: { color: 'rgba(255,255,255,0.55)', type: 'dashed', width: 1 }, data: [{ yAxis: markIndex }] } },
-      { name: 'Shorts', type: 'bar', stack: 'x', data: bins.map(b => -(num(b.short) ?? 0)), itemStyle: { color: T.short, borderRadius: [2, 0, 0, 2] } }
+      { name: 'Shorts', type: 'bar', stack: 'x', data: bins.map(b => -(num(b.short) ?? 0)), itemStyle: { color: T.short, borderRadius: [3, 0, 0, 3] } }
     ]
   }, true);
 }
