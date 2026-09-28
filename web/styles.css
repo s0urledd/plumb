@@ -305,10 +305,9 @@ tr.inactive td { opacity: 0.5; }
 .stat { padding: 11px 16px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
 .stat:nth-child(odd) { border-right: 1px solid var(--line); }
 /* A single-column list (.one) has no second column to divide from, and the line
-   would sit on the card's edge. The attribute match covers a list that still
-   sets its column inline. */
+   would sit on the card's edge. */
 .stat-grid.one { grid-template-columns: 1fr; }
-.stat-grid.one > .stat, .stat-grid[style*="grid-template-columns:1fr"] > .stat { border-right: 0; }
+.stat-grid.one > .stat { border-right: 0; }
 .stat > span:first-child { color: var(--text-2); white-space: nowrap; }
 .stat > span:last-child { font-variant-numeric: tabular-nums; font-weight: 500; text-align: right; }
 /* On phones the label wraps and the value stays whole on one line; when the

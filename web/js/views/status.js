@@ -56,7 +56,7 @@ export function mount(el) {
       { key: 's', label: 'Short lots (events / contract)', n: true, render: x => `${esc(x.events_short)} / ${esc(x.contract_short)}` }
     ], rows: integ.open_interest }) + (integ.tvl ? `<div class="panel-foot st-tvl"><span>TVL from events ${usd(integ.tvl.events)} · contract ${usd(integ.tvl.contract)}</span>${integ.tvl.ok ? '<span class="tag good">match</span>' : '<span class="tag warn">differs</span>'}</div>` : '');
     const rec = v?.reconciliation, ver = v?.verification;
-    $('checks').innerHTML = `<div class="stat-grid" style="grid-template-columns:1fr">
+    $('checks').innerHTML = `<div class="stat-grid one">
       <div class="stat"><span>${dot(rec?.ok ? 'ok' : 'bad')} Stored positions sum to the contract's open-interest counters</span><span>${rec ? `${rec.ok ? 'OK' : 'mismatch'} · block ${esc(rec.block)}` : '—'}</span></div>
       <div class="stat"><span>${dot(ver?.ok ? 'ok' : ver?.ok === null ? 'warn' : 'bad')} Independent rescan of every account's position bitmap</span><span>${ver ? `${ver.ok ? 'OK' : 'mismatch'} · ${int(ver.accounts)} accounts · ${ver.at ? ago(ver.at / 1000) : ''}` : '—'}</span></div>
       <div class="stat"><span>${dot((v?.pnl_agreement ?? []).every(x => (x.agree ?? 0) === (x.checked ?? 0)) ? 'ok' : 'bad')} Position PnL recomputed and compared with getPositionsV2</span><span>${(v?.pnl_agreement ?? []).reduce((a, x) => a + (x.agree ?? 0), 0)} / ${(v?.pnl_agreement ?? []).reduce((a, x) => a + (x.checked ?? 0), 0)} agree</span></div>
@@ -64,7 +64,7 @@ export function mount(el) {
     const c = h.index?.decoder_checks;
     $('decoder-meta').textContent = c ? `Since the ingest started · ${int(c.logs)} logs` : 'Since the ingest started';
     if (!c) $('decoder').innerHTML = empty('Counted once the ingest has decoded new logs.');
-    else $('decoder').innerHTML = `<div class="stat-grid" style="grid-template-columns:1fr">
+    else $('decoder').innerHTML = `<div class="stat-grid one">
       <div class="stat"><span>${dot(c.unlinked ? 'warn' : 'ok')} Position events linked to their fill</span><span>${int(c.linked)} / ${int(c.userEvents)}</span></div>
       <div class="stat"><span>${dot(c.lotMismatch ? 'bad' : 'ok')} Fill size equals the position change</span><span>${int(c.lotMismatch)} mismatches</span></div>
       <div class="stat"><span>${dot(c.feeMismatch ? 'bad' : 'ok')} Fill fee equals insurance + protocol fee</span><span>${int(c.feeChecked - c.feeMismatch)} / ${int(c.feeChecked)}</span></div>
