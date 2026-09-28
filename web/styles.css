@@ -493,3 +493,10 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 /* Page-by-page tables (liquidations feed). */
 .pager { align-items: center; }
 .pager-ctl { display: inline-flex; align-items: center; gap: 10px; color: var(--text-2); }
+
+/* What a KPI's change compares with. */
+.kpi-basis { color: var(--text-3); font-size: 11px; margin-left: -4px; white-space: nowrap; flex: none; }
+/* A trend chart on a window of its own: one click back to the page window. */
+.trend-win { display: inline-flex; align-items: center; gap: 6px; }
+.trend-reset { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 11.5px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.trend-reset:hover { background: var(--accent-soft); }

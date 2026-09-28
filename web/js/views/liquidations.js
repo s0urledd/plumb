@@ -32,7 +32,7 @@ export function mount(el, { query, setQuery }) {
     const liquidated = row ? row.liquidated : h.liquidated.value, count = row ? row.liquidations : h.liquidations.value, volume = row ? row.volume : h.volume.value;
     const largest = l.largest ?? null; // the largest inside the window, from the server
     $('kpis').innerHTML = [
-      kpi({ label: `Liquidated · ${w}${row ? ` · ${row.symbol}` : ''}`, value: usd(liquidated), delta: row || w === 'all' || p.meta.previous_complete === false ? undefined : h.liquidated.change_pct, invert: true, note: `${int(count)} liquidations` }),
+      kpi({ label: `Liquidated · ${w}${row ? ` · ${row.symbol}` : ''}`, value: usd(liquidated), delta: row || w === 'all' || p.meta.previous_complete === false ? undefined : h.liquidated.change_pct, basis: 'vs prev', basisTitle: `Compared with the previous ${w}`, invert: true, note: `${int(count)} liquidations` }),
       kpi({ label: 'Share of volume', value: `${num(volume) ? (num(liquidated) / num(volume) * 100).toFixed(2) : '0.00'}%`, note: `of ${usd(volume)} traded` }),
       kpi({ label: 'ADL and force closes', value: int(h.deleverages), note: row ? 'all markets' : 'positions closed by the protocol', tip: 'PositionDeleveraged events: auto-deleveraging against a bankrupt position, or a force close at the mark price (flagged on the event).' }),
       kpi({ label: `Largest · ${w === 'all' ? 'all-time' : w}`, value: largest ? usd(largest.notional) : '—', note: largest ? `${esc(largest.symbol)} ${esc(largest.side ?? '')} · ${ago(largest.ts)}` : 'none in this window' })

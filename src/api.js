@@ -337,12 +337,25 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
     return entry;
   }
 
+  // Text files are gzipped once per version and kept: the charting library
+  // alone is 1.1 MB raw and about a third of that compressed.
+  const zipped = new Map(); // file -> { key, body }
+  const wantsGzip = (req, file, size) => /\.(html|js|css|svg|json)$/.test(file) && /\bgzip\b/.test(req.headers['accept-encoding'] ?? '') && size > 1024;
+  function gzipped(file, key, raw) {
+    const hit = zipped.get(file);
+    if (hit?.key === key) return hit.body;
+    const body = gzipSync(raw);
+    zipped.set(file, { key, body });
+    return body;
+  }
   async function serveStatic(pathname, req, res) {
     if (Object.hasOwn(VENDOR, pathname)) {
       const file = VENDOR[pathname];
       if (!file) return send(res, 404, { error: 'NOT_FOUND' });
-      const body = await readFile(file);
-      res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'public, max-age=86400, immutable', 'content-length': body.length, 'access-control-allow-origin': '*', ...SECURITY_HEADERS });
+      const raw = await readFile(file);
+      const zip = wantsGzip(req, file, raw.length);
+      const body = zip ? gzipped(file, raw.length, raw) : raw;
+      res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'public, max-age=86400, immutable', 'content-length': body.length, 'access-control-allow-origin': '*', ...(zip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}), ...SECURITY_HEADERS });
       return res.end(body);
     }
     const relative = pathname === '/' ? 'index.html' : normalize(pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
@@ -356,8 +369,8 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
       const etag = `W/"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}"`;
       if (req.headers['if-none-match'] === etag) { res.writeHead(304, { etag, 'cache-control': 'no-cache' }); return res.end(); }
       const raw = await readFile(file);
-      const zip = /\.(html|js|css|svg|json)$/.test(file) && /\bgzip\b/.test(req.headers['accept-encoding'] ?? '') && raw.length > 1024;
-      const body = zip ? gzipSync(raw) : raw;
+      const zip = wantsGzip(req, file, raw.length);
+      const body = zip ? gzipped(file, etag, raw) : raw;
       const csp = extname(file) === '.html' ? CSP : extname(file) === '.svg' ? SVG_CSP : null;
       res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag, 'content-length': body.length, ...(zip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}), ...SECURITY_HEADERS, ...(csp ? { 'content-security-policy': csp } : {}) });
       res.end(body);
