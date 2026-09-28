@@ -9,6 +9,18 @@ import { lineChart } from '../charts.js';
 const ERRORS = { INVALID_ACCOUNT: 'not a full address or account ID', NOT_FOUND: 'no Perpl account', ACCOUNT_NOT_FOUND: 'no Perpl account' };
 
 const COLORS = [SLOT_HEX[0], SLOT_HEX[1], SLOT_HEX[2], SLOT_HEX[3], SLOT_HEX[4]];
+// A wallet keeps its colour while it stays on the page, so removing one does not
+// recolour the rest; a new one takes the first colour free (kept for the tab).
+let slots = {};
+try { slots = JSON.parse(sessionStorage.getItem('ps.compare.colors') || '{}'); } catch { slots = {}; }
+function colourKeys(keys) {
+  const next = {}, taken = new Set();
+  for (const k of keys) if (COLORS[slots[k]] && !taken.has(slots[k])) { next[k] = slots[k]; taken.add(slots[k]); }
+  for (const k of keys) if (next[k] === undefined) { next[k] = COLORS.findIndex((_, i) => !taken.has(i)); taken.add(next[k]); }
+  slots = next;
+  try { sessionStorage.setItem('ps.compare.colors', JSON.stringify(slots)); } catch { /* storage unavailable */ }
+  return k => COLORS[slots[k]];
+}
 
 export function mount(el, { query, navigate }) {
   let keys = (query.get('w') ?? '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 5);
@@ -31,11 +43,11 @@ export function mount(el, { query, navigate }) {
     }
     const r = await get(`compare?wallets=${keys.map(encodeURIComponent).join(',')}`, { maxAge: 5000 });
     if (!alive) return;
-    const ws = r.wallets;
+    const ws = r.wallets, colour = colourKeys(ws.map(w => w.key));
     $('chart').closest('.panel').hidden = false;
     // Each wallet keeps its colour: a dot in its header, on each of its values on phones, and its chart line.
     const remove = w => `<button class="icon-btn" data-action="remove" data-key="${esc(w.key)}" title="Remove">${ICON.x}</button>`;
-    const col = (w, i) => w.error ? `<th class="n"><span class="cmp-w"><span class="neg">${esc(short(w.key))}</span>${remove(w)}</span><div class="sub">${esc(ERRORS[w.error] ?? 'not found')}</div></th>` : `<th class="n" style="--c:${COLORS[i]}"><span class="cmp-w"><i></i><a class="mono" href="#/wallet/${esc(w.account.address)}">${esc(short(w.account.address))}</a>${remove(w)}</span><div class="sub">#${esc(w.account.id)}</div></th>`;
+    const col = w => w.error ? `<th class="n"><span class="cmp-w"><span class="neg">${esc(short(w.key))}</span>${remove(w)}</span><div class="sub">${esc(ERRORS[w.error] ?? 'not found')}</div></th>` : `<th class="n" style="--c:${colour(w.key)}"><span class="cmp-w"><i></i><a class="mono" href="#/wallet/${esc(w.account.address)}">${esc(short(w.account.address))}</a>${remove(w)}</span><div class="sub">#${esc(w.account.id)}</div></th>`;
     const rows = [
       ['Account value', w => usd(w.portfolio?.account_value)],
       ['Open positions', w => int(w.positions?.length ?? 0)],
@@ -64,14 +76,18 @@ export function mount(el, { query, navigate }) {
     ];
     // On phones each metric's label sits over its values, up to three a row
     // (four or five wallets take two rows), so no wallet is off-screen.
-    $('table').innerHTML = `<div class="table-wrap"><table class="t compact cmp" style="--cols:${ws.length > 3 ? Math.ceil(ws.length / 2) : ws.length}"><thead><tr><th class="cmp-m">Metric</th>${ws.map(col).join('')}</tr></thead><tbody>${rows.map(([label, f]) => `<tr><td class="muted cmp-m">${label}</td>${ws.map((w, i) => (w.error ? '<td class="n faint">—</td>' : `<td class="n" style="--c:${COLORS[i]}">${f(w)}</td>`)).join('')}</tr>`).join('')}</tbody></table></div>`;
+    // Round-trip rows (win rate to weakest market) of a long history come from its
+    // latest events, as the wallet page says; the totals use every event.
+    const cut = ws.filter(w => !w.error && w.performance?.based_on?.truncated);
+    const note = cut.length ? `<div class="panel-foot"><span>Rows from win rate to weakest market use only the latest events of a long history: ${cut.map(w => `${esc(short(w.account.address))} ${int(w.performance.based_on.events)} of ${int(w.performance.based_on.total_events)} events${w.performance.based_on.since ? ` (since ${date(w.performance.based_on.since)})` : ''}`).join(' · ')}. Totals use full history.</span></div>` : '';
+    $('table').innerHTML = `<div class="table-wrap"><table class="t compact cmp" style="--cols:${ws.length > 3 ? Math.ceil(ws.length / 2) : ws.length}"><thead><tr><th class="cmp-m">Metric</th>${ws.map(col).join('')}</tr></thead><tbody>${rows.map(([label, f]) => `<tr><td class="muted cmp-m">${label}</td>${ws.map(w => (w.error ? '<td class="n faint">—</td>' : `<td class="n" style="--c:${colour(w.key)}">${f(w)}</td>`)).join('')}</tr>`).join('')}</tbody></table></div>${note}`;
     // Cumulative PnL on a shared daily axis.
     const full = await Promise.all(ws.map(w => (w.error ? null : get(`wallets/${encodeURIComponent(w.account.address)}`, { maxAge: 10000 }).catch(() => null))));
     if (!alive) return;
     // Every calendar day from the first to the last, so quiet days keep their width.
     const seen = full.flatMap(f => (f?.pnl_daily ?? []).map(p => p.t)), days = [];
     if (seen.length) for (let t = Math.min(...seen); t <= Math.max(...seen); t += 86400) days.push(t);
-    const series = full.map((f, i) => { if (!f) return null; const map = new Map(f.pnl_daily.map(p => [p.t, num(p.cumulative)])); let last = null; return { name: short(f.account.address), color: COLORS[i], data: days.map(t => { if (map.has(t)) last = map.get(t); return last; }) }; }).filter(Boolean);
+    const series = full.map((f, i) => { if (!f) return null; const map = new Map(f.pnl_daily.map(p => [p.t, num(p.cumulative)])); let last = null; return { name: short(f.account.address), color: colour(ws[i].key), data: days.map(t => { if (map.has(t)) last = map.get(t); return last; }) }; }).filter(Boolean);
     $('legend').innerHTML = series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('');
     if (days.length) lineChart($('chart'), { times: days, series, bucketSeconds: 86400, fmt: v => usd(v, { sign: true }), area: false }); else $('chart').innerHTML = empty('No realized PnL yet');
   }
