@@ -1,14 +1,6 @@
 # Plumb
 
-**Real-time analytics, risk data and alerts for Perpl on Monad.**
-
-Plumb tracks every trade, position and liquidation on
-[Perpl](https://perpl.xyz), the onchain perpetuals exchange on Monad, as it
-happens: a trade shows on the live tape as soon as its block is proposed,
-before it is final, and the finalized figures follow about a second later.
-Monad's speed and Perpl's fully onchain order book make that possible. It is
-built from raw exchange events and contract state, indexed directly from
-Monad, with no third-party indexer or Perpl API in the data path.
+**Real-time analytics, risk data and alerts for [Perpl](https://perpl.xyz) on Monad.**
 
 **[plumb.huginn.tech](https://plumb.huginn.tech)** · [API](docs/api.md) ·
 [Features](docs/features.md) · [Methodology](docs/methodology.md)
@@ -18,168 +10,188 @@ Monad, with no third-party indexer or Perpl API in the data path.
 
 ![Plumb overview](docs/images/overview.png)
 
-## Features
+Perpl, the onchain perpetuals exchange on Monad, keeps every trade, position
+and order onchain, but only as raw events and contract state. Plumb turns
+them into protocol totals, wallet histories and liquidation risk. It tracks
+every trade, position change, liquidation and deposit since launch, plus the
+contract's live state, and runs about a second behind the chain. Its data is
+also available through a public API.
 
-**Protocol.** Volume, open interest, TVL, fees and revenue, active traders,
-flows and liquidations for 24h, 7d, 30d and all time, with time series by
-market. A markets table with funding, long/short skew and taker flow, and a
-page per market. Live trades appear within a second of their block.
+It is for Perpl traders, and for builders who want the same data in their own
+tools.
 
-**Wallets and traders.** Search any address for its open positions and
-liquidation prices, trade history and realized PnL, win rate, profit factor,
-drawdown, streaks, hold times and rank against every other trader.
-Leaderboards for any window, and cohorts that show who holds the open
-interest, from whales to small accounts and from top winners to the rekt.
+## What it does
 
-**Risk.** Perpl keeps its order book and positions onchain, so risk is
-measured, not modelled: notional at risk for a market-wide move, the
-liquidation ladder, bad debt against each insurance fund, how much of it the
-book can absorb, and a stress test.
-
-**Alerts.** A Telegram bot watches your wallets: every position change,
-the live distance to liquidation, and warnings at the levels you choose.
-It also sends large liquidations, large trades and funding flips, from the
-same events as the dashboard.
+- **Protocol.** Volume, open interest, TVL, fees, traders, deposits and
+  withdrawals, and liquidations for 24h, 7d, 30d or all time, with charts by
+  market and a live trade tape.
+- **Markets.** A page per market: candles with the price levels where open
+  positions would be liquidated, position flow, entry prices, funding, the
+  order book and the largest positions.
+- **Wallets and traders.** Search any address for open positions and
+  liquidation prices, trade history, PnL, win rate, profit factor, drawdown,
+  hold times and rank. Also leaderboards, cohorts by account size and track
+  record, recent position changes of the top 50 traders by PnL, and
+  side-by-side comparison.
+- **Risk.** What a market-wide price move would liquidate and how much of
+  that the order book could absorb, bad debt against each insurance fund, and
+  a stress test. Perpl keeps positions and the order book in its contract, so
+  these are worked out from the actual open positions and book depth.
+- **Alerts.** A Telegram bot, [@PlumbPerplBot](https://t.me/PlumbPerplBot),
+  for your wallets (every position change and warnings before liquidation),
+  large liquidations and trades, and funding flips.
 
 The full list is in [docs/features.md](docs/features.md).
 
 ![Wallet profile](docs/images/wallet.png)
 
-## Data and accuracy
+## Data
 
 | | |
 | --- | --- |
 | Network | Monad mainnet (chain 143) |
 | Perpl exchange | [`0x34B6552d57a35a1D042CcAe1951BD1C370112a6F`](https://monadvision.com/address/0x34B6552d57a35a1D042CcAe1951BD1C370112a6F) |
 | Collateral (AUSD) | [`0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a`](https://monadvision.com/address/0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a) |
-| History | from block 54,773,010 (11 February 2026), about 67 million events |
+| History | from block 54,773,010 (11 February 2026) |
 
-Sources, all Monad RPC:
+Plumb deploys no contract of its own; it reads Perpl's contracts on Monad
+mainnet. Two parts of it depend on Monad. Perpl can keep its whole order book
+and every position in its contract, so risk and depth are read from contract
+state instead of estimated. And with fast blocks and the node's execution
+event stream, a trade shows on the tape while its block is still being
+finalized.
+
+All Perpl data comes from a Monad node:
 - exchange events (`eth_getLogs`) over finalized blocks: fills, position
   changes, funding, liquidations, deposits and withdrawals;
 - contract state (`eth_call` through Multicall3, at a pinned block): every
-  open position, the order book, insurance funds, market parameters;
+  open position, the order book, insurance funds and market parameters;
 - the node's execution event stream, through a
   [Monode](https://github.com/monad-developers/monode) sidecar, for trades in
-  proposed blocks.
+  blocks that are not final yet (shown on the live tape, never stored).
 
-With 0.3 s blocks and the whole order book onchain, the dashboard runs about
-a second behind the chain, and its risk figures come from real positions and
-real depth.
+The market share section uses DefiLlama's figures and is labeled as such.
 
-How we know the numbers are right:
-- **The history reproduces the contract.** Open interest rebuilt from every
-  event since launch equals the contract's own counters for all 11 markets,
-  and net collateral flow equals the exchange balance to the micro-dollar
-  ([evidence](docs/evidence/integrity-2026-09-23.json), live at
-  `/api/v1/integrity`).
-- **Every trade is priced from its fill**, with fees split exactly as the
-  contract splits them.
-- **Finalized blocks only**, and every window says whether its history is
-  complete.
-- **24 h volume matches Perpl's own figure** within 0.1 %.
+Accuracy:
+- open interest and TVL rebuilt from every event since launch are compared
+  with the contract's own counters (`/api/v1/integrity` and the
+  [status page](https://plumb.huginn.tech/#/status));
+- every trade uses the price, size and fee of the fill that settled it;
+- only finalized blocks count, and a window is marked partial until its
+  history is complete;
+- 24h volume was within 0.1% of Perpl's own figure in checks on 21, 23 and
+  28 September 2026.
 
-Details in [methodology](docs/methodology.md) and
-[architecture](docs/architecture.md).
+How each figure is computed: [methodology](docs/methodology.md).
 
 ## API
 
-Everything on the dashboard is available as JSON, tables also as CSV, and a
-server-sent event stream pushes blocks, trades and liquidations.
+The dashboard's data is public: JSON, tables as CSV, and a server-sent event
+stream of blocks, trades and liquidations.
 
 ```bash
 curl -s 'https://plumb.huginn.tech/api/v1/protocol?window=7d' | jq .headline.volume
 curl -s 'https://plumb.huginn.tech/api/v1/leaderboard?window=30d&by=pnl&limit=10'
-curl -s  https://plumb.huginn.tech/api/v1/cohorts | jq '.by_size[] | {label, long_share_pct}'
 curl -N  https://plumb.huginn.tech/api/v1/stream
-# a wallet's positions and how far each is from liquidation
-curl -s  https://plumb.huginn.tech/api/v1/wallets/1 | jq '.positions[] | {symbol, side, notional, liquidation_distance_pct}'
+# the largest BTC positions and how far each is from liquidation
+curl -s 'https://plumb.huginn.tech/api/v1/markets/1/positions?limit=5' | jq '.positions[] | {account_id, side, notional, liquidation_distance_pct}'
 ```
 
-Amounts are exact decimal strings, and every response carries the block it
-was computed at, so scripts and bots can use the data as it is. Reference: [docs/api.md](docs/api.md).
+Amounts are exact decimal strings (cohort totals are rounded), and every
+response built from chain data carries the block it was computed at.
+Reference: [docs/api.md](docs/api.md).
 
-## Architecture
+## How it works
 
 ```
-  Monad node                                      Plumb (docker compose)
-  ----------------------------                    ----------------------------------
-  monad-execution
-    execution event ring -----> Monode sidecar -->  ingest     events -> ClickHouse
+  Monad node                                        Plumb (docker compose)
+  ------------------------------                    ----------------------------------
   monad-rpc
-    JSON-RPC (eth_getLogs, eth_call) ------------>  collector  contract state, risk
-    WebSocket (newHeads) ------------------------>
+    eth_getLogs (finalized blocks) ---------------> ingest     events -> ClickHouse
+    eth_call (pinned block) ----------------------> collector  positions, book, risk
+    WebSocket newHeads ---------------------------> wakes the ingest
+  monad-execution
+    execution event ring --> Monode sidecar ------> wakes the ingest; trades in
+                                                    blocks not final yet (tape only)
+
                                                     ClickHouse events, hourly rollups
                                                     API        JSON, CSV, SSE
                                                     web/       dashboard
 ```
 
 - **Ingest** follows the finalized head, links every position change to its
-  fill, and backfills history from launch.
-- **Collector** reads all open positions and the order book at a pinned
-  block and computes margin, liquidation prices and stress figures in exact
-  integer arithmetic.
-- **ClickHouse** stores events and hourly rollups; windows are answered from
-  rollups plus raw events at the edges.
-- **API** serves the dashboard and everyone else, with per-IP rate limits.
+  fill and backfills history from launch.
+- **Collector** reads all open positions and the order book at a pinned block
+  and works out margin, liquidation prices and stress figures in exact integer
+  arithmetic.
+- **ClickHouse** keeps the events and hourly rollups.
+- **API** serves the dashboard and outside clients, with per-IP rate limits.
 
-Stack: Node.js 22+, ClickHouse 26.8, plain JavaScript and Apache ECharts on
-the front end (no build step), Docker Compose behind nginx. We run it on a
-dedicated Monad mainnet node.
+Stack: Node.js 22.9+, ClickHouse 26.8, plain JavaScript and Apache ECharts on
+the front end (no build step), Docker Compose behind nginx.
+More in [docs/architecture.md](docs/architecture.md).
 
 ## Run it
 
+Needs Docker with Compose v2, and about 6 GB of disk for the full history.
+
 ```bash
+git clone https://github.com/s0urledd/plumb && cd plumb
 cp .env.example .env          # MONAD_RPC_URL, ARCHIVE_RPC_URLS, CLICKHOUSE_PASSWORD
-docker compose up -d --build  # app + ClickHouse on 127.0.0.1:8787
+docker compose up -d --build  # app + ClickHouse, then open http://127.0.0.1:8787
 docker compose --profile exec-events up -d --build   # optional, with the node's event ring
 ```
 
 No Monad node? Set both `MONAD_RPC_URL` and `ARCHIVE_RPC_URLS` to
-`https://rpc1.monad.xyz`. That public endpoint serves the 1000-block log
-ranges, finalized blocks and `eth_call` Plumb needs. It is rate-limited, so the
-history takes longer; `BACKFILL_FROM_BLOCK` indexes a shorter stretch.
-(`rpc.monad.xyz` caps log ranges at 100 blocks and will not do.)
+`https://rpc1.monad.xyz`. It supports the 1000-block log ranges, finalized
+blocks and `eth_call` that Plumb needs. It is rate-limited, so the backfill is
+slower; set `BACKFILL_FROM_BLOCK` to index less history. `rpc.monad.xyz` does
+not work: it limits log ranges to 100 blocks.
 
-The live feed starts at once; history since launch is indexed in the
-background in one to three hours. The [runbook](docs/runbook.md) covers the
-reverse proxy, the event ring and configuration.
+The live feed starts right away. With two archive RPCs, the history since
+launch takes one to three hours to fill in. The [runbook](docs/runbook.md)
+covers the reverse proxy, the event ring and the main settings.
 
 ```bash
 npm ci && npm run check && npm test   # unit tests, no network needed
 ```
 
-## Roadmap
+## Where to look in the code
 
-- **More alerts**: webhooks alongside Telegram, and alerts on a market's
-  liquidation ladder.
+- [`src/decode.js`](src/decode.js), [`src/ingest.js`](src/ingest.js):
+  decoding exchange events, linking each position change to its fill, live
+  ingest and backfill.
+- [`src/math.js`](src/math.js), [`src/metrics.js`](src/metrics.js): margin,
+  liquidation prices and stress in the contract's own integer units.
+- [`src/collector.js`](src/collector.js): contract state at a pinned block,
+  kept in step with the chain and reconciled against the contract.
+- [`src/live.js`](src/live.js): execution events through Monode and the live
+  stream to the browser.
+- [`src/alerts.js`](src/alerts.js): the Telegram bot.
+- [`test/`](test): unit tests for the above, plus a ClickHouse integration
+  test for the ingest (`npm run test:integration`, run in CI).
+
+## After the hackathon
+
+Huginn hosts Plumb and will keep running and developing it. Planned next:
+webhook alerts alongside Telegram, and alerts on a market's liquidation
+levels.
 
 ## Monad Metropolis
 
 Entered in track 01, Onchain Finance & Trading, for Perpl's "Best Analytics /
-Risk Tool" bounty. Checklist and demo notes:
+Risk Tool" bounty. How the brief is covered:
 [docs/submission.md](docs/submission.md).
 
 ## Credits
 
-- ABI subset from Perpl's `perpl-sdk`, MIT, © 2025 Perpl Foundation
-  ([abi/README.md](abi/README.md), [licence](abi/LICENSE-perpl-sdk)).
-- [viem](https://github.com/wevm/viem) (MIT),
-  [Apache ECharts](https://github.com/apache/echarts) (Apache-2.0),
-  [Geist](https://github.com/vercel/geist-font) (SIL Open Font License 1.1),
-  [ClickHouse](https://github.com/ClickHouse/ClickHouse) (Apache-2.0),
-  [Monode](https://github.com/monad-developers/monode) (MIT, built from a
-  pinned commit in `deploy/monode`).
-- Market-share data from [DefiLlama](https://defillama.com/open-interest).
-- Market and venue logos belong to their owners
-  ([sources](web/img/markets/README.md)).
-- Cohort icons (whale, dolphin, fish, shrimp) by Delapouite from
-  [game-icons.net](https://game-icons.net), CC BY 3.0.
-- Built with help from Claude Code as a coding assistant for parts of the
-  code, tests and docs. Design, infrastructure, data validation and review
-  are the team's.
+- Open source: viem, Apache ECharts, Geist, ClickHouse, Monode, and an ABI
+  subset of Perpl's `perpl-sdk`. Market share figures from DefiLlama. Logos
+  and icons belong to their owners. Licenses and sources:
+  [docs/credits.md](docs/credits.md).
+- We used an AI coding assistant to help write the code, tests and docs.
 
 ---
 
-Built by [Huginn](https://huginn.tech). Unofficial: not affiliated with
-Perpl or the Monad Foundation. [MIT](LICENSE).
+Built by the [Huginn](https://huginn.tech) team. Not affiliated with Perpl or
+the Monad Foundation. [MIT](LICENSE).
