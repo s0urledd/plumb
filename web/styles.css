@@ -200,6 +200,11 @@ button, input, select { font: inherit; color: inherit; }
 @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpis.k7 { grid-template-columns: repeat(4, minmax(0, 1fr)); } .kpis.k7 > :first-child { grid-column: span 2; } }
 @media (max-width: 640px) { .kpis, .kpis.k4, .kpis.k7 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .kpi { padding: 16px 18px 0; min-width: 0; position: relative; background: var(--surface); border-radius: var(--radius); box-shadow: var(--card-edge); overflow: hidden; display: flex; flex-direction: column; }
+/* The cards of a row share their lines (label, figure, change and note,
+   sparkline), so a label that wraps moves the figures beside it down with it. */
+@supports (grid-template-rows: subgrid) {
+  .kpis > .kpi { display: grid; grid-row: span 4; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+}
 .kpi:not(:has(.spark)) { padding-bottom: 16px; }
 /* Labels and notes wrap rather than cut; the info tip follows the label's last word. */
 .kpi-label { color: var(--text-2); font-size: 13px; line-height: 18px; text-wrap: balance; }
@@ -476,14 +481,40 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 @media (max-width: 1240px) { .ticker > span:not(.tp) { display: none; } .top-inner { gap: 14px; } }
 @media (max-width: 1040px) and (min-width: 861px) { .ticker { display: none; } .live span:last-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
 #tape-meta { display: inline-flex; align-items: center; gap: 8px; }
-/* A short table that fills its panel's height, rows spread evenly. */
+/* A short table that fills its panel's height, rows spread evenly. The header
+   row has a set height and the body rows none, so they take the spare height:
+   Firefox gives it all to rows without a set height, which was the header. */
 .fill-table { flex: 1; display: flex; flex-direction: column; }
 .fill-table > .table-wrap { flex: 1; display: flex; }
 .fill-table table.t { height: 100%; }
-.fill-table .t td { vertical-align: middle; padding-top: 8px; padding-bottom: 8px; }
+.fill-table .t th { height: 34px; }
+.fill-table .t td { height: auto; vertical-align: middle; padding-top: 8px; padding-bottom: 8px; }
+.fill-table .t .cell-bar .track { top: calc(50% + 11px); } /* under the figure, which sits in the middle */
+/* Cards in a row whose heads differ (a switch, a title that wraps) share the
+   tallest head's height, so their tables start on one line. */
+@supports (grid-template-rows: subgrid) {
+  .grid.aligned > .panel { display: grid; grid-row: span 2; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); row-gap: 0; } /* the column shrinks, so a wide table scrolls */
+}
+/* A small switch in a card head takes no more height than the title beside it. */
+.panel-head > div > .seg.sm { margin: -4px 0; }
+/* The volume card's key row: the legend wraps beside the period switch and the
+   span, which stay whole on their line. */
+.panel-head.vol-keys { min-height: 0; padding-top: 0; }
+.vol-keys .legend { flex: 1 1 auto; min-width: 0; }
+.vol-keys .head-right { flex: none; align-items: center; }
+.vol-keys .meta { white-space: nowrap; }
 
 /* Trend panels: title on the left; their own window switch, the tools and the value on the right. */
 .panel.trend > .panel-head { align-items: flex-start; }
+/* A trend chart takes the height its row gives the card, so a card beside a
+   taller head (a second switch) has no gap under its chart; size containment
+   keeps the canvas from holding the row open. A message alone (nothing to
+   draw) holds no chart height and sits in the middle of what the row leaves.
+   The market's price card sizes its chart by its own rules (markets block). */
+.panel.trend { display: flex; flex-direction: column; }
+.panel.trend > .panel-body { flex: 1; display: flex; flex-direction: column; }
+.panel.trend:not(.m-price) .chart.sm { flex: 1 1 auto; height: auto; min-height: 200px; contain: size; }
+.panel.trend:not(.m-price) .chart.sm:has(> .empty-state) { min-height: 0; contain: none; display: flex; flex-direction: column; justify-content: center; }
 .trend-id { min-width: 0; }
 .trend-id .seg { margin-top: 10px; }
 .trend-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }

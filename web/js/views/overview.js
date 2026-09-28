@@ -42,7 +42,7 @@ export function mount(el, { query, setQuery }) {
       <div class="grid g-main">
         <section class="panel">
           <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right">${chartTools('main-chart', 'volume')}</div></div>
-          <div class="panel-head" style="min-height:0;padding-top:0"><div class="legend toggles" id="legend"></div><span class="head-right"><span id="bucket"></span><span class="meta" id="chart-meta"></span></span></div>
+          <div class="panel-head vol-keys"><div class="legend toggles" id="legend"></div><span class="head-right"><span id="bucket"></span><span class="meta" id="chart-meta"></span></span></div>
           <div class="panel-body"><div class="chart" id="main-chart">${skChart()}</div></div>
         </section>
         <section class="panel fill">
@@ -67,14 +67,14 @@ export function mount(el, { query, setQuery }) {
         ${panel('taker', 'Taker flow', 'Aggressive buys up, sells down; line: net per period')}
       </div>
       <div class="section-label">Activity</div>
-      <div class="grid g-3">
+      <div class="grid g-3 aligned">
         <section class="panel"><div class="panel-head"><h2>Latest liquidations</h2><a class="meta" href="#/liquidations">View all →</a></div><div class="panel-body flush" id="liqs">${skeleton(5)}</div></section>
         <section class="panel"><div class="panel-head"><h2>Deposits and withdrawals</h2><div id="flowview">${segSm('flowv', FLOW_VIEWS, flowView)}</div></div><div class="panel-body flush" id="flowlist">${skeleton(5)}</div></section>
         <section class="panel fill"><div class="panel-head"><h2>Across windows</h2><span class="meta">Exchange totals</span></div><div class="panel-body flush fill-table" id="windows">${skeleton(5)}</div></section>
       </div>
       <div class="section-label">Market share</div>
       <div class="grid g-2" id="landscape-grid">
-        <section class="panel"><div class="panel-head"><div><h2>Perps on Monad</h2><div class="desc">Open interest by venue</div></div><span class="meta" id="ls-chain-meta"></span></div><div class="panel-body flush" id="ls-chain">${skeleton(4)}</div></section>
+        <section class="panel fill"><div class="panel-head"><div><h2>Perps on Monad</h2><div class="desc">Open interest by venue</div></div><span class="meta" id="ls-chain-meta"></span></div><div class="panel-body flush fill-table" id="ls-chain">${skeleton(4)}</div></section>
         <section class="panel"><div class="panel-head"><div><h2>Among all perps</h2><div class="desc">Open interest by venue</div></div><span class="meta" id="ls-meta"></span></div><div class="panel-body flush" id="ls-all">${skeleton(6)}</div></section>
       </div>
     </div>`;
