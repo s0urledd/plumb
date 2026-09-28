@@ -1,25 +1,29 @@
 // Trader leaderboard over a window: net PnL, volume, losses, liquidations,
 // with open positions from the live contract state.
 import { get } from '../api.js';
-import { usd, int, pct, num, esc } from '../format.js';
-import { seg, table, addr, pnl, kpi, skeleton, mkt, logo, assetOf, ICON } from '../ui.js';
+import { usd, int, pct, num, esc, price, ago } from '../format.js';
+import { seg, table, addr, pnl, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON } from '../ui.js';
 import { SEA_ICONS } from '../cohort-icons.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
 const SORTS = [['pnl', 'Top PnL'], ['loss', 'Top losses'], ['volume', 'Volume'], ['liquidated', 'Liquidated'], ['fees', 'Fees paid'], ['net_flow', 'Net inflow'], ['deposits', 'Deposits'], ['withdrawals', 'Withdrawals']];
 const FLOW_SORTS = new Set(['net_flow', 'deposits', 'withdrawals']);
 const CO_TABS = [['size', 'By size'], ['pnl', 'By track record']];
+const SM_WINDOWS = [['7d', '7D'], ['30d', '30D'], ['all', 'All']];
+const SM_SIZES = [['100', '≥$100'], ['1000', '≥$1K'], ['10000', '≥$10K']];
 
 export function mount(el, { query, setQuery }) {
   let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '7d';
   let by = SORTS.some(([v]) => v === query.get('by')) ? query.get('by') : 'pnl';
-  let page = 0, alive = true, data = null, cohorts = null, coTab = 'size', coSel = null;
+  let page = 0, alive = true, data = null, cohorts = null, coTab = 'size', coSel = null, smWin = '30d', smMin = '1000';
   const LIMIT = 50;
   el.innerHTML = `
     <div class="page-head"><div><h1>Traders</h1><div class="sub">Accounts that traded in the window, ranked from indexed events (flow rankings: accounts that deposited or withdrew). Net PnL = realized PnL (price PnL + funding) − fees.</div></div></div>
     <div class="kpis k4" id="tkpis" style="margin-bottom:16px">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:60%;margin-top:10px"></div></div>').join('')}</div>
     <section class="panel" style="margin-bottom:16px"><div class="panel-head"><div><h2>Positioning by cohort</h2><div class="desc" id="co-desc">Open positions now, grouped by account · click a cohort for its largest wallets</div></div><div id="co-tabs">${seg('co', CO_TABS, coTab)}</div></div>
       <div class="panel-body flush" id="cohorts">${skeleton(4)}</div><div id="co-detail"></div></section>
+    <section class="panel" style="margin-bottom:16px"><div class="panel-head"><div><h2>Smart money moves</h2><div class="desc" id="sm-desc">What the most profitable traders are doing now</div></div><div class="sm-ctl"><div id="sm-min">${seg('smm', SM_SIZES, smMin)}</div><div id="sm-win">${seg('smw', SM_WINDOWS, smWin)}</div></div></div>
+      <div class="panel-body flush scroll sm-list" id="moves">${skeleton(6)}</div></section>
     <section class="panel"><div class="panel-head"><h2 id="title">Leaderboard</h2><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><span class="meta" id="meta"></span><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div>
       <div class="panel-head" style="min-height:0;padding-top:0;flex-wrap:wrap;gap:10px"><div id="by" style="max-width:100%;min-width:0">${seg('by', SORTS, by)}</div><div id="win">${seg('window', WINDOWS, w)}</div></div>
       <div class="panel-body flush" id="list">${skeleton(12)}</div>
@@ -72,6 +76,40 @@ export function mount(el, { query, setQuery }) {
   }
   $('lb-search').addEventListener('input', e => { filter = e.target.value.trim(); renderList(); });
   $('lb-search').addEventListener('keydown', e => { const q = e.target.value.trim(); if (e.key === 'Enter' && (/^0x[0-9a-fA-F]{40}$/.test(q) || /^\d{1,9}$/.test(q))) location.hash = `#/wallet/${q}`; });
+
+  // The latest position changes of the top directional traders (makers and
+  // high-frequency accounts left out server-side), ranked by net PnL in smWin.
+  // A trader splitting one decision into many fills ("reduce long" eight times
+  // in five minutes) shows as one row: the same account, market, action and
+  // side within 30 minutes of each other fold together.
+  const MOVE_VERBS = { open: 'Open', increase: 'Add', decrease: 'Reduce', close: 'Close', invert: 'Flip to', liquidation: 'Liquidated', deleverage: 'ADL' };
+  function foldMoves(rows) {
+    const out = [], open = new Map();
+    for (const r of rows) {
+      const key = `${r.account}|${r.market}|${r.kind}|${r.side}`, g = open.get(key);
+      if (g && g.oldest - r.ts <= 1800) { g.count++; g.notional += num(r.notional) || 0; g.size += num(r.size) || 0; g.pnl += num(r.pnl) || 0; g.oldest = r.ts; continue; }
+      const next = { ...r, count: 1, notional: num(r.notional) || 0, size: num(r.size) || 0, pnl: num(r.pnl) || 0, oldest: r.ts };
+      open.set(key, next); out.push(next);
+    }
+    return out;
+  }
+  const moveAction = r => { const side = r.side === 'long' || r.side === 'short' ? r.side : ''; const opening = ['open', 'increase'].includes(r.kind) || (r.kind === 'invert'); const cls = r.kind === 'liquidation' ? 'neg' : (side === 'long') === opening ? 'pos' : 'neg'; return `<span class="${cls}">${MOVE_VERBS[r.kind] ?? r.kind} ${esc(side)}</span>${r.count > 1 ? ` <span class="tag" title="${r.count} fills over ${Math.max(1, Math.round((r.ts - r.oldest) / 60))} min">×${r.count}</span>` : ''}`; };
+  async function loadMoves() {
+    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=400`, { maxAge: 8000 });
+    if (!alive) return;
+    const wl = smWin === 'all' ? 'all-time' : smWin;
+    $('sm-desc').textContent = `Latest position changes of the top ${int(m.leaders)} traders by net PnL (${wl}), last 7 days${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts left out` : ''}`;
+    $('moves').innerHTML = table({ id: 'moves', compact: true, emptyText: 'No moves by these traders in the last 7 days', columns: [
+      { key: 't', label: 'When', render: r => `<span class="muted num" title="${esc(new Date(r.ts * 1000).toISOString().replace('T', ' ').slice(0, 19))} UTC">${ago(r.ts)}</span>` },
+      { key: 'a', label: 'Trader', render: r => `<span class="sm-trader"><span class="rank-pill" title="Rank by net PnL, ${esc(wl)}">#${int(r.leader.rank)}</span>${addr(r.address, r.account)}</span>` },
+      { key: 'x', label: 'Action', render: moveAction },
+      { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
+      { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
+      { key: 'p', label: 'Price', n: true, render: r => price(r.count > 1 && r.size ? r.notional / r.size : r.price) },
+      { key: 'r', label: 'Realized', n: true, render: r => (['decrease', 'close', 'invert', 'liquidation', 'deleverage'].includes(r.kind) && num(r.pnl) ? pnl(r.pnl) : '<span class="faint">—</span>') },
+      { key: 'l', label: `Net PnL · ${wl}`, n: true, render: r => pnl(r.leader.pnl) }
+    ], rows: foldMoves(m.rows).slice(0, 30), rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"` });
+  }
 
   // Traders at a glance for the leaderboard's window.
   async function loadSummary() {
@@ -136,14 +174,16 @@ export function mount(el, { query, setQuery }) {
   const loadCohorts = () => get('cohorts', { maxAge: 5000 }).then(c => { if (!alive) return; cohorts = c; renderCohorts(); }).catch(() => { if (!cohorts) $('cohorts').innerHTML = '<div class="empty-state">Live positions unavailable</div>'; });
   loadCohorts();
   const coTimer = setInterval(loadCohorts, 10000);
+  loadMoves().catch(() => { $('moves').innerHTML = '<div class="empty-state">Unavailable</div>'; });
+  const smTimer = setInterval(() => loadMoves().catch(() => {}), 15000);
 
   load().catch(error => { $('list').innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; });
   loadSummary().catch(() => { $('tkpis').innerHTML = ''; });
   return {
-    onSeg(name, v) { if (name === 'co') { coTab = v; coSel = null; $('co-tabs').innerHTML = seg('co', CO_TABS, coTab); renderCohorts(); return; } if (name === 'window') setQuery({ window: v === '7d' ? null : v }); if (name === 'by') setQuery({ by: v === 'pnl' ? null : v }); },
+    onSeg(name, v) { if (name === 'smm') { smMin = v; $('sm-min').innerHTML = seg('smm', SM_SIZES, smMin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'smw') { smWin = v; $('sm-win').innerHTML = seg('smw', SM_WINDOWS, smWin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'co') { coTab = v; coSel = null; $('co-tabs').innerHTML = seg('co', CO_TABS, coTab); renderCohorts(); return; } if (name === 'window') setQuery({ window: v === '7d' ? null : v }); if (name === 'by') setQuery({ by: v === 'pnl' ? null : v }); },
     onAction(a, t) { if (a === 'co-pick') { coSel = coSel === t.dataset.key ? null : t.dataset.key; renderCohorts(); return; } if (a === 'co-close') { coSel = null; renderCohorts(); return; } if (a === 'next' && data && (page + 1) * LIMIT < data.total) { page++; load().catch(() => {}); } if (a === 'prev' && page > 0) { page--; load().catch(() => {}); } },
     update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '7d'; by = SORTS.some(([v]) => v === q.get('by')) ? q.get('by') : 'pnl'; page = 0; $('win').innerHTML = seg('window', WINDOWS, w); $('by').innerHTML = seg('by', SORTS, by); load().catch(() => {}); loadSummary().catch(() => {}); },
-    destroy() { alive = false; clearInterval(coTimer); }
+    destroy() { alive = false; clearInterval(coTimer); clearInterval(smTimer); }
   };
 }
 export { mkt };

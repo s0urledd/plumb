@@ -38,6 +38,16 @@ export function createCache({ now = () => Date.now(), max = 500 } = {}) {
   return { get, clear: () => store.clear(), size: () => store.size };
 }
 
+// Directional leaders from a PnL leaderboard: profitable accounts, market
+// makers (mostly maker fills) and high-frequency accounts (5,000+ trades a day)
+// left out, the first `top` kept in rank order.
+export function pickLeaders(rows, { days, top }) {
+  const maker = r => r.trades >= 100 && (r.maker_share_pct ?? 0) >= 80;
+  const fast = r => r.trades / days >= 5000;
+  const profitable = rows.filter(r => Number(r.pnl) > 0);
+  return { leaders: profitable.filter(r => !maker(r) && !fast(r)).slice(0, top), excluded: profitable.filter(r => maker(r) || fast(r)).length };
+}
+
 export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collector, accountState = null, now = () => Date.now(), maxTripEvents = 150000 }) {
   const { state } = collector;
   const cache = createCache({ now });
@@ -217,6 +227,30 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     return { name: b, seconds };
   }
 
+  // Positioning flow for one market: open interest opened and closed on each
+  // side per bucket. A long open is a long position opened or added to; a long
+  // close is one reduced, closed, flipped or liquidated. Exact, not inferred
+  // from price and open interest.
+  async function positionFlow(id, query) {
+    const w = windowOf(query), bucket = bucketOf(w, query), market = Number(id);
+    if (!meta(market)) throw Object.assign(new Error('MARKET_NOT_FOUND'), { status: 404 });
+    return cache.get(`flow:${market}:${w}:${bucket.name}`, w === '24h' ? 5000 : 30000, async () => {
+      const range = rangeOf(w), c = cd();
+      const start = Math.floor(range.from / bucket.seconds) * bucket.seconds;
+      const rows = await queries.positionFlow(market, range.from, range.to, bucket.seconds);
+      const byT = new Map(rows.map(r => [Number(r.t), r]));
+      const times = [];
+      for (let t = start; t < range.to; t += bucket.seconds) times.push(t);
+      const col = k => times.map(t => { const r = byT.get(t); return r ? dec(BigInt(Math.round(Number(r[k]))), c) : '0'; });
+      const sum = k => rows.reduce((a, r) => a + Number(r[k]), 0);
+      return {
+        meta: metaOf({ window: w, from: range.from, to: range.to, bucket: bucket.name, bucket_seconds: bucket.seconds, market, coverage: coverageOf(range.from, range.to) }),
+        symbol: symbol(market), times,
+        long_open: col('long_open'), long_close: col('long_close'), short_open: col('short_open'), short_close: col('short_close'),
+        totals: { long_open: dec(BigInt(Math.round(sum('long_open'))), c), long_close: dec(BigInt(Math.round(sum('long_close'))), c), short_open: dec(BigInt(Math.round(sum('short_open'))), c), short_close: dec(BigInt(Math.round(sum('short_close'))), c), opens: sum('opens'), closes: sum('closes') }
+      };
+    });
+  }
   async function series(query) {
     const w = windowOf(query);
     const bucket = bucketOf(w, query);
@@ -363,6 +397,29 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     let count = 0, notional = 0n, upnl = 0n;
     if (computed) for (const { metrics: x } of computed.markets) { const p = x.positions.find(q => q.accountId === BigInt(accountId)); if (p) { count++; notional += p.markNotionalCNS; upnl += p.pnlCNS; } }
     return { count, notional, upnl };
+  }
+  // Smart money: the latest position changes of the most profitable
+  // directional traders in a window (top 50 by net PnL, market makers and
+  // high-frequency accounts left out: their flow is inventory, not views).
+  const SMART_TOP = 50, MOVE_WINDOW_S = 7 * 86400;
+  async function smartMoves(query) {
+    const w = ['7d', '30d', 'all'].includes(query.get('window')) ? query.get('window') : '30d';
+    const limit = Math.min(Math.max(Number(query.get('limit')) || 40, 1), 500);
+    // Moves smaller than min USD are left out (default $1K): some leaders trade dust.
+    const min = Math.min(Math.max(Math.floor(Number(query.get('min') ?? 1000)) || 0, 0), 10000000);
+    return cache.get(`smart:${w}:${limit}:${min}`, 10000, async () => {
+      const board = await leaderboard(new URLSearchParams(`window=${w}&by=pnl&limit=200`));
+      const days = w === '7d' ? 7 : w === '30d' ? 30 : Math.max(1, (headTs() - firstTs()) / 86400);
+      const { leaders, excluded } = pickLeaders(board.rows, { days, top: SMART_TOP });
+      const byId = new Map(leaders.map(r => [Number(r.account), r]));
+      const rows = await queries.movesOf([...byId.keys()], { sinceTs: headTs() - MOVE_WINDOW_S, limit, minNotional: BigInt(min) * 10n ** BigInt(cd()) });
+      const views = await tradeViews(rows);
+      return {
+        meta: metaOf({ window: w, min_usd: min }),
+        leaders: leaders.length, excluded,
+        rows: views.map(v => { const l = byId.get(v.account); return { ...v, leader: { rank: l.rank, pnl: l.pnl, volume: l.volume } }; })
+      };
+    });
   }
   async function leaderboard(query) {
     const w = windowOf(query);
@@ -592,5 +649,5 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       return { meta: metaOf({ window: 'all', from, to, coverage: coverageOf(from, to) }), block: state.block.number.toString(), ...t };
     });
   }
-  return { addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
+  return { addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
 }

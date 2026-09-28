@@ -65,6 +65,8 @@ same host the client is the last `X-Forwarded-For` entry.
 | `/api/v1/markets/:id/positions` | `side`, `sort`, `limit`, `format=csv` | Every open position with entry, mark notional, deposit, PnL, equity, maintenance margin, health, liquidation and bankruptcy prices and distances, leverage |
 | `/api/v1/markets/:id/ladder` | | Liquidation ladder and map |
 | `/api/v1/markets/:id/stress` | `move_pct` (signed, e.g. `-10`) | Positions liquidated at that move, notional and share of the hit side's open interest, shortfall, insurance cover, book depth and absorption, largest positions hit |
+| `/api/v1/markets/:id/entries` | | Open positions by entry price: bins over the middle 80% of entry notional plus the mark (edge bins open-ended, flagged `edge`), long and short notional and counts per bin; each side's size-weighted average entry, positions in profit and uPnL |
+| `/api/v1/markets/:id/flow` | `window`, `bucket` | Open interest opened and closed per bucket, longs and shorts, from position events (opens and adds; reductions, closes, flips and liquidations); window `totals` |
 | `/api/v1/markets/:id/book` | | Resting depth walked from the contract, per level and per band |
 | `/api/v1/markets/:id/funding` | `limit` | Current and next funding, history of funding events |
 | `/api/v1/series` | `hours` ≤ 168, `market` | Sampled risk totals over time (the buffer holds about 25 h: 1,500 samples, one every 200 blocks) |
@@ -72,6 +74,7 @@ same host the client is the last `X-Forwarded-For` entry.
 | `/api/v1/events` | | Recent parameter changes and unwinds |
 | `/api/v1/reference` | | Perpl public API figures next to the contract's (only with `REFERENCE_ENABLED=1`) |
 | `/api/v1/traders/summary` | `window` | Traders in the window, how many are profitable after fees (count and share), their total net PnL, the exchange volume (each fill counted once), and the median PnL per volume (bps) |
+| `/api/v1/traders/moves` | `window` = `7d`, `30d` (default), `all`; `min` USD (default 1000); `limit` ≤ 500 | Latest position changes (last 7 days, maker and taker) of the top 50 accounts by net PnL in the window, market makers and high-frequency accounts left out; each row carries the leader's rank and net PnL; `leaders`, `excluded` |
 | `/api/v1/cohorts` | | Open positions now grouped into cohorts by account size (total open notional: whales ≥ $100K, dolphins, fish, shrimp < $1K) and by track record (net PnL over indexed history), with long/short notional, accounts net long/short, unrealized PnL and the largest wallets of each |
 | `/api/v1/landscape` | | Market-share context: open interest of perp venues (category Derivatives; front-ends and prediction markets excluded) from DefiLlama's public overview, Perpl's rank and share overall and on Monad (cached 10 min; external data, never used for Plumb's own metrics; off with `LANDSCAPE_ENABLED=0`) |
 

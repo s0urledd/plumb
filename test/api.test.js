@@ -106,6 +106,15 @@ test('stress, book, account state, series and CSV endpoints', async t => {
   assert.equal(stress.body.side, 'long');
   assert.equal(stress.body.liquidated.count, 1); // account 5: 10x long liquidates at 6 %
   assert.equal(stress.body.liquidity.levels, 2);
+  assert.equal(stress.body.liquidity.book_block !== undefined, true);
+  // Entry prices: every open position lands in one bin, on its side, and the averages are size-weighted.
+  const entries = await get('/api/v1/markets/1/entries');
+  assert.equal(entries.status, 200);
+  const binned = entries.body.bins.reduce((a, b) => a + b.long_count + b.short_count, 0);
+  assert.equal(binned, entries.body.positions);
+  assert.equal(entries.body.long.count + entries.body.short.count, entries.body.positions);
+  assert.ok(entries.body.bins.every((b, i, all) => b.hi > b.lo && (i === 0 || b.lo >= all[i - 1].lo)));
+  assert.equal((await get('/api/v1/markets/999/entries')).status, 404);
   assert.equal((await get('/api/v1/markets/1/stress?move_pct=0')).status, 400);
   assert.equal((await get('/api/v1/markets/1/stress?move_pct=abc')).status, 400);
   const book = await get('/api/v1/markets/1/book');

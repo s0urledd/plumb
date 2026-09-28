@@ -3,7 +3,7 @@
 import { get, stream } from '../api.js';
 import { usd, int, price, pct, num, esc, size, timeOnly, dateTime, duration } from '../format.js';
 import { kpi, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, skeleton, skChart, empty, colorOf, chartTools, logo } from '../ui.js';
-import { candles, signedBars, mirrored } from '../charts.js';
+import { candles, signedBars, mirrored, flowBars, entryProfile } from '../charts.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
 
@@ -21,6 +21,10 @@ export function mount(el, { params, query, setQuery }) {
       <div class="grid g-main">
         <section class="panel"><div class="panel-head"><h2>Price and volume</h2><span class="head-right"><span class="meta" id="c-meta"></span>${chartTools('candles', `market-${id}-candles`)}</span></div><div class="panel-body"><div class="chart lg" id="candles">${skChart()}</div></div></section>
         <section class="panel"><div class="panel-head"><h2>Positioning</h2><span class="meta">Live positions</span></div><div id="positioning">${skeleton(8)}</div></section>
+      </div>
+      <div class="grid g-2">
+        <section class="panel"><div class="panel-head"><div><h2>Position flow</h2><div class="desc">Open interest opened (up) and closed (down) per period</div></div><div class="head-right">${chartTools('flow', `market-${id}-flow`)}<div class="head-value" id="flow-v"></div></div></div><div class="panel-head" style="min-height:0;padding-top:0"><div class="legend"><span><i style="background:var(--long)"></i>Longs opened</span><span><i style="background:var(--long);opacity:.5"></i>Longs closed</span><span><i style="background:var(--short)"></i>Shorts opened</span><span><i style="background:var(--short);opacity:.5"></i>Shorts closed</span><span><i style="background:#fff;height:2px"></i>Net change</span></div></div><div class="panel-body"><div class="chart sm" id="flow">${skChart()}</div></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Entry prices</h2><div class="desc">Open positions by the price they were entered at, longs right and shorts left</div></div><div class="head-right">${chartTools('entries', `market-${id}-entries`, { csv: false })}<div class="head-value" id="entries-v"></div></div></div><div class="panel-body"><div class="chart sm" id="entries">${skChart()}</div></div></section>
       </div>
       <div class="grid g-2">
         <section class="panel"><div class="panel-head"><h2>Funding rate</h2><span class="head-right"><span class="meta" id="f-meta"></span>${chartTools('funding', `market-${id}-funding`)}</span></div><div class="panel-body"><div class="chart sm" id="funding">${skChart()}</div></div></section>
@@ -65,6 +69,26 @@ export function mount(el, { params, query, setQuery }) {
       const ohlc = s.points.map(x => { const c = num(x.close), o = num(x.open) ?? prev ?? c, h = num(x.high) ?? Math.max(o, c), l = num(x.low) ?? Math.min(o, c); prev = c; return c === null ? '-' : [o, c, l, h]; });
       candles(node, { times: s.times, ohlc, volume: s.points.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/\.0+$/, ''), volColor: colorOf(id) + '99', zoom: true });
     }
+  }
+  // Exact flows from position events: what other dashboards infer from price and open interest.
+  async function loadFlow() {
+    const f = await get(`markets/${id}/flow?window=${w}`, { maxAge: 5000 });
+    if (!alive) return;
+    const t = f.totals, node = $('flow'); node.innerHTML = '';
+    const netChange = num(t.long_open) - num(t.long_close);
+    $('flow-v').innerHTML = `<div class="hv"><span class="${netChange >= 0 ? 'pos' : 'neg'}">${usd(netChange, { sign: true })}</span></div><div class="hn">${usd(num(t.long_open) + num(t.short_open))} opened · ${usd(num(t.long_close) + num(t.short_close))} closed · ${w === 'all' ? 'all-time' : w}</div>`;
+    if (!f.times.length || !(num(t.long_open) + num(t.short_open) + num(t.long_close) + num(t.short_close))) { node.innerHTML = empty('No position changes in this window'); return; }
+    flowBars(node, { times: f.times, longOpen: f.long_open, longClose: f.long_close, shortOpen: f.short_open, shortClose: f.short_close, bucketSeconds: f.meta.bucket_seconds });
+  }
+  // Where the open positions were entered, from contract state.
+  async function loadEntries() {
+    const e = await get(`markets/${id}/entries`, { maxAge: 10000 });
+    if (!alive) return;
+    const node = $('entries'); node.innerHTML = '';
+    const L = e.long, S = e.short;
+    $('entries-v').innerHTML = e.positions ? `<div class="hn"><span class="pos">Longs avg ${price(L.average_entry)}</span> · ${pct(L.in_profit_pct, { digits: 0 })} in profit</div><div class="hn"><span class="neg">Shorts avg ${price(S.average_entry)}</span> · ${pct(S.in_profit_pct, { digits: 0 })} in profit</div>` : '';
+    if (!e.positions) { node.innerHTML = empty('No open positions'); return; }
+    entryProfile(node, { bins: e.bins, mark: num(e.mark), priceFmt: v => price(v) });
   }
   async function loadRisk() {
     const r = await get(`markets/${id}`, { maxAge: 3000 });
@@ -220,7 +244,9 @@ export function mount(el, { params, query, setQuery }) {
     ], rows: tape.slice(0, 60), rowAttrs: r => `class="${r.fresh ? 'flash' : ''}"` });
   }
   const off = stream.on('trades', rows => { const mine = rows.filter(r => r.market === id); if (!mine.length) return; tape = [...mine.reverse().map(r => ({ ...r, fresh: true })), ...tape].slice(0, 60); renderTrades(tape); tape.forEach(r => { r.fresh = false; }); });
-  const timer = setInterval(() => { loadRisk().catch(() => {}); loadBook().catch(() => {}); if (w === '24h') load().catch(() => {}); }, 20000);
+  const timer = setInterval(() => { loadRisk().catch(() => {}); loadBook().catch(() => {}); loadEntries().catch(() => {}); if (w === '24h') { load().catch(() => {}); loadFlow().catch(() => {}); } }, 20000);
+  loadFlow().catch(() => { $('flow').innerHTML = empty('Unavailable'); });
+  loadEntries().catch(() => { $('entries').innerHTML = empty('Unavailable'); });
   // The book and funding panels need the market row (active or not) first.
   const ready = load();
   ready.then(() => loadBook()).catch(error => { $('kpis').innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; });
@@ -230,7 +256,7 @@ export function mount(el, { params, query, setQuery }) {
   return {
     onSeg(name, v) { if (name === 'window') setQuery({ window: v === '24h' ? null : v }); },
     onAction(a, t) { if (a === 'calc-side') { calc.side = t.dataset.v; calc.exit = null; renderCalc(); } },
-    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); loadFeeds().catch(() => {}); },
+    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); loadFeeds().catch(() => {}); loadFlow().catch(() => {}); },
     destroy() { alive = false; el.removeEventListener('change', onCalcChange); off(); clearInterval(timer); }
   };
 }
