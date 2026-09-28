@@ -763,7 +763,7 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .st-checks .status-dot { flex: none; margin-top: 6px; }
 @media (max-width: 640px) {
   .st-checks .stat { flex-direction: column; align-items: stretch; gap: 3px; }
-  .st-checks .stat > span:last-child { text-align: left; padding-left: 15px; white-space: normal; }
+  .st-checks .stat > span:last-child { text-align: left; padding-left: 15px; white-space: normal; margin-left: 0; } /* not pushed right by the phone .stat rule */
 }
 
 /* Alerts: the bot card in the page's type scale, aligned with the cards below. */
