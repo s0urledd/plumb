@@ -224,7 +224,8 @@ export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v
     // A running total has its axis on the right, which gives the last date room.
     grid: { ...base().grid, right: cumulative ? 8 : fitRight(chart, el, times, bucketSeconds), bottom: zoom ? 30 : 6 },
     xAxis: timeAxis(times, bucketSeconds, el),
-    yAxis: cumulative ? [valueAxis(yFmt), { ...valueAxis(yFmt), splitLine: { show: false } }] : valueAxis(yFmt),
+    // The running total's ticks fall on the bars' gridlines.
+    yAxis: cumulative ? [valueAxis(yFmt), { ...valueAxis(yFmt), splitLine: { show: false }, alignTicks: true }] : valueAxis(yFmt),
     legend: { show: false, data: [...series.map(s => s.name), ...(cumulative ? [CUMULATIVE] : [])] },
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { total: true, exclude: CUMULATIVE, partial }) },
     dataZoom: zoom ? zoomOptions(0, kept) : undefined,
