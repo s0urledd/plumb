@@ -10,7 +10,8 @@ const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
 export function mount(el, { params, query, setQuery }) {
   const id = Number(params[0]);
   let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '24h';
-  let alive = true, row = null, risk = null;
+  let alive = true, row = null, risk = null, showLevels = true;
+  const LEVEL_TOGGLE = [['on', 'Liq. levels'], ['off', 'Off']];
   el.innerHTML = `
     <div class="page-head">
       <div><div class="sub"><a href="#/markets">Markets</a> /</div><h1 id="title">Market #${id}</h1><div class="sub" id="subtitle"></div></div>
@@ -19,7 +20,7 @@ export function mount(el, { params, query, setQuery }) {
     <div class="stack">
       <div class="kpis" id="kpis"></div>
       <div class="grid g-main">
-        <section class="panel"><div class="panel-head"><h2>Price and volume</h2><span class="head-right"><span class="meta" id="c-meta"></span>${chartTools('candles', `market-${id}-candles`)}</span></div><div class="panel-body"><div class="chart lg" id="candles">${skChart()}</div></div></section>
+        <section class="panel"><div class="panel-head"><h2>Price and volume</h2><span class="head-right"><span class="meta" id="c-meta"></span><span id="lvl-toggle">${seg('lvl', LEVEL_TOGGLE, 'on').replace('class="seg"', 'class="seg sm"')}</span>${chartTools('candles', `market-${id}-candles`)}</span></div><div class="panel-body"><div class="chart lg" id="candles">${skChart()}</div></div></section>
         <section class="panel"><div class="panel-head"><h2>Positioning</h2><span class="meta">Live positions</span></div><div id="positioning">${skeleton(8)}</div></section>
       </div>
       <div class="grid g-2">
@@ -44,8 +45,10 @@ export function mount(el, { params, query, setQuery }) {
   let calc = { side: 'long', usd: 1000, lev: 5, entry: null, exit: null };
   const $ = s => el.querySelector(`#${s}`);
 
+  let levels = null; // liquidation bands from contract state, drawn on the candles
   async function load() {
-    const [p, s] = await Promise.all([get(`protocol?window=${w}`), get(`protocol/series?window=${w}&market=${id}`)]);
+    const [p, s, lv] = await Promise.all([get(`protocol?window=${w}`), get(`protocol/series?window=${w}&market=${id}`), get(`markets/${id}/liq-levels`, { maxAge: 10000 }).catch(() => null)]);
+    levels = lv;
     if (!alive) return;
     row = p.markets.find(m => m.id === id) ?? null;
     if (!row) { el.querySelector('.stack').innerHTML = empty('Market not found'); return; }
@@ -60,14 +63,15 @@ export function mount(el, { params, query, setQuery }) {
       kpi({ label: 'Liquidated', value: usd(row.liquidated), note: `${int(row.liquidations)} events` })
     ].join('');
     const pts = s.points.filter(x => x.close !== null);
-    $('c-meta').textContent = `${s.meta.bucket} candles from fills · UTC`;
+    $('c-meta').textContent = `${s.meta.bucket} candles from fills · UTC${showLevels && levels?.levels?.length ? ' · bands: where open positions would be liquidated (click one for its largest wallet)' : ''}`;
     const node = $('candles'); node.innerHTML = '';
     // No volume in the window (an inactive market carries its last close): say so instead of a flat line.
     if (!pts.length || !s.points.some(x => num(x.volume) > 0)) node.innerHTML = empty(row.active === false ? 'This market is not open for trading' : 'No trades in this window');
     else {
       let prev = null;
       const ohlc = s.points.map(x => { const c = num(x.close), o = num(x.open) ?? prev ?? c, h = num(x.high) ?? Math.max(o, c), l = num(x.low) ?? Math.min(o, c); prev = c; return c === null ? '-' : [o, c, l, h]; });
-      candles(node, { times: s.times, ohlc, volume: s.points.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/\.0+$/, ''), volColor: colorOf(id) + '99', zoom: true });
+      candles(node, { times: s.times, ohlc, volume: s.points.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/\.0+$/, ''), volColor: colorOf(id) + '99', zoom: true,
+        levels: showLevels ? levels?.levels ?? null : null, mark: num(levels?.mark), onLevel: l => { const t = l.top; if (t) location.hash = `#/wallet/${t.address || t.account_id}`; } });
     }
   }
   // Exact flows from position events: what other dashboards infer from price and open interest.
@@ -254,7 +258,7 @@ export function mount(el, { params, query, setQuery }) {
   ready.catch(() => {}).then(() => loadFunding()).catch(() => { $('funding').innerHTML = empty('Unavailable'); });
   loadFeeds().catch(() => {});
   return {
-    onSeg(name, v) { if (name === 'window') setQuery({ window: v === '24h' ? null : v }); },
+    onSeg(name, v) { if (name === 'lvl') { showLevels = v === 'on'; $('lvl-toggle').innerHTML = seg('lvl', LEVEL_TOGGLE, v).replace('class="seg"', 'class="seg sm"'); load().catch(() => {}); return; } if (name === 'window') setQuery({ window: v === '24h' ? null : v }); },
     onAction(a, t) { if (a === 'calc-side') { calc.side = t.dataset.v; calc.exit = null; renderCalc(); } },
     update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); loadFeeds().catch(() => {}); loadFlow().catch(() => {}); },
     destroy() { alive = false; el.removeEventListener('change', onCalcChange); off(); clearInterval(timer); }

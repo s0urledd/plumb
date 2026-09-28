@@ -150,6 +150,27 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
     const fmt = v => Number(v.toPrecision(8));
     return { market_id: market.id, symbol: market.symbol, block: state.block.number.toString(), mark: dec(market.markPNS, pd), positions: rows.length, long: side('long'), short: side('short'), bins: out.map(b => ({ lo: fmt(b.lo), hi: fmt(b.hi), ...(b.edge ? { edge: b.edge } : {}), long: b.long.toFixed(2), short: b.short.toFixed(2), long_count: b.long_count, short_count: b.short_count })) };
   }
+  // Where open positions would be liquidated, in price bands around the mark
+  // (±30 %, 0.5 % each): long and short notional, how many positions, and the
+  // largest one's account so a band can open it. Liquidation prices come from
+  // each position's own deposit and the market's maintenance margin.
+  function liqLevelsView(entry, { span = 0.3, step = 0.005 } = {}) {
+    const { market, metrics: x } = entry;
+    const pd = priceDec(market), mark = Number(dec(market.markPNS, pd));
+    const bins = new Map();
+    for (const p of x.positions) {
+      const v = positionView(p, market), price = Number(v.liquidation_price), notional = Number(v.notional);
+      if (!(price > 0) || !(notional > 0) || Math.abs(price / mark - 1) > span) continue;
+      const i = Math.floor((price / mark - 1) / step);
+      const b = bins.get(i) ?? { lo: mark * (1 + i * step), hi: mark * (1 + (i + 1) * step), long: 0, short: 0, count: 0, top: null };
+      b[v.side === 'long' ? 'long' : 'short'] += notional; b.count++;
+      if (!b.top || notional > b.top.notional) b.top = { account_id: v.account_id, side: v.side, notional };
+      bins.set(i, b);
+    }
+    const fmt = v => Number(v.toPrecision(8));
+    const levels = [...bins.values()].sort((a, b) => a.lo - b.lo).map(b => ({ lo: fmt(b.lo), hi: fmt(b.hi), long: b.long.toFixed(2), short: b.short.toFixed(2), count: b.count, top: { ...b.top, notional: b.top.notional.toFixed(2) } }));
+    return { market_id: market.id, symbol: market.symbol, block: state.block.number.toString(), mark: dec(market.markPNS, pd), step_pct: step * 100, levels };
+  }
   function stressView(entry, query) {
     const { market, metrics: x, units } = entry;
     const move = Number(query.get('move_pct'));
@@ -353,6 +374,7 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
     ['GET', /^\/api\/v1\/markets$/, () => ({ snapshot: snapshot(), markets: computeMetrics(state).markets.map(marketSummary) }), risk],
     ['GET', /^\/api\/v1\/markets\/(\d+)$/, async (match, query) => { const market = marketDetail(entryFor(match[1]), query); await withAddresses(market.top_positions); return { snapshot: snapshot(), market }; }, risk],
     ['GET', /^\/api\/v1\/markets\/(\d+)\/positions$/, (match, query) => { const csv = query.get('format') === 'csv'; const body = { snapshot: snapshot(), ...positionsList(entryFor(match[1]), query, csv ? { defaultLimit: 5000, maxLimit: 5000 } : {}) }; return csv ? { csv: toCsv(body.positions, POSITION_COLUMNS), filename: `plumb-${safeName(body.symbol)}-positions-${body.snapshot.block}.csv` } : body; }, risk],
+    ['GET', /^\/api\/v1\/markets\/(\d+)\/liq-levels$/, async match => { const view = liqLevelsView(entryFor(match[1])); await withAddresses(view.levels.map(l => l.top)); return { snapshot: snapshot(), ...view }; }],
     ['GET', /^\/api\/v1\/markets\/(\d+)\/entries$/, match => ({ snapshot: snapshot(), ...entriesView(entryFor(match[1])) })],
     ['GET', /^\/api\/v1\/markets\/(\d+)\/flow$/, (match, q) => A('positionFlow')(match[1], q)],
     ['GET', /^\/api\/v1\/markets\/(\d+)\/stress$/, async (match, query) => { const view = stressView(entryFor(match[1]), query); await withAddresses(view.positions_hit); return { snapshot: snapshot(), ...view }; }, risk],
