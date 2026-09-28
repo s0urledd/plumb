@@ -82,30 +82,52 @@ export function timeLabel(v, bucketSeconds) {
   if (bucketSeconds >= 86400 || (d.getUTCHours() === 0 && d.getUTCMinutes() === 0)) return day;
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 }
-// Days are named in white, hours stay faint. Over more than two days of
-// sub-day buckets only the midnights are labelled, so each day is named once.
-const midnight = v => Number(v) % 86400 === 0;
-const multiDay = (times, bucketSeconds) => bucketSeconds < 86400 && times.length > 1 && Number(times.at(-1)) - Number(times[0]) > 2 * 86400;
-const timeAxis = (times, bucketSeconds) => ({
-  type: 'category', data: times, boundaryGap: true,
-  axisLine: { show: false }, axisTick: { show: false },
-  axisLabel: {
-    color: T.faint, hideOverlap: true, margin: 12, fontSize: 10.5,
-    ...(multiDay(times, bucketSeconds) ? { interval: (i, v) => midnight(v) } : {}),
-    formatter: v => { const t = timeLabel(v, bucketSeconds); return bucketSeconds < 86400 && midnight(v) ? `{d|${t}}` : t; },
-    rich: { d: { color: 'rgba(255,255,255,0.78)', fontWeight: 500, fontSize: 10.5 } }
-  }
-});
 // Width of a label in the chart font (a legend's entries, a date under the axis).
 let ruler;
 const textWidth = (s, px = 11) => { ruler ??= document.createElement('canvas').getContext('2d'); ruler.font = `${px}px ${T.font}`; return ruler.measureText(s).width; };
+// Days are named in white, hours stay faint. Over more than two days of
+// sub-day buckets only the midnights are labelled, so each day is named once;
+// over a day or two, every n hours counted from midnight, n the shortest step
+// whose labels fit the chart's width (read again after a resize), so the date
+// is always among them. Daily buckets leave the spacing to ECharts.
+const midnight = v => Number(v) % 86400 === 0;
+const multiDay = (times, bucketSeconds) => bucketSeconds < 86400 && times.length > 1 && Number(times.at(-1)) - Number(times[0]) > 2 * 86400;
+const HOUR_STEPS = [1, 2, 3, 4, 6, 12, 24].map(h => h * 3600);
+function labelAt(el, times, bucketSeconds) {
+  if (bucketSeconds >= 86400) return null;
+  if (multiDay(times, bucketSeconds)) return midnight;
+  let width = null, step = 86400;
+  return v => {
+    if (el.clientWidth !== width) {
+      width = el.clientWidth;
+      const slot = (width - 60) / Math.max(1, times.length), need = textWidth('Sep 30', 10.5) + 16; // 60: about the value axis; 16: the gap between labels
+      step = HOUR_STEPS.find(s => s % bucketSeconds === 0 && s / bucketSeconds * slot >= need) ?? 86400;
+    }
+    return Number(v) % step === 0;
+  };
+}
+const timeAxis = (times, bucketSeconds, el) => {
+  const at = labelAt(el, times, bucketSeconds);
+  return {
+    type: 'category', data: times, boundaryGap: true,
+    axisLine: { show: false }, axisTick: { show: false },
+    axisLabel: {
+      color: T.faint, hideOverlap: true, margin: 12, fontSize: 10.5,
+      ...(at ? { interval: (i, v) => at(v) } : {}),
+      formatter: v => { const t = timeLabel(v, bucketSeconds); return bucketSeconds < 86400 && midnight(v) ? `{d|${t}}` : t; },
+      rich: { d: { color: 'rgba(255,255,255,0.78)', fontWeight: 500, fontSize: 10.5 } }
+    }
+  };
+};
 // A date label is centred on its bar, so the last one can reach past the plot
 // and be cut at the canvas edge (many bars on a phone). The right margin takes
 // that overhang at the chart's width, and again when it is resized, so a wide
-// chart keeps `right`. at: the last labelled index (the last bar, unless only
-// midnights are labelled); line: the points sit on the plot's ends, not mid-bar.
-function fitRight(chart, el, times, bucketSeconds, { right = 8, at = multiDay(times, bucketSeconds) ? times.findLastIndex(midnight) : times.length - 1, line = false } = {}) {
+// chart keeps `right`. at: the last labelled index (by default the last bar
+// labelled at the chart's width); line: the points sit on the plot's ends, not mid-bar.
+function fitRight(chart, el, times, bucketSeconds, { right = 8, at: fixed, line = false } = {}) {
+  const labelled = labelAt(el, times, bucketSeconds);
   const fit = () => {
+    const at = fixed ?? (labelled ? times.findLastIndex(labelled) : times.length - 1);
     if (at < 0) return right;
     const slot = (el.clientWidth - 44 - right) / Math.max(1, times.length - (line ? 1 : 0)); // 44: about the value axis and its labels
     const overhang = textWidth(timeLabel(times[at], bucketSeconds), 10.5) / 2 + 1 - (times.length - 1 - at + (line ? 0 : 0.5)) * slot;
@@ -198,7 +220,7 @@ export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v
     ...base(),
     // A running total has its axis on the right, which gives the last date room.
     grid: { ...base().grid, right: cumulative ? 8 : fitRight(chart, el, times, bucketSeconds), bottom: zoom ? 30 : 6 },
-    xAxis: timeAxis(times, bucketSeconds),
+    xAxis: timeAxis(times, bucketSeconds, el),
     yAxis: cumulative ? [valueAxis(yFmt), { ...valueAxis(yFmt), splitLine: { show: false } }] : valueAxis(yFmt),
     legend: { show: false, data: [...series.map(s => s.name), ...(cumulative ? [CUMULATIVE] : [])] },
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { total: true, exclude: CUMULATIVE, partial }) },
@@ -227,7 +249,7 @@ export function lineChart(el, { times, series, bucketSeconds, fmt = v => usd(v),
     yFmt = scale && vals.length ? usdAxisFor(Math.min(...vals), Math.max(...vals)) : usdAxis;
   }
   chart.setOption({
-    ...base(), grid: { ...base().grid, right: fitRight(chart, el, times, bucketSeconds, { line: true }) }, xAxis: { ...timeAxis(times, bucketSeconds), boundaryGap: false }, yAxis: { ...valueAxis(yFmt), scale },
+    ...base(), grid: { ...base().grid, right: fitRight(chart, el, times, bucketSeconds, { line: true }) }, xAxis: { ...timeAxis(times, bucketSeconds, el), boundaryGap: false }, yAxis: { ...valueAxis(yFmt), scale },
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds) },
     series: series.map(s => ({ name: s.name, type: 'line', data: s.data, symbol: 'none', smooth: 0.3, connectNulls: true, lineStyle: { color: s.color, width: 1.75 }, itemStyle: { color: s.color }, areaStyle: area && series.length === 1 ? { color: new window.echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: s.color + '47' }, { offset: 1, color: s.color + '00' }]) } : undefined }))
   }, true);
@@ -238,7 +260,7 @@ export function lineChart(el, { times, series, bucketSeconds, fmt = v => usd(v),
 export function signedBars(el, { times, values, bucketSeconds, name = 'Value', fmt = v => usd(v, { sign: true }), yFmt = usdAxis, dayTicks = false }) {
   const chart = init(el);
   if (!chart) return;
-  const xAxis = timeAxis(times, bucketSeconds);
+  const xAxis = timeAxis(times, bucketSeconds, el);
   let at; // the last labelled bar, when not the one fitRight assumes
   if (dayTicks) {
     const day = t => Math.floor(Number(t) / 86400);
@@ -264,7 +286,7 @@ export function twoSided(el, { times, up, down, net = 'Net', bucketSeconds, fmt 
   const upData = up.data.map(v => num(v) ?? 0), downData = down.data.map(v => -(num(v) ?? 0));
   const partial = partialAt(times, bucketSeconds);
   chart.setOption({
-    ...base(), grid: { ...base().grid, right: fitRight(chart, el, times, bucketSeconds) }, xAxis: timeAxis(times, bucketSeconds), yAxis: valueAxis(yFmt),
+    ...base(), grid: { ...base().grid, right: fitRight(chart, el, times, bucketSeconds) }, xAxis: timeAxis(times, bucketSeconds, el), yAxis: valueAxis(yFmt),
     legend: { show: false, data: [up.name, down.name, net] },
     tooltip: { ...base().tooltip, formatter: tooltip(fmt, bucketSeconds, { partial }) },
     series: [
@@ -287,7 +309,7 @@ export function divergingHeatmap(el, { times, rows, bucketSeconds, clamp, fmt = 
   chart.setOption({
     ...base(), grid: { left: 8, right: 12, top: 6, bottom: 34, containLabel: true },
     tooltip: { ...base().tooltip, trigger: 'item', axisPointer: undefined, formatter: p => `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(times[p.value[0]]) : dateTime(times[p.value[0]]) + ' UTC'}</div>${row(p.color, rows[p.value[1]].name, fmt(p.value[2]))}` },
-    xAxis: { ...timeAxis(times, bucketSeconds), splitArea: { show: false } },
+    xAxis: { ...timeAxis(times, bucketSeconds, el), splitArea: { show: false } },
     yAxis: { type: 'category', data: rows.map(r => r.name), inverse: true, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: T.text, margin: 10 } },
     visualMap: { type: 'continuous', min: -clamp, max: clamp, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, itemWidth: 10, itemHeight: 180, text: labels, textGap: 8, textStyle: { color: T.faint, fontSize: 11 }, inRange: { color: [DIVERGING.neg, DIVERGING.mid, DIVERGING.pos] } },
     series: [{ type: 'heatmap', data, itemStyle: { borderColor: T.surface, borderWidth: 2, borderRadius: 2 }, emphasis: { itemStyle: { borderColor: 'rgba(255,255,255,0.6)', borderWidth: 1 } } }]
@@ -302,7 +324,7 @@ export function divergingHeatmap(el, { times, rows, bucketSeconds, clamp, fmt = 
 export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volColor = 'rgba(162,164,255,0.35)', zoom = false, levels = null, mark = null, levelSpan = 0.04, onLevel = null }) {
   const chart = init(el);
   if (!chart) return;
-  const x = i => ({ ...timeAxis(times, bucketSeconds), gridIndex: i, axisLabel: i === 0 ? { show: false } : timeAxis(times, bucketSeconds).axisLabel });
+  const x = i => ({ ...timeAxis(times, bucketSeconds, el), gridIndex: i, axisLabel: i === 0 ? { show: false } : timeAxis(times, bucketSeconds, el).axisLabel });
   const near = levels && mark ? levels.filter(l => Math.abs((l.lo + l.hi) / 2 / mark - 1) <= levelSpan).map(l => ({ ...l, n: (num(l.long) ?? 0) + (num(l.short) ?? 0), side: (num(l.long) ?? 0) >= (num(l.short) ?? 0) ? 'long' : 'short' })) : [];
   const peak = Math.max(1, ...near.map(b => b.n));
   // Bands under 5 % of the largest are left out: the chart shows where liquidations cluster, not every position.
@@ -417,7 +439,7 @@ export function flowBars(el, { times, longOpen, longClose, shortOpen, shortClose
   const opens = capped([lo, so], [3, 3, 0, 0]), closes = capped([lc.map(v => -v), sc.map(v => -v)], [0, 0, 3, 3]);
   const bar = (name, data, color, stack) => ({ name, type: 'bar', stack, data: fade(data, partial), itemStyle: { color }, barMaxWidth: 18, emphasis: { focus: 'series' } });
   chart.setOption({
-    ...base(), grid: { ...base().grid, right: fitRight(chart, el, times, bucketSeconds) }, xAxis: timeAxis(times, bucketSeconds), yAxis: valueAxis(v => yFmt(Math.abs(v)) === '$0' ? '$0' : `${v < 0 ? '-' : ''}${yFmt(Math.abs(v))}`),
+    ...base(), grid: { ...base().grid, right: fitRight(chart, el, times, bucketSeconds) }, xAxis: timeAxis(times, bucketSeconds, el), yAxis: valueAxis(v => yFmt(Math.abs(v)) === '$0' ? '$0' : `${v < 0 ? '-' : ''}${yFmt(Math.abs(v))}`),
     legend: { show: false },
     tooltip: { ...base().tooltip, formatter: params => {
       const all = Array.isArray(params) ? params : [params];
