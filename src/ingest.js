@@ -18,6 +18,8 @@ import { createReader } from './exchange.js';
 import { rowsFromLogs, ingestTopics } from './decode.js';
 import { createCoverage } from './coverage.js';
 import { normalizeMarket } from './state.js';
+import { createRevenueParams, REVENUE_PARAM_EVENTS } from './revenue.js';
+import { markStale } from './rollup.js';
 import * as m from './math.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -50,6 +52,8 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   const live = { name: 'node', reader: createReader({ rpc: liveRpc, exchange: config.exchange }), range: options.liveRange, concurrency: options.liveConcurrency };
   const archives = archiveRpcs.map((rpc, i) => ({ name: `archive${i + 1}`, reader: createReader({ rpc, exchange: config.exchange }), range: options.archiveRange, concurrency: options.archiveConcurrency }));
   const markets = new Map(); // id -> { symbol, name, priceDecimals, lotDecimals }
+  const revenueParams = createRevenueParams(); // fee and liquidation rates over time (revenue split)
+  let staleSince = null; // a rate change whose rolled hours are not yet marked stale in the database
   const listeners = new Set();
   let collateralDecimals = 6;
   let running = false, stopRequested = false, wake = null;
@@ -76,6 +80,9 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
     await ch.insert('markets', rows);
     for (const r of rows) markets.set(r.market, { symbol: r.symbol, name: r.name, priceDecimals: r.price_decimals, lotDecimals: r.lot_decimals });
     return rows.length;
+  }
+  async function loadRevenueParams() {
+    revenueParams.add(await ch.query(`SELECT block, log_index, toUnixTimestamp(ts) AS ts, name, market, args FROM params FINAL WHERE name IN (${REVENUE_PARAM_EVENTS.map(x => `'${x}'`).join(', ')})`));
   }
   async function loadCoverage() {
     for (const r of await ch.query('SELECT from_block, to_block, toUnixTimestamp(from_ts) AS from_ts, toUnixTimestamp(to_ts) AS to_ts FROM chunks FINAL ORDER BY from_block')) coverage.add(BigInt(r.from_block), BigInt(r.to_block), Number(r.from_ts), Number(r.to_ts));
@@ -129,6 +136,7 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
 
   async function init() {
     await loadMarkets();
+    await loadRevenueParams();
     await loadCoverage();
     await repair();
     const fin = await live.reader.getBlock('finalized');
@@ -179,6 +187,13 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
     if (all.markets.length) { await ch.insert('markets', all.markets); for (const x of all.markets) markets.set(x.market, { symbol: x.symbol, name: x.name, priceDecimals: x.price_decimals, lotDecimals: x.lot_decimals }); }
     await ch.insert('accounts', all.accounts);
     await ch.insert('funding', all.funding);
+    // A fee or liquidation rate change applies from its block on; hours
+    // already rolled after it (the backfill runs newest first) are redone.
+    // They are marked in the database before the change is stored: a replay
+    // after a crash finds the change already known and would not mark them.
+    const since = revenueParams.add(all.params);
+    if (since !== null) { staleSince = staleSince === null ? since : Math.min(staleSince, since); emit({ type: 'revenue-params', ts: since }); }
+    if (staleSince !== null) { const t = staleSince; await markStale(ch, t); if (staleSince === t) staleSince = null; }
     await ch.insert('params', all.params);
     await ch.insert('ev', all.ev);
     await ch.insert('chunks', chunkRows);
@@ -364,5 +379,5 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   }
   function stop() { running = false; stopRequested = true; if (wake) wake(); }
 
-  return { init, start, stop, liveStep, backfill, readRange, commit, repair, notifyFinalized, on: fn => { listeners.add(fn); return () => listeners.delete(fn); }, coverage, markets, unitsOf, progress, status, get collateralDecimals() { return collateralDecimals; }, sources: { live, archives } };
+  return { init, start, stop, liveStep, backfill, readRange, commit, repair, notifyFinalized, on: fn => { listeners.add(fn); return () => listeners.delete(fn); }, coverage, markets, revenueParams, unitsOf, progress, status, get collateralDecimals() { return collateralDecimals; }, sources: { live, archives } };
 }

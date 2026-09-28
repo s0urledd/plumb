@@ -1,0 +1,100 @@
+{
+  "note": "Reconciliation window W01 read from the chain on 2026-09-28: ZEC (market 50), four liquidations on the book. The protocol balance and the market insurance balance changes are the contract values (getExchangeInfo protocolBalanceCNS, getPerpetualInfoV2 insuranceBalanceCNS) at the window blocks; fee sums are over every linked fill in the window, the reducing insurance share rounded up per fill.",
+  "window": {
+    "from": "2026-09-26T21:00:00Z",
+    "to": "2026-09-26T22:00:00Z",
+    "from_block": 108280784,
+    "to_block": 108292706
+  },
+  "protocol_balance_change": "106777598",
+  "exchange": {
+    "opening_protocol": "29985888",
+    "reducing_fees": "75127009",
+    "reducing_insurance": "10996657",
+    "builder_fees": "3841355"
+  },
+  "market": 50,
+  "insurance_balance_change": "13491916",
+  "market_fees": {
+    "opening_insurance": "345584",
+    "reducing_insurance": "484981"
+  },
+  "liquidations": [
+    {
+      "block": 108284270,
+      "log_index": 78,
+      "tx": "0x1c86b864a353871c24cfd896953aefe320e41a6d1416dde830e07c13c8ded76f",
+      "perpId": "50",
+      "positionType": 1,
+      "markPricePNS": "160325",
+      "liqPricePNS": "160337",
+      "liqLotLNS": "8438",
+      "posLotLNS": "0",
+      "deltaPnlCNS": "-60112312",
+      "fundingCNS": "-782541",
+      "posAmountCNS": "-132327249",
+      "posDepositCNS": "0",
+      "accAmountCNS": "57145916",
+      "accBalanceCNS": "192207600",
+      "onOrderBook": true,
+      "takerFillFeeCNS": "0"
+    },
+    {
+      "block": 108285296,
+      "log_index": 59,
+      "tx": "0x62cfa8270398f0f19e307ef3eea0477dbd9cff14bae641af93e85321e6f6327d",
+      "perpId": "50",
+      "positionType": 1,
+      "markPricePNS": "161721",
+      "liqPricePNS": "162038",
+      "liqLotLNS": "2",
+      "posLotLNS": "0",
+      "deltaPnlCNS": "-16017",
+      "fundingCNS": "-75",
+      "posAmountCNS": "-32257",
+      "posDepositCNS": "0",
+      "accAmountCNS": "12932",
+      "accBalanceCNS": "13611741989",
+      "onOrderBook": true,
+      "takerFillFeeCNS": "0"
+    },
+    {
+      "block": 108285370,
+      "log_index": 145,
+      "tx": "0x604cc965dc4a6e79f420406c4334d6186ce1c2810e677b77dfdb662b1497dcd8",
+      "perpId": "50",
+      "positionType": 1,
+      "markPricePNS": "163238",
+      "liqPricePNS": "163453",
+      "liqLotLNS": "31",
+      "posLotLNS": "0",
+      "deltaPnlCNS": "-220689",
+      "fundingCNS": "-6745",
+      "posAmountCNS": "-489100",
+      "posDepositCNS": "0",
+      "accAmountCNS": "209332",
+      "accBalanceCNS": "1464962",
+      "onOrderBook": true,
+      "takerFillFeeCNS": "0"
+    },
+    {
+      "block": 108289343,
+      "log_index": 200,
+      "tx": "0x8829e781b5e72257a428ed42a6fcccbacb72173fe2b5c03f59423e9ac389372b",
+      "perpId": "50",
+      "positionType": 1,
+      "markPricePNS": "168303",
+      "liqPricePNS": "167677",
+      "liqLotLNS": "6196",
+      "posLotLNS": "0",
+      "deltaPnlCNS": "-93266642",
+      "fundingCNS": "-3933407",
+      "posAmountCNS": "-152103356",
+      "posDepositCNS": "0",
+      "accAmountCNS": "43922645",
+      "accBalanceCNS": "7430945137",
+      "onOrderBook": true,
+      "takerFillFeeCNS": "0"
+    }
+  ]
+}

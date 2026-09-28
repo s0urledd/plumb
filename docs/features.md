@@ -8,14 +8,17 @@ from the [API](api.md).
 - **Headline metrics** for 24h, 7d, 30d and all time. Each card names its
   period; flows over a window are compared with the previous window.
   - volume, open interest and TVL (open interest and TVL are "now");
-  - fees, with the protocol share shown as revenue;
+  - fees, with the protocol's revenue (its share of fees and of
+    liquidations);
   - active traders and new accounts;
   - liquidations.
 - **Time series** per hour, four hours, day or week (all time):
   - trading volume stacked by market, per period or cumulative;
   - open interest and TVL;
   - deposits against withdrawals, with the net per period;
-  - active traders (new and returning), fees, liquidations by market;
+  - active traders (new and returning), liquidations by market;
+  - fees by market, or by who receives them: the protocol and the insurance
+    fund;
   - realized PnL of all traders, and taker buying against selling.
 
   Every chart downloads as CSV or PNG.

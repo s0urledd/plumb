@@ -6,6 +6,7 @@
 // Amounts are contract integers: CNS (collateral, 6 decimals on Perpl), PNS
 // (price), LNS (size). Notional is computed at ingest with exact integer
 // math (math.notionalCNS) from the market's decimals.
+import { REVENUE_COLUMNS } from './aggregates.js';
 
 export const KINDS = {
   open: 1, increase: 2, decrease: 3, close: 4, invert: 5,
@@ -53,7 +54,14 @@ const evColumns = `
 // Flags on ev rows.
 export const FLAG = { ON_BOOK: 1, FORCE_CLOSE: 2, UNLINKED: 4, WITHOUT_PAYMENT: 8 };
 
-export const ROLLUP_VERSION = 2;
+// Amounts are Int64; the count of unsplit liquidations is a count like the others (a UInt64
+// count unioned with an Int64 rollup column becomes a Variant that sum() rejects).
+const revenueType = c => (c === 'liq_unsplit' ? 'UInt32' : 'Int64');
+const revenueColumns = REVENUE_COLUMNS.map(c => `${c} ${revenueType(c)} DEFAULT 0`).join(', ');
+
+// Version 3 adds the reducing-fee split and the liquidation shares
+// (rollup.js carries over the hours they do not change).
+export const ROLLUP_VERSION = 3;
 
 export const DDL = [
   `CREATE TABLE IF NOT EXISTS ev (${evColumns}
@@ -108,6 +116,7 @@ export const DDL = [
     hour DateTime('UTC'), market UInt16,
     volume Int64, lots UInt64, fills UInt32,
     maker_fees Int64, taker_fees Int64, builder_fees Int64, ins_fees Int64, prot_fees Int64,
+    ${revenueColumns},
     taker_buy Int64, taker_sell Int64,
     trades UInt32, opens UInt32, closes UInt32,
     liquidations UInt32, liquidated Int64, deleverages UInt32, deleveraged Int64,
@@ -117,6 +126,8 @@ export const DDL = [
     traders UInt32,
     computed_at DateTime64(3, 'UTC')
   ) ENGINE = ReplacingMergeTree(computed_at) ORDER BY (hour, market)`,
+  // Added in rollup version 3; rows rolled before read 0 until rolled again.
+  `ALTER TABLE agg_market_hour ${REVENUE_COLUMNS.map(c => `ADD COLUMN IF NOT EXISTS ${c} ${revenueType(c)} DEFAULT 0`).join(', ')}`,
 
   `CREATE TABLE IF NOT EXISTS agg_hour (
     hour DateTime('UTC'),
