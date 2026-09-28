@@ -19,9 +19,12 @@ const signed = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}%`;
 // The ladder's sides, named in the card head as on the market page.
 const LADDER_KEY = [['Longs (price down)', COLORS.long], ['Shorts (price up)', COLORS.short]].map(([name, color]) => `<span><i style="background:${color}"></i>${name}</span>`).join('');
 
+// The move in the address, 0 included (a plain || would turn 0 into the default).
+const moveOf = (q, fallback) => { const v = q.get('move'); return v !== null && v !== '' && Number.isFinite(Number(v)) ? Math.max(-50, Math.min(50, Math.round(Number(v)))) : fallback; };
+
 export function mount(el, { query, setQuery }) {
   let alive = true, overview = null;
-  let marketId = Number(query.get('market')) || null, move = Number(query.get('move')) || -10;
+  let marketId = Number(query.get('market')) || null, move = moveOf(query, -10);
   el.innerHTML = `
     <div class="page-head"><div><h1>Risk</h1><div class="sub">Liquidation exposure of every open position, from contract state at the latest finalized block read (about every second; order book every 30 s).</div></div><span class="meta faint" id="block"></span></div>
     <div class="stack">
@@ -94,7 +97,7 @@ export function mount(el, { query, setQuery }) {
     const seq = ++stressSeq;
     if (!marketId) { $('stress').innerHTML = $('hit').innerHTML = empty('No open positions'); return; }
     $('move-label').textContent = signed(move);
-    if (move === 0) { $('stress').innerHTML = empty('Move the slider to simulate a price change'); $('hit').innerHTML = empty('No move selected'); $('hit-meta').textContent = ''; $('move-price').textContent = '—'; return; }
+    if (move === 0) { $('stress').innerHTML = empty('Move the slider to simulate a price change'); $('hit').innerHTML = empty('No move selected'); $('hit-meta').textContent = ''; $('move-price').textContent = price(overview?.markets.find(m => m.id === marketId)?.prices?.mark); return; } // no move: the mark as it is
     const r = await get(`markets/${marketId}/stress?move_pct=${move}`, { maxAge: 0 });
     if (!alive || seq !== stressSeq) return; // superseded by a newer slider position
     // The order book is re-read about every 30 s. If the table above was drawn
@@ -135,7 +138,7 @@ export function mount(el, { query, setQuery }) {
   load().catch(error => { $('kpis').innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; });
   return {
     onAction(a, t) { if (a === 'pick') { marketId = Number(t.dataset.id); $('mkt').value = String(marketId); setQuery({ market: marketId }); } },
-    update(q) { marketId = Number(q.get('market')) || marketId; move = Number(q.get('move')) || move; ladder().catch(() => {}); stress().catch(() => {}); },
+    update(q) { marketId = Number(q.get('market')) || marketId; move = moveOf(q, move); $('move').value = String(move); ladder().catch(() => {}); stress().catch(() => {}); },
     destroy() { alive = false; clearInterval(timer); clearTimeout(stressTimer); }
   };
 }
