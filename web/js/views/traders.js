@@ -18,17 +18,17 @@ export function mount(el, { query, setQuery }) {
   let page = 0, alive = true, data = null, cohorts = null, coTab = 'size', coSel = null, smWin = '30d', smMin = '1000';
   const LIMIT = 50;
   el.innerHTML = `
-    <div class="page-head"><div><h1>Traders</h1><div class="sub">Accounts that traded in the window, ranked from indexed events (flow rankings: accounts that deposited or withdrew). Net PnL = realized PnL (price PnL + funding) − fees.</div></div></div>
+    <div class="page-head"><div><h1>Traders</h1><div class="sub">Rankings of every account that traded, how traders are positioned now, and the latest moves of the most profitable ones.</div></div><div id="win">${seg('window', WINDOWS, w)}</div></div>
     <div class="stack traders-page">
     <div class="kpis k4" id="tkpis">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:60%;margin-top:10px"></div></div>').join('')}</div>
+    <section class="panel" id="board"><div class="panel-head"><div><h2 id="title">Leaderboard</h2><div class="desc" id="meta"></div></div><div class="lb-tools"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div>
+      <div class="panel-head lb-ctl"><div id="by">${seg('by', SORTS, by)}</div></div>
+      <div class="panel-body flush" id="list">${skeleton(12)}</div>
+      <div class="panel-foot pager"><span id="count"></span><span class="pager-ctl" id="pager"></span></div></section>
     <section class="panel"><div class="panel-head"><div><h2>Positioning by cohort</h2><div class="desc" id="co-desc">Open positions now, grouped by account · click a cohort for its largest wallets</div></div><div id="co-tabs">${seg('co', CO_TABS, coTab)}</div></div>
       <div class="panel-body flush" id="cohorts">${skeleton(4)}</div><div id="co-detail"></div></section>
     <section class="panel"><div class="panel-head"><div><h2>Smart money moves</h2><div class="desc" id="sm-desc">What the most profitable traders are doing now</div></div><div class="sm-ctl"><div id="sm-min">${seg('smm', SM_SIZES, smMin)}</div><div id="sm-win">${seg('smw', SM_WINDOWS, smWin)}</div></div></div>
       <div class="panel-body flush scroll sm-list" id="moves">${skeleton(6)}</div></section>
-    <section class="panel" id="board"><div class="panel-head"><div><h2 id="title">Leaderboard</h2><div class="desc" id="meta"></div></div><div class="lb-tools"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div>
-      <div class="panel-head lb-ctl"><div id="by">${seg('by', SORTS, by)}</div><div id="win">${seg('window', WINDOWS, w)}</div></div>
-      <div class="panel-body flush" id="list">${skeleton(12)}</div>
-      <div class="panel-foot pager"><span id="count"></span><span class="pager-ctl" id="pager"></span></div></section>
     </div>`;
   const $ = s => el.querySelector(`#${s}`);
   // At most two rule-based style tags per trader; each title gives the evidence.
@@ -43,7 +43,7 @@ export function mount(el, { query, setQuery }) {
   const COLS = [
     { key: 'rank', label: '#', render: r => `<span class="rank">${r.rank}</span>` },
     { key: 'addr', label: 'Trader', render: r => { const t = styleTags(r); return `${addr(r.address, r.account)}${t ? `<div class="sub tags">${t}</div>` : ''}`; } },
-    { key: 'pnl', label: 'Net PnL', n: true, render: r => pnl(r.pnl) },
+    { key: 'pnl', label: 'Net PnL', tip: 'Realized PnL, funding included, minus fees', n: true, render: r => pnl(r.pnl) },
     { key: 'roi', label: 'PnL / volume', n: true, render: r => bpsCell(r.roi_on_volume_bps) }, // in bps, as the KPI above and the wallet page
     { key: 'volume', label: 'Volume', n: true, render: r => usd(r.volume) },
     { key: 'trades', label: 'Trades', n: true, render: r => int(r.trades) },
