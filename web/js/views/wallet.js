@@ -41,9 +41,9 @@ export function mount(el, { params, query, setQuery, navigate }) {
     const p = d.portfolio, perf = an?.performance, s = d.summary;
     const wait = '<span class="skeleton" style="display:inline-block;width:72px;height:22px;vertical-align:middle"></span>';
     return `<div class="kpis k7">${[
-      kpi({ label: 'Account value', value: usd(p?.account_value), note: p ? `${int(p.positions)} open · ${p.leverage ?? 0}x lev.` : 'live state unavailable', tip: 'Account balance (including what open orders lock) plus the equity of open positions, from the contract at the current block.' }),
+      kpi({ label: 'Account value', value: usd(p?.account_value), note: p ? `${int(p.positions)} open · ${p.leverage ?? 0}x lev.` : 'live state unavailable', tip: 'Live balance, including funds locked by orders, plus open positions\' margin and unrealized PnL.' }),
       kpi({ label: 'Unrealized PnL', value: pnl(p?.unrealized_pnl), note: p?.closest_liquidation ? `closest liq. ${pct(p.closest_liquidation.distance_pct, { digits: 1 })} away` : '' }),
-      kpi({ label: 'Net PnL', value: pnl(s.net_pnl), note: `after ${usd(s.fees)} fees`, tip: `All-time realized PnL including funding (${usd(s.realized, { sign: true })}) minus trading fees (${usd(s.fees)}).` }),
+      kpi({ label: 'Net PnL', value: pnl(s.net_pnl), note: `after ${usd(s.fees)} fees`, tip: `All-time realized PnL with funding (${usd(s.realized, { sign: true })}), minus fees (${usd(s.fees)}).` }),
       kpi({ label: 'Win rate', value: !perf ? wait : perf.win_rate_pct === null ? '—' : pct(perf.win_rate_pct, { digits: 1 }), note: perf ? `${int(perf.wins)}W · ${int(perf.losses)}L of ${int(perf.closed_trips)} trips` : 'analysing round trips…' }),
       kpi({ label: 'Profit factor', value: !perf ? wait : perf.profit_factor === null ? '—' : perf.profit_factor.toFixed(2), note: perf ? `avg win ${usd(perf.average_win)} · loss ${usd(perf.average_loss)}` : '' }),
       kpi({ label: 'Volume', value: usd(s.volume), note: `${int(s.trades)} trades · ${pct(s.maker_share_pct, { digits: 0 })} maker` }),
@@ -59,7 +59,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
     { key: 'mark', label: 'Mark', n: true, render: r => price(r.mark) },
     { key: 'lev', label: 'Leverage', n: true, render: r => (r.leverage ? `${Number(r.leverage).toFixed(1)}x` : '—') },
     { key: 'upnl', label: 'uPnL', n: true, render: r => pnl(r.pnl) },
-    { key: 'liq', label: 'Liq. price', n: true, render: r => (num(r.liquidation_price) > 0 ? price(r.liquidation_price) : '<span class="faint" title="Deposit covers any price move">none</span>') },
+    { key: 'liq', label: 'Liq. price', n: true, render: r => (num(r.liquidation_price) > 0 ? price(r.liquidation_price) : '<span class="faint" title="No liquidation price: the margin covers any price move">none</span>') },
     { key: 'dist', label: 'Distance', n: true, render: r => (r.liquidation_distance_pct === null || !(num(r.liquidation_price) > 0) ? '<span class="faint">—</span>' : `<span class="${r.liquidation_distance_pct < 5 ? 'neg' : r.liquidation_distance_pct < 15 ? '' : 'muted'}">${pct(r.liquidation_distance_pct, { digits: 1 })}</span>`) },
     { key: 'margin', label: 'Margin', n: true, render: r => usd(r.deposit) }
   ];
@@ -127,7 +127,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
         <section class="panel"><div class="panel-head"><h2>By period</h2><span class="meta">Rolling windows · rank among every account that traded in the window</span></div>
           <div class="panel-body flush" id="periods">${periods ? periodsTable() : skeleton(4)}</div></section>
         <div class="grid g-main">
-          <section class="panel trend pnl-card"><div class="panel-head"><div class="trend-id"><h2>Net PnL <span class="info-tip" title="Realized PnL (price PnL and funding) minus trading fees, per UTC day. Open positions count once they are reduced or closed.">i</span></h2><div class="head-value" id="pnl-v"></div></div>
+          <section class="panel trend pnl-card"><div class="panel-head"><div class="trend-id"><h2>Net PnL <span class="info-tip" title="Realized PnL with funding, minus fees, per UTC day. Open positions count once reduced or closed.">i</span></h2><div class="head-value" id="pnl-v"></div></div>
             <div class="trend-side"><div class="trend-ctl">${chartTools('pnl-chart', `wallet-${d.account.id}-pnl`)}<div class="seg sm"><button data-action="pnl-cum" class="${pnlMode === 'cumulative' ? 'on' : ''}">Cumulative</button><button data-action="pnl-daily" class="${pnlMode === 'daily' ? 'on' : ''}">Daily</button><button data-action="pnl-cal" class="${pnlMode === 'calendar' ? 'on' : ''}">Calendar</button></div></div><div class="legend dots" id="pnl-lg"></div></div></div>
             <div class="panel-body"><div class="chart" id="pnl-chart"></div></div></section>
           <section class="panel"><div class="panel-head"><h2>Performance</h2><span class="meta">Closed round trips, net of fees</span></div><div id="perf">${an ? perfPanel(an.performance, d.summary) : perfSkeleton()}</div></section>
@@ -135,7 +135,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
         <div class="grid g-2">
           <section class="panel"><div class="panel-head"><h2>Behaviour</h2><span class="meta">Rule-based, from this wallet's trades</span></div>
             <div id="insights">${an ? insightsHtml() : perfSkeleton()}</div></section>
-          <section class="panel"><div class="panel-head"><h2>By market</h2><span class="meta" title="Volume and net PnL cover the whole indexed history; win rate and trips come from the analysed round trips">Volume, PnL all-time · win rate, trips from analysed trips</span></div><div class="panel-body flush">${table({ id: 'mk', compact: true, columns: [
+          <section class="panel"><div class="panel-head"><h2>By market</h2><span class="meta" title="Volume and net PnL are all-time; win rate and trips count closed round trips only">Volume, PnL all-time · win rate, trips from analysed trips</span></div><div class="panel-body flush">${table({ id: 'mk', compact: true, columns: [
             { key: 'm', label: 'Market', render: twinLink(d.markets) },
             { key: 'v', label: 'Volume', n: true, render: r => usd(r.volume) },
             { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.net_pnl) },
@@ -171,7 +171,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
         { key: 'lev', label: 'Max lev.', n: true, render: r => (r.max_leverage ? `${r.max_leverage.toFixed(1)}x` : '—') },
         { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.net_pnl) },
         { key: 'r', label: 'Return', n: true, render: r => pctCell(r.return_pct) },
-        { key: 'f', label: 'Outcome', render: r => (r.open ? '<span class="tag" title="Still open; PnL so far">open</span>' : r.liquidated ? '<span class="tag bad">liquidated</span>' : r.deleveraged ? '<span class="tag warn">ADL</span>' : num(r.net_pnl) > 0 ? '<span class="tag good">win</span>' : num(r.net_pnl) < 0 ? '<span class="tag">loss</span>' : '<span class="tag">flat</span>') }
+        { key: 'f', label: 'Outcome', render: r => (r.open ? '<span class="tag" title="Still open: Net PnL counts only what is realized so far, after fees">open</span>' : r.liquidated ? '<span class="tag bad">liquidated</span>' : r.deleveraged ? '<span class="tag warn">ADL</span>' : num(r.net_pnl) > 0 ? '<span class="tag good">win</span>' : num(r.net_pnl) < 0 ? '<span class="tag">loss</span>' : '<span class="tag">flat</span>') }
       ], rows: tripRows, rowAttrs: r => (r.open ? 'title="Still open"' : ''), emptyText: 'No round trips yet' }) + '</section>';
     } else if (tab === 'flows') {
       body.innerHTML = `<section class="panel"><div class="panel-head"><h2>Deposits and withdrawals</h2><span class="meta">Newest first</span></div><div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div></div>` + table({ id: 'flows', columns: [
@@ -315,7 +315,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
   function markPartial() {
     const all = periods?.periods?.find(x => x.window === 'all');
     const sub = el.querySelector('.wallet-id .sub:last-child');
-    if (all && all.coverage_complete === false && sub && !sub.querySelector('.tag')) sub.insertAdjacentHTML('beforeend', ' <span class="tag warn" title="Wallet history is still being indexed; all-time totals will grow">partial history</span>');
+    if (all && all.coverage_complete === false && sub && !sub.querySelector('.tag')) sub.insertAdjacentHTML('beforeend', ' <span class="tag warn" title="Wallet history is still being indexed, so all-time totals are incomplete">partial history</span>');
   }
   function insightsHtml() {
     return `<div class="insights">${an.insights.length ? an.insights.map(i => `<div class="insight"><span class="tag accent">${esc(i.tag)}</span><span>${esc(i.text)}</span></div>`).join('') : '<span class="faint">Not enough closed trades yet.</span>'}</div>

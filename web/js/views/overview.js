@@ -51,14 +51,14 @@ export function mount(el, { query, setQuery }) {
       </div>
       <div class="section-label">Trends</div>
       <div class="grid g-2">
-        ${panel('oi', 'Open interest', 'One side, priced at the last trade')}
+        ${panel('oi', 'Open interest', 'Value of open positions, one side only (longs equal shorts); the chart uses last trade prices')}
         ${panel('tvl', 'TVL', 'Collateral in the exchange contract')}
-        ${panel('flows', 'Deposits and withdrawals', 'Deposits up, withdrawals down; line: net per period')}
-        ${panel('traders', 'Active traders', 'Distinct accounts trading per period: returning, and first-time (first trade ever)')}
-        ${panel('fees', 'Fees', 'Gross fees on fills; the contract splits them only on trades that open or add', `<div id="fees-mode">${segSm('feesv', FEE_VIEWS, feeView)}</div>`)}
-        ${panel('liq', 'Liquidations', 'Liquidated notional by market')}
-        ${panel('tpnl', 'Trader PnL', 'Realized PnL of all traders per period (price PnL + funding, before fees). After fees: less the trading fees and the liquidation fees taken from liquidated margin, as on the Traders page.')}
-        ${panel('taker', 'Taker flow', 'Aggressive buys up, sells down; line: net per period')}
+        ${panel('flows', 'Deposits and withdrawals', 'Deposits (up) and withdrawals (down) per period; the line is the net')}
+        ${panel('traders', 'Active traders', 'Accounts that traded in each period, split into returning and first-time (first trade ever)')}
+        ${panel('fees', 'Fees', 'Trading fees before rebates; fees on reducing trades have no protocol/insurance split', `<div id="fees-mode">${segSm('feesv', FEE_VIEWS, feeView)}</div>`)}
+        ${panel('liq', 'Liquidations', 'Value of positions liquidated, by market; the line is the running total')}
+        ${panel('tpnl', 'Trader PnL', 'Realized PnL of all traders per period, funding included, before fees. The after-fees figure subtracts trading and liquidation fees.')}
+        ${panel('taker', 'Taker flow', 'Volume bought (up) and sold (down) by takers per period; the line is net buying')}
       </div>
       <div class="section-label">Activity</div>
       <div class="grid g-3 aligned">
@@ -257,11 +257,11 @@ export function mount(el, { query, setQuery }) {
   // starting to its finalization; a dimmed row's tooltip gives its own stage.
   const finalMs = [];
   const secs = ms => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)} s`;
-  const stageTitle = r => (r.votedMs !== undefined ? `Proposed block, voted ${secs(r.votedMs)} after it started executing; final soon` : 'Proposed block, not final yet');
+  const stageTitle = r => (r.votedMs !== undefined ? `Proposed block, not final yet; validators voted for it ${secs(r.votedMs)} after it began executing` : 'Proposed block, not final yet');
   function renderSpeed() {
     if (!finalMs.length) return;
     const sorted = [...finalMs].sort((a, b) => a - b), mid = sorted[Math.floor(sorted.length / 2)];
-    $('tape-meta').innerHTML = `<span class="speed-pill">${ICON.cube} Proposed → final <b class="num" title="Median time from a proposed block starting to execute to its finalization, as seen from the Monad node Plumb reads; last ${sorted.length} blocks with Perpl trades">${secs(mid)}</b></span><span>UTC</span>`;
+    $('tape-meta').innerHTML = `<span class="speed-pill">${ICON.cube} Proposed → final <b class="num" title="Median time for a block to go from proposed to final, over the last ${sorted.length} blocks with Perpl activity">${secs(mid)}</b></span><span>UTC</span>`;
   }
   function renderTape() {
     const min = Number(minSize);

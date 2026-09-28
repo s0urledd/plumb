@@ -69,7 +69,7 @@ export function deltaHtml(change, invert = false, title = null) {
   const cls = good ? 'up' : bad ? 'down' : 'flat';
   // Past +1000 % (from a near-empty previous window) a multiple reads better: "×113".
   const text = r >= 1000 ? `×${Math.round(1 + n / 100)}` : `${Math.abs(r).toFixed(dp)}%`;
-  return `<span class="delta ${cls}" title="${esc(title ?? `${pct(n, { digits: 1 })} on the previous period`)}">${r > 0 ? '▲' : r < 0 ? '▼' : ''} ${text}</span>`;
+  return `<span class="delta ${cls}" title="${esc(title ?? `${pct(n, { digits: 1 })} vs the previous period`)}">${r > 0 ? '▲' : r < 0 ? '▼' : ''} ${text}</span>`;
 }
 export function ago(ts) {
   if (!ts) return '—';

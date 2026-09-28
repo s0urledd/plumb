@@ -121,11 +121,12 @@ function setLive(state, text) { live.className = `live ${state}`; liveText.textC
 const RECONNECT_GRACE_MS = 4000, DELAYED_MS = 15000;
 function renderLive() {
   if (!lastBlock) return;
-  const since = Date.now() - lastBlockAt;
-  if (!streamOpen && since > RECONNECT_GRACE_MS) { setLive('warn', 'Reconnecting…'); return; }
-  const delayed = since > DELAYED_MS;
-  setLive(delayed ? 'warn' : 'ok', `${delayed ? 'Delayed · ' : ''}#${int(lastBlock.block)}`);
-  live.title = delayed ? 'No new block for a while' : 'Latest finalized block';
+  const since = Date.now() - lastBlockAt, lost = !streamOpen && since > RECONNECT_GRACE_MS, delayed = since > DELAYED_MS;
+  if (lost) setLive('warn', 'Reconnecting…'); else setLive(delayed ? 'warn' : 'ok', `${delayed ? 'Delayed · ' : ''}#${int(lastBlock.block)}`);
+  // Once hovered, the note lives in data-tip (ui.js): update it there, so the
+  // browser's own tooltip is not brought back every second.
+  const note = lost ? 'Live connection lost; reconnecting' : delayed ? `No new block for over ${DELAYED_MS / 1000} seconds` : 'Latest finalized block indexed';
+  if (live.dataset.tip) live.dataset.tip = note; else live.title = note;
 }
 stream.on('block', b => { lastBlock = b; lastBlockAt = Date.now(); renderLive(); });
 stream.on('status', s => { streamOpen = s === 'open'; renderLive(); });
@@ -148,7 +149,6 @@ function renderTicker(markets) {
   const ch = Number(m.change_pct);
   ticker.hidden = false;
   ticker.href = `#/markets/${m.id}`;
-  ticker.title = 'MON mark price on Perpl · change over 24 hours';
   ticker.innerHTML = `${logo(m.id, 'MON', 16)}<span class="tp">$${esc(price(p))}</span>${Number.isFinite(ch) ? `<span class="${signClass(ch) || 'faint'}">${pct(ch, { sign: true })}</span>` : ''}`;
 }
 stream.on('protocol', p => renderTicker(p.markets));

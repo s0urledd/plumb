@@ -27,16 +27,16 @@ export function mount(el, { params, query, setQuery }) {
     <div class="stack">
       <div class="kpis m-kpis" id="kpis"></div>
       <div class="grid g-main">
-        ${panel('candles', 'Price and volume', 'Candles from fills with volume below, UTC. Bands: prices at which open positions would be liquidated, stronger where more notional sits; click one to open its largest wallet.', { ctl: `<span id="lvl-toggle" hidden>${segSm('lvl', LEVEL_TOGGLE, 'on')}</span>`, cls: 'm-price' })}
+        ${panel('candles', 'Price and volume', 'Trade price candles and volume, UTC. Bands show where open positions would be liquidated; click one for its largest wallet.', { ctl: `<span id="lvl-toggle" hidden>${segSm('lvl', LEVEL_TOGGLE, 'on')}</span>`, cls: 'm-price' })}
         <section class="panel"><div class="panel-head"><h2>Positioning</h2><span class="meta">Live positions</span></div><div id="positioning">${skeleton(8)}</div></section>
       </div>
       <div class="grid g-2">
-        ${panel('flow', 'Position flow', 'Open interest opened (up) and closed (down) per period, from position events; line: net change')}
-        ${panel('entries', 'Entry prices', 'Open positions by the price they were entered at, longs right and shorts left; dashed line: the mark', { csv: false })}
+        ${panel('flow', 'Position flow', 'Longs and shorts opened (up) and closed (down) per period; the line is the change in open interest (one side only)')}
+        ${panel('entries', 'Entry prices', 'Where open positions were entered: longs right, shorts left; the dashed line is the mark price', { csv: false })}
       </div>
       <div class="grid g-2">
-        ${panel('funding', 'Funding rate', 'Rate paid each funding interval over the last 7 days: green when longs pay shorts, red when shorts pay longs. The figure is the current rate scaled to 8 hours, as in Funding 8h above.')}
-        ${panel('ladder', 'Liquidation ladder', 'Notional whose liquidation price an adverse move of the mark would cross: longs if the price falls, shorts if it rises', { csv: false })}
+        ${panel('funding', 'Funding rate', 'Rate paid each funding interval, last 7 days: green when longs pay, red when shorts pay. The figure is the current rate per 8 hours.')}
+        ${panel('ladder', 'Liquidation ladder', 'Value of positions a price move of each size would liquidate: longs on a fall, shorts on a rise', { csv: false })}
       </div>
       <section class="panel"><div class="panel-head"><div><h2>Largest positions</h2><div class="desc">Open now, from contract state · closest to liquidation highlighted</div></div><span class="meta" id="pos-meta"></span></div><div class="panel-body flush" id="positions">${skeleton(6)}</div></section>
       <div class="grid g-2">
@@ -273,7 +273,7 @@ export function mount(el, { params, query, setQuery }) {
     const rows = L?.cost_to_trade ?? [];
     if (!rows.length || !(L.best_bid || L.best_ask)) return ''; // an empty book has no cost to show
     const fmt = v => `${v.toFixed(Math.abs(v) < 1 ? 2 : 1)} bps`;
-    const bps = (v, filled) => (v === null ? `<span class="faint" title="The book read holds ${usd(filled)} on this side">&gt; book</span>` : fmt(v));
+    const bps = (v, filled) => (v === null ? `<span class="faint" title="More than the order book shows: ${usd(filled)} on this side">&gt; book</span>` : fmt(v));
     return `<div class="panel-head" style="min-height:0;padding-top:14px"><h2 style="font-size:12.5px;color:var(--text-2);font-weight:500">Cost of a market order</h2><span class="meta">vs mid · spread ${L.spread_bps === null || L.spread_bps === undefined ? '—' : fmt(L.spread_bps)}</span></div>
       ${table({ id: 'cost', compact: true, columns: [
         { key: 's', label: 'Size', render: r => `$${r.usd >= 1000 ? `${r.usd / 1000}K` : r.usd}` },
