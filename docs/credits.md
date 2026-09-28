@@ -27,5 +27,4 @@
 
 ## AI use
 
-The Huginn team used Claude Code, an AI coding assistant, to help write the
-code, tests and docs.
+We used an AI coding assistant to help write the code, tests and docs.

@@ -189,8 +189,7 @@ Risk Tool" bounty. How the brief is covered:
   subset of Perpl's `perpl-sdk`. Market share figures from DefiLlama. Logos
   and icons belong to their owners. Licenses and sources:
   [docs/credits.md](docs/credits.md).
-- We used Claude Code, an AI coding assistant, to help write the code, tests
-  and docs.
+- We used an AI coding assistant to help write the code, tests and docs.
 
 ---
 
