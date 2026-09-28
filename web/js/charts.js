@@ -231,20 +231,44 @@ export function divergingHeatmap(el, { times, rows, bucketSeconds, clamp, fmt = 
 }
 
 // Candles with volume below (two stacked grids, each with its own single axis).
-export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volColor = 'rgba(162,164,255,0.35)', zoom = false }) {
+// levels: liquidation bands [{ lo, hi, long, short, count, top: { address, account_id } }]
+// drawn across the price chart, longs green and shorts red, stronger where more
+// notional would be liquidated; the price axis widens to show bands within
+// `levelSpan` of the mark. onLevel(level) fires when a band is clicked.
+export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volColor = 'rgba(162,164,255,0.35)', zoom = false, levels = null, mark = null, levelSpan = 0.04, onLevel = null }) {
   const chart = init(el);
   if (!chart) return;
   const x = i => ({ ...timeAxis(times, bucketSeconds), gridIndex: i, axisLabel: i === 0 ? { show: false } : timeAxis(times, bucketSeconds).axisLabel });
+  const near = levels && mark ? levels.filter(l => Math.abs((l.lo + l.hi) / 2 / mark - 1) <= levelSpan).map(l => ({ ...l, n: (num(l.long) ?? 0) + (num(l.short) ?? 0), side: (num(l.long) ?? 0) >= (num(l.short) ?? 0) ? 'long' : 'short' })) : [];
+  const peak = Math.max(1, ...near.map(b => b.n));
+  // Bands under 5 % of the largest are left out: the chart shows where liquidations cluster, not every position.
+  const bands = near.filter(b => b.n >= peak * 0.05);
+  // Amounts on the three largest bands that are at least 1 % of price apart.
+  const labelled = new Set();
+  for (const b of [...bands].sort((a, c) => c.n - a.n)) { if (labelled.size >= 3) break; if ([...labelled].every(o => Math.abs(o.lo - b.lo) >= mark * 0.01)) labelled.add(b); }
+  const markArea = bands.length ? {
+    silent: false,
+    data: bands.map((b, i) => [{
+      yAxis: b.lo, name: `band-${i}`,
+      itemStyle: { color: b.side === 'long' ? T.long : T.short, opacity: 0.08 + 0.5 * (b.n / peak) ** 0.8 },
+      label: { show: labelled.has(b), position: 'insideRight', color: b.side === 'long' ? T.long : T.short, fontSize: 10.5, formatter: () => `liq ${usd(b.n)}` }
+    }, { yAxis: b.hi }])
+  } : undefined;
+  const lows = ohlc.filter(Array.isArray).map(c => c[2]), highs = ohlc.filter(Array.isArray).map(c => c[3]);
+  const yMin = bands.length ? Math.min(...lows, ...bands.map(b => b.lo)) : null, yMax = bands.length ? Math.max(...highs, ...bands.map(b => b.hi)) : null;
+  const pad = yMin !== null ? (yMax - yMin) * 0.03 : 0;
+  chart.off('click');
+  if (onLevel) chart.on('click', p => { const i = /^band-(\d+)$/.exec(p.name ?? '')?.[1]; if (p.componentType === 'markArea' && i !== undefined) onLevel(bands[Number(i)]); });
   chart.setOption({
     ...base(),
     dataZoom: zoom ? zoomOptions([0, 1]) : undefined,
     grid: [{ left: 8, right: 12, top: 12, height: zoom ? '58%' : '64%', containLabel: true }, { left: 8, right: 12, top: zoom ? '72%' : '78%', bottom: zoom ? 30 : 6, containLabel: true }],
     xAxis: [x(0), x(1)],
-    yAxis: [{ ...valueAxis(priceFmt), scale: true, gridIndex: 0 }, { ...valueAxis(usdAxis), gridIndex: 1, splitNumber: 2 }],
+    yAxis: [{ ...valueAxis(priceFmt), scale: true, gridIndex: 0, ...(yMin !== null ? { min: yMin - pad, max: yMax + pad } : {}) }, { ...valueAxis(usdAxis), gridIndex: 1, splitNumber: 2 }],
     tooltip: { ...base().tooltip, formatter: params => { const c = params.find(p => p.seriesType === 'candlestick'); const v = params.find(p => p.seriesType === 'bar'); const t = params[0]?.axisValue; if (!c) return ''; const [o, cl, lo, hi] = c.value.slice(1); return `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(t) : dateTime(t) + ' UTC'}</div>${row('transparent', 'Open', priceFmt(o))}${row('transparent', 'High', priceFmt(hi))}${row('transparent', 'Low', priceFmt(lo))}${row('transparent', 'Close', priceFmt(cl))}${v ? row('transparent', 'Volume', usd(v.value)) : ''}`; } },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     series: [
-      { type: 'candlestick', data: ohlc, xAxisIndex: 0, yAxisIndex: 0, itemStyle: { color: T.long, color0: T.short, borderColor: T.long, borderColor0: T.short }, barMaxWidth: 10 },
+      { type: 'candlestick', data: ohlc, xAxisIndex: 0, yAxisIndex: 0, itemStyle: { color: T.long, color0: T.short, borderColor: T.long, borderColor0: T.short }, barMaxWidth: 10, markArea, z: 3 },
       { type: 'bar', name: 'Volume', data: volume, xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: volColor }, barMaxWidth: 10 }
     ]
   }, true);

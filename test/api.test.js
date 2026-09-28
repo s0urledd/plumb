@@ -115,6 +115,14 @@ test('stress, book, account state, series and CSV endpoints', async t => {
   assert.equal(entries.body.long.count + entries.body.short.count, entries.body.positions);
   assert.ok(entries.body.bins.every((b, i, all) => b.hi > b.lo && (i === 0 || b.lo >= all[i - 1].lo)));
   assert.equal((await get('/api/v1/markets/999/entries')).status, 404);
+  // Liquidation levels: every position with a liquidation price within 30 % of the mark is in one band.
+  const levels = await get('/api/v1/markets/1/liq-levels');
+  assert.equal(levels.status, 200);
+  const positions = (await get('/api/v1/markets/1/positions?limit=500')).body.positions;
+  const mark = Number(levels.body.mark);
+  const inRange = positions.filter(p => Number(p.liquidation_price) > 0 && Math.abs(Number(p.liquidation_price) / mark - 1) <= 0.3);
+  assert.equal(levels.body.levels.reduce((a, l) => a + l.count, 0), inRange.length);
+  assert.ok(levels.body.levels.every(l => l.hi > l.lo && l.top && l.top.account_id));
   assert.equal((await get('/api/v1/markets/1/stress?move_pct=0')).status, 400);
   assert.equal((await get('/api/v1/markets/1/stress?move_pct=abc')).status, 400);
   const book = await get('/api/v1/markets/1/book');
