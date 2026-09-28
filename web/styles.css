@@ -536,6 +536,8 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .lb-tools { display: flex; align-items: center; gap: 10px; }
 .lb-ctl { min-height: 0; padding-top: 0; flex-wrap: wrap; gap: 10px; }
 .lb-ctl #by { max-width: 100%; min-width: 0; }
+/* Every ranking in view: the switch wraps instead of scrolling out of sight. */
+.lb-ctl .seg { flex-wrap: wrap; }
 #board { scroll-margin-top: 72px; }
 @media (max-width: 860px) { #board { scroll-margin-top: 112px; } }
 @media (max-width: 640px) {
@@ -546,19 +548,23 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
   #board .pager > span:first-child { flex-basis: 100%; }
   #board .pager-ctl { width: 100%; justify-content: space-between; }
   #board .pager .btn { white-space: nowrap; }
-  /* Every ranking in view: the switch wraps instead of scrolling out of sight. */
-  .lb-ctl .seg { flex-wrap: wrap; }
-  /* KPI cards are two to a row: labels and notes wrap rather than cut off. */
-  .traders-page .kpi-label, .wallet-page .kpi-label, .traders-page .kpi-note, .wallet-page .kpi-note { white-space: normal; }
 }
+/* Once KPI cards narrow, labels and notes wrap rather than cut off; the four
+   Traders cards go two to a row where four would cut the figures too. */
+@media (max-width: 1100px) { .traders-page .kpi-label, .wallet-page .kpi-label, .traders-page .kpi-note, .wallet-page .kpi-note { white-space: normal; } }
+@media (max-width: 860px) { .traders-page .kpis.k4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Wallet: the tab strip sits on the page, each tab's cards below it. */
 .wallet-tabs .tabs { padding: 0 2px; }
-@media (max-width: 1100px) { .wallet-page .kpis.k7 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (max-width: 640px) {
-  .wallet-page .kpis.k7 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .wallet-page .kpis.k7 > .kpi:last-child { grid-column: 1 / -1; }
+/* Seven KPI cards with no empty slot: four over three (on twelve columns)
+   down to 861px, then three and on phones two to a row, the last card on a
+   row of its own. */
+@media (max-width: 1100px) and (min-width: 861px) {
+  .wallet-page .kpis.k7 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .wallet-page .kpis.k7 > .kpi { grid-column: span 3; }
+  .wallet-page .kpis.k7 > .kpi:nth-child(n+5) { grid-column: span 4; }
 }
+@media (max-width: 860px) { .wallet-page .kpis.k7 > .kpi:last-child { grid-column: 1 / -1; } }
 /* Account balances four to a row; stats go one to a row on phones. */
 .acct-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .acct-grid .stat { border-right: 1px solid var(--line); }
@@ -573,13 +579,18 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .pnl-card .chart { flex: 1; height: auto; min-height: 300px; }
 .pnl-card .chart:has(> .panel-body) { display: flex; flex-direction: column; justify-content: center; } /* the calendar */
 @media (max-width: 1100px) { .pnl-card .chart:has(> .panel-body) { min-height: 0; } }
+/* Calendar cells take the size wallet.js fits to the card (--cell, 16px at least). */
+.pnl-card .cal-days { grid-template-rows: 14px repeat(7, var(--cell, 16px)); line-height: var(--cell, 16px); }
+.pnl-card .cal { grid-template-rows: repeat(7, var(--cell, 16px)); grid-auto-columns: var(--cell, 16px); }
+.pnl-card .cal-months { grid-auto-columns: var(--cell, 16px); }
+.pnl-card .cal i { width: var(--cell, 16px); height: var(--cell, 16px); }
 @media (max-width: 640px) {
   /* The colour key gets a row of its own under the view switch. */
   .pnl-card .trend-side { flex-wrap: wrap; }
   .pnl-card .legend.dots { flex-basis: 100%; justify-content: flex-start; margin-top: 0; }
   .wallet-page .stat-grid { grid-template-columns: minmax(0, 1fr); }
   .wallet-page .stat-grid .stat { border-right: 0; }
-  .wallet-page .rank-of { display: none; }
+  .wallet-page .t td .rank-of { display: none; }
   /* Wide tables scroll sideways under a fixed first column (market, period, time), so each row keeps its name. */
   .wallet-page .t th:first-child, .wallet-page .t td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: inset -1px 0 0 var(--line); }
 }

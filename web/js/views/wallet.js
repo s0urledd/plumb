@@ -102,7 +102,16 @@ export function mount(el, { params, query, setQuery, navigate }) {
     const d = data;
     el.innerHTML = `${head(d)}<div class="stack wallet-page"><div id="kpi-row">${kpis(d)}</div>
       <div class="wallet-tabs">${tabs('tab', TABS, tab)}</div><div class="stack" id="tab-body"></div></div>`;
+    showTab();
     renderTab();
+  }
+  // Marks the open tab and, where the strip scrolls sideways (phones), brings
+  // it into view without moving the page.
+  function showTab() {
+    const strip = el.querySelector('.wallet-tabs .tabs'); if (!strip) return;
+    strip.querySelectorAll('[data-tab="tab"]').forEach(b => b.classList.toggle('on', b.dataset.v === tab));
+    const s = strip.getBoundingClientRect(), b = strip.querySelector('.on').getBoundingClientRect();
+    strip.scrollLeft += Math.max(0, b.right - s.right) - Math.max(0, s.left - b.left);
   }
   const perfSkeleton = () => `<div class="panel-body">${Array.from({ length: 7 }, () => '<div class="skeleton sk-line"></div>').join('')}</div>`;
   function marketRows(d) {
@@ -173,9 +182,13 @@ export function mount(el, { params, query, setQuery, navigate }) {
   }
   // Daily net PnL as a calendar (weeks × weekdays, UTC), green and red by
   // size relative to the largest day; the last weeks with activity, as many
-  // as fit the card (up to 26), so a phone shows the latest weeks unscrolled.
-  // Returns the grid and its green and red day counts (for the header).
-  function pnlCalendar(rows, weeks = 26) {
+  // as fit the card at 16px cells (up to 26), so a phone shows the latest
+  // weeks unscrolled. The cells then grow into the rest of the card (up to
+  // 32px), so a short history does not sit small in a large card.
+  // w, h: the room for the cells. Returns the grid and its green and red day
+  // counts (for the header).
+  function pnlCalendar(rows, w, h) {
+    const weeks = Math.max(8, Math.min(26, Math.floor(w / 19))); // 16px cells, 3px gaps
     const byDay = new Map(rows.map(r => [Math.floor(r.t / 86400), r]));
     const lastDay = Math.floor(rows.at(-1).t / 86400);
     const end = lastDay + (6 - ((lastDay + 3) % 7)); // Sunday closing the last week (day 0 was a Thursday)
@@ -187,14 +200,15 @@ export function mount(el, { params, query, setQuery, navigate }) {
       const r = byDay.get(d), v = num(r?.net_pnl) ?? 0, dateText = date(d * 86400);
       if (r && v > 0) green++; else if (r && v < 0) red++;
       const a = r ? 0.18 + 0.82 * Math.min(1, Math.abs(v) / max) : 0;
-      const bg = !r ? 'rgba(255,255,255,0.04)' : v >= 0 ? `rgba(129,199,132,${a})` : `rgba(246,90,110,${a})`;
+      const bg = !r ? NO_DAY : v >= 0 ? `rgba(129,199,132,${a})` : `rgba(246,90,110,${a})`;
       cells.push(`<i style="background:${bg}" title="${esc(dateText)}${r ? ` · ${esc(usd(v, { sign: true }))} · ${int(r.trades)} trades` : ' · no closed trades'}"></i>`);
       // A month is named at its first week; the first column only when its month has weeks left, so two names never touch.
       if ((d - start) % 7 === 0) { const day = new Date(d * 86400000).getUTCDate(); months.push(day <= 7 || (d === start && day <= 21) ? esc(dateText.split(' ')[0]) : ''); }
     }
-    const html = `<div class="panel-body"><div class="cal-wrap"><div class="cal-days"><span></span>${['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map(x => `<span>${x}</span>`).join('')}</div><div><div class="cal-months">${months.map(m => `<span>${m}</span>`).join('')}</div><div class="cal">${cells.join('')}</div></div></div>
+    const shown = Math.round((end - start + 1) / 7), cell = Math.max(16, Math.min(32, Math.floor(w / shown) - 3, Math.floor(h / 7) - 3));
+    const html = `<div class="panel-body"><div class="cal-wrap" style="--cell:${cell}px"><div class="cal-days"><span></span>${['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map(x => `<span>${x}</span>`).join('')}</div><div><div class="cal-months">${months.map(m => `<span>${m}</span>`).join('')}</div><div class="cal">${cells.join('')}</div></div></div>
       <div class="cal-foot faint">UTC days, colour scaled to the largest day</div></div>`;
-    return { html, green, red, weeks: Math.round((end - start + 1) / 7) };
+    return { html, green, red, weeks: shown };
   }
   // A 1200×630 summary card drawn on a canvas (nothing leaves the browser).
   function shareCard() {
@@ -225,6 +239,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
   // Trend header: all-time net PnL large, then what the chosen view adds;
   // dots name the colours of the bars and calendar cells.
   const DAY_KEYS = [{ name: 'Profit day', color: COLORS.long }, { name: 'Loss day', color: COLORS.short }];
+  const NO_DAY = 'rgba(255,255,255,0.07)'; // a calendar day without closes, and its key dot
   function pnlHead(rows, note = '', keys = []) {
     const v = $('pnl-v'), lg = $('pnl-lg');
     const since = data.summary.first_trade ?? rows[0]?.t;
@@ -237,10 +252,11 @@ export function mount(el, { params, query, setQuery, navigate }) {
     const rows = data.pnl_daily ?? [];
     if (!rows.length) { pnlHead(rows); node.innerHTML = empty('No realized PnL yet'); return; }
     if (pnlMode === 'calendar') {
-      node.__chart?.dispose(); node.__chart = null;
-      const cal = pnlCalendar(rows, Math.max(8, Math.min(26, Math.floor((node.clientWidth - 70) / 19)))); // 16px cells, 3px gaps
+      node.__chart?.dispose(); node.__chart = null; node.innerHTML = '';
+      // Measured empty: the room less day names, month row, key line and padding.
+      const cal = pnlCalendar(rows, node.clientWidth - 70, node.clientHeight - 84);
       node.innerHTML = cal.html;
-      pnlHead(rows, `<span class="pos">${int(cal.green)} profit</span> · <span class="neg">${int(cal.red)} loss</span> days in the ${int(cal.weeks)} weeks shown`, [...DAY_KEYS, { name: 'No closed trades', color: 'rgba(255,255,255,0.14)' }]);
+      pnlHead(rows, `<span class="pos">${int(cal.green)} profit</span> · <span class="neg">${int(cal.red)} loss</span> days in the ${int(cal.weeks)} weeks shown`, [...DAY_KEYS, { name: 'No closed trades', color: NO_DAY }]);
       return;
     }
     if (pnlMode === 'daily') {
@@ -315,7 +331,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
   const soon = () => { if (!pending) pending = setTimeout(() => { pending = null; refresh(); }, 1200); };
   const off = [stream.on('trades', rows => { if (mine(rows)) soon(); }), stream.on('liquidations', rows => { if (mine(rows)) soon(); })];
   return {
-    onTab(name, v) { if (name !== 'tab') return; tab = v; el.querySelectorAll('[data-tab="tab"]').forEach(b => b.classList.toggle('on', b.dataset.v === v)); setQuery({ tab: v === 'overview' ? null : v }); },
+    onTab(name, v) { if (name !== 'tab') return; tab = v; showTab(); setQuery({ tab: v === 'overview' ? null : v }); },
     onAction(a) {
       if (a === 'pnl-cum' || a === 'pnl-daily' || a === 'pnl-cal') { pnlMode = { 'pnl-cum': 'cumulative', 'pnl-daily': 'daily', 'pnl-cal': 'calendar' }[a]; el.querySelectorAll('[data-action^="pnl-"]').forEach(b => b.classList.toggle('on', b.dataset.action === a)); drawPnl(); }
       if (a === 'more') loadTrades().catch(() => {});
