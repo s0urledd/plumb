@@ -3,7 +3,7 @@
 // latest liquidations and flows.
 import { get, stream } from '../api.js';
 import { usd, compact, int, price, pct, share, num, esc, signClass, timeOnly, ago, duration } from '../format.js';
-import { kpi, keepDots, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, chartTools, skeleton, skChart, empty, assignColors, colorOf, hasColor, logo, ICON, OTHER_HEX, SLOT_HEX, mergeByAsset } from '../ui.js';
+import { kpi, keepDots, seg, table, mkt, sideTag, addr, pnl, tradeAction, chartTools, skeleton, skChart, empty, assignColors, colorOf, hasColor, logo, ICON, OTHER_HEX, SLOT_HEX, mergeByAsset } from '../ui.js';
 import { sparkline, stackedBars, lineChart, signedBars, twoSided, toggleSeries, COLORS, CUMULATIVE } from '../charts.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -17,7 +17,6 @@ const segSm = (name, options, active) => seg(name, options, active).replace('cla
 export function mount(el, { query, setQuery }) {
   let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '24h';
   let feeView = 'type';
-  let sort = { key: 'volume', dir: 'desc' };
   let minSize = localStorage.getItem('ps.minsize') ?? '100';
   let data = null, series = null, alive = true, flows = null, flowView = 'recent', lastLongLoad = 0, trendsLoaded = false;
   const tape = [], off = [];
@@ -41,7 +40,7 @@ export function mount(el, { query, setQuery }) {
       <div class="kpis" id="kpis">${Array.from({ length: 6 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:70%;margin-top:10px"></div><div class="skeleton" style="height:28px;margin-top:10px"></div></div>').join('')}</div>
       <div class="grid g-main">
         <section class="panel">
-          <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right">${chartTools('main-chart', 'volume')}</div></div>
+          <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right"><a class="meta" href="#/markets">All markets →</a>${chartTools('main-chart', 'volume')}</div></div>
           <div class="panel-head vol-keys"><div class="legend toggles" id="legend"></div><span class="head-right"><span id="bucket"></span><span class="meta" id="chart-meta"></span></span></div>
           <div class="panel-body"><div class="chart" id="main-chart">${skChart()}</div></div>
         </section>
@@ -51,10 +50,6 @@ export function mount(el, { query, setQuery }) {
           <div class="panel-foot"><span id="tape-meta">Finalized blocks · aggressor side · UTC</span><span id="tape-count"></span></div>
         </section>
       </div>
-      <section class="panel">
-        <div class="panel-head"><div><h2>Markets</h2><div class="desc" id="markets-meta"></div></div><a class="meta" href="#/markets">All markets →</a></div>
-        <div class="panel-body flush" id="markets">${skeleton(8)}</div>
-      </section>
       <div class="section-label">Trends</div>
       <div class="grid g-2">
         ${panel('oi', 'Open interest', 'One side, priced at the last trade')}
@@ -93,7 +88,7 @@ export function mount(el, { query, setQuery }) {
     if (!alive) return;
     data = p; series = s;
     assignColors([...p.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol })));
-    renderBucket(); renderKpis(); renderVolume(); renderMarkets(); renderWindows();
+    renderBucket(); renderKpis(); renderVolume(); renderWindows();
     if (!trendsLoaded) { trendsLoaded = true; loadTrends().catch(() => {}); }
   }
   async function loadFeeds() {
@@ -121,12 +116,12 @@ export function mount(el, { query, setQuery }) {
     // Window totals compare with the window before; open interest and TVL show their change within the window.
     const vsPrev = { basis: 'vs prev', basisTitle: `Compared with the previous ${wl}` }, within = { basis: `in ${wl}`, basisTitle: `Change over the last ${wl}` };
     $('kpis').innerHTML = [
-      kpi({ label: `Volume · ${wl}`, value: usd(h.volume.value), delta: ch(h.volume.change_pct), ...vsPrev, note: `${int(data.markets.reduce((a, m) => a + (m.fills ?? 0), 0))} trades${partial}`, spark: 'sp-vol', tip: 'Notional of every match, counted once (the maker side). A trade is one match between a maker and a taker.' }),
-      kpi({ label: 'Open interest', value: usd(c?.open_interest), delta: seriesChange('open_interest'), ...within, note: c ? `${int(c.positions)} open positions` : '', spark: 'sp-oi', tip: 'Long notional at the mark price; equal to short notional by construction, so each contract counts once. The change compares the window\'s first and last points of the event-derived series.' }),
-      kpi({ label: 'TVL', value: usd(c?.tvl), delta: seriesChange('tvl'), ...within, note: `${usd(h.net_flow.value, { sign: true })} net flow · ${wl}`, spark: 'sp-tvl', tip: 'Collateral held by the exchange contract, read from chain state.' }),
-      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.take_rate_bps === null || h.take_rate_bps === undefined ? '' : `${num(h.take_rate_bps).toFixed(2)} bps of volume`, spark: 'sp-fees', tip: `Fees charged on fills, gross. On trades that open or add to a position the contract emits the split: ${usd(h.protocol_fees.value)} protocol share (of which ${usd(h.builder_fees)} to order builders) and ${usd(h.insurance_fees.value)} to the insurance fund. Trades that reduce or close carry no split in their events: ${usd(unsplit(h))} in ${wl}. Rebates and referral shares are paid outside fills and are not deducted.` }),
-      kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr', tip: 'Accounts that traded in the window. New accounts: accounts created in the window, some of which have not traded yet.' }),
-      kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq', tip: 'Notional of the positions closed by liquidations in the window. Auto-deleveraging and force closes are not included; the Liquidations page lists them.' })
+      kpi({ label: `Volume · ${wl}`, value: usd(h.volume.value), delta: ch(h.volume.change_pct), ...vsPrev, note: `${int(data.markets.reduce((a, m) => a + (m.fills ?? 0), 0))} trades${partial}`, spark: 'sp-vol' }),
+      kpi({ label: 'Open interest', value: usd(c?.open_interest), delta: seriesChange('open_interest'), ...within, note: c ? `${int(c.positions)} open positions` : '', spark: 'sp-oi' }),
+      kpi({ label: 'TVL', value: usd(c?.tvl), delta: seriesChange('tvl'), ...within, note: `${usd(h.net_flow.value, { sign: true })} net flow · ${wl}`, spark: 'sp-tvl' }),
+      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.take_rate_bps === null || h.take_rate_bps === undefined ? '' : `${num(h.take_rate_bps).toFixed(2)} bps of volume`, spark: 'sp-fees' }),
+      kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr' }),
+      kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq' })
     ].join('');
     spark('sp-vol', pts.map(p => num(p.volume)));
     spark('sp-oi', pts.map(p => num(p.open_interest)));
@@ -258,25 +253,6 @@ export function mount(el, { query, setQuery }) {
     }
   }
 
-  const marketCols = () => [
-    { key: 'symbol', label: 'Market', sort: r => r.symbol, render: r => `${mkt(r.id, r.symbol)}${r.active === false ? ' <span class="tag" title="Not open for trading">inactive</span>' : ''}` },
-    { key: 'mark', label: 'Price', n: true, sort: r => num(r.mark ?? r.close), render: r => price(r.mark ?? r.close) },
-    { key: 'change_pct', label: w === 'all' ? 'Change' : `${w} change`, n: true, sort: r => num(r.change_pct) ?? -1e9, render: r => pctCell(r.change_pct) },
-    { key: 'volume', label: 'Volume', n: true, cls: 'cell-bar', sort: r => num(r.volume), render: r => `${usd(r.volume)}<span class="track"><i style="width:${Math.max(2, Math.min(100, r.share_pct ?? 0))}%"></i></span>` },
-    { key: 'share_pct', label: 'Share', n: true, sort: r => r.share_pct ?? 0, render: r => `<span class="muted">${share(r.share_pct)}</span>` },
-    { key: 'open_interest', label: 'Open interest', n: true, sort: r => num(r.open_interest) ?? 0, render: r => usd(r.open_interest) },
-    { key: 'funding', label: 'Funding 8h', tip: fundingTip(data?.markets?.find(m => m.funding?.interval_seconds)?.funding.interval_seconds), n: true, sort: r => r.funding?.rate_8h_pct ?? 0, render: r => fundingCell(r.funding) },
-    { key: 'ls', label: 'Long / short positions', sort: r => r.long_position_share_pct ?? 0, render: r => ratio(r.long_positions, r.short_positions) },
-    { key: 'taker_buy_share_pct', label: 'Taker buys', n: true, sort: r => r.taker_buy_share_pct ?? 0, render: r => (r.taker_buy_share_pct === null || r.taker_buy_share_pct === undefined ? '—' : pct(r.taker_buy_share_pct, { digits: 1 })) },
-    { key: 'traders', label: 'Traders', n: true, sort: r => r.traders ?? 0, render: r => int(r.traders) },
-    { key: 'liquidations', label: 'Liquidated', n: true, sort: r => num(r.liquidated) ?? 0, render: r => (r.liquidations ? `${usd(r.liquidated)}<div class="sub">${int(r.liquidations)} liq.</div>` : '<span class="faint">—</span>') }
-  ];
-  function renderMarkets() {
-    const rows = data.markets.filter(m => num(m.volume) > 0 || num(m.open_interest) > 0);
-    $('markets').innerHTML = table({ id: 'markets', columns: marketCols(), rows, sortKey: sort.key, sortDir: sort.dir, rowAttrs: r => `class="link" data-href="#/markets/${r.id}"` });
-    $('markets-meta').textContent = `${rows.filter(r => r.active !== false).length} active markets · ${w === 'all' ? 'all-time' : w} activity, live prices and positions`;
-  }
-
   // Consensus timing of the blocks behind proposed trades (from the node's
   // execution events): the tape footer shows the median time from a block
   // starting to its finalization; a dimmed row's tooltip gives its own stage.
@@ -395,7 +371,7 @@ export function mount(el, { query, setQuery }) {
   off.push(stream.on('protocol', () => {
     if (w === '24h' || !data || !alive || Date.now() - lastLongLoad < LONG_WINDOW_REFRESH_MS) return;
     lastLongLoad = Date.now();
-    get(`protocol?window=${w}`, { maxAge: 0 }).then(p => { if (!alive || w === '24h') return; data = p; renderKpis(); renderMarkets(); renderWindows(); }).catch(() => {});
+    get(`protocol?window=${w}`, { maxAge: 0 }).then(p => { if (!alive || w === '24h') return; data = p; renderKpis(); renderWindows(); }).catch(() => {});
     get(`flows?window=${w}`, { maxAge: 0 }).then(f => alive && renderFlows(f)).catch(() => {});
   }));
   let lastFlowLoad = Date.now();
@@ -404,7 +380,7 @@ export function mount(el, { query, setQuery }) {
     lastFlowLoad = Date.now();
     get('flows?window=24h', { maxAge: 0 }).then(f => { if (alive && w === '24h') renderFlows(f); }).catch(() => {});
   }));
-  off.push(stream.on('protocol', p => { if (w !== '24h' || !data || !alive) return; data = { ...data, headline: p.headline, current: p.current, markets: data.markets.map(m => { const u = p.markets.find(x => x.id === m.id); return u ? { ...m, mark: u.mark ?? m.mark, volume: u.volume, change_pct: u.change_pct, open_interest: u.open_interest ?? m.open_interest, funding: u.funding ?? m.funding } : m; }) }; renderKpis(); renderMarkets(); }));
+  off.push(stream.on('protocol', p => { if (w !== '24h' || !data || !alive) return; data = { ...data, headline: p.headline, current: p.current, markets: data.markets.map(m => { const u = p.markets.find(x => x.id === m.id); return u ? { ...m, mark: u.mark ?? m.mark, volume: u.volume, change_pct: u.change_pct, open_interest: u.open_interest ?? m.open_interest, funding: u.funding ?? m.funding } : m; }) }; renderKpis(); }));
   const timer = setInterval(() => { get(seriesPath(), { maxAge: 0 }).then(s => { if (!alive) return; series = s; renderVolume(); if (w !== '24h') load().catch(() => {}); }).catch(() => {}); loadTrends(true); }, 60000);
 
   load().catch(error => { $('kpis').innerHTML = `<div class="empty-state">Could not load protocol data (${esc(error.message)})</div>`; });
@@ -421,7 +397,6 @@ export function mount(el, { query, setQuery }) {
       if (name === 'feesv') { feeView = v; $('fees-mode').innerHTML = segSm('feesv', FEE_VIEWS, feeView); renderFees(); }
     },
     onAction(a, t) { if (a === 'treset') { const id = t.dataset.v; custom.delete(id); pw[id] = w; $(`${id}-win`).innerHTML = winCtl(id); $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); return; } if (a === 'toggle') { t.classList.toggle('off'); toggleSeries($('main-chart'), t.dataset.name); } },
-    onSort(id, key) { if (id !== 'markets') return; sort = { key, dir: sort.key === key && sort.dir === 'desc' ? 'asc' : 'desc' }; renderMarkets(); },
     update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w); $('main-chart').innerHTML = skChart();
       for (const id of TRENDS) { if (pw[id] === w) custom.delete(id); if (!custom.has(id) && pw[id] !== w) { pw[id] = w; $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); } $(`${id}-win`).innerHTML = winCtl(id); }
       load().catch(() => {}); get(`flows?window=${w}`).then(f => alive && renderFlows(f)).catch(() => {}); },
