@@ -252,6 +252,7 @@ rule against the venue's own reported 24 h volume:
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-21 | In-memory event index | $41,345,871 | $41,346,189 | 0.001 % | under 1 % |
 | 2026-09-23 | ClickHouse | $18,240,072 | $18,233,631 | 0.035 % | 0.07 % (SOL_v2) |
+| 2026-09-28 | ClickHouse | $12,843,721 | $12,837,394 | 0.049 % | 0.29 % (ETH) |
 
 The gaps come from window alignment: the two windows end a few minutes
 apart.

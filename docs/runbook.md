@@ -137,6 +137,8 @@ step.
 | `RPC_TIMEOUT_MS`, `RPC_MAX_BYTES` | `30000`, 64 MiB | Ingest RPC limits |
 | `POLL_MS`, `MIN_POLL_MS`, `VERIFY_BLOCKS`, `STALE_AFTER_MS`, `MAX_BLOCK_AGE_MS` | `2000`, `500`, `12000`, `45000`, `60000` | Contract-state collector: poll timer, minimum gap when a commit wakes it, rescan interval, staleness limits (`MAX_BLOCK_AGE_MS=0` disables the block-age check) |
 | `BOOK_LEVELS`, `BOOK_RANGE_BPS`, `BOOK_REFRESH_MS`, `BOOK_DISABLED` | `40`, `1500`, `30000`, `0` | Order-book walk |
+| `TELEGRAM_BOT_TOKEN` | none | Telegram bot token from @BotFather; unset, no bot runs |
+| `PUBLIC_URL` | none | Public address of the dashboard, used for links in alert messages |
 | `CHECKPOINT_PATH` | `data/checkpoint.json` (`/data/…` in Docker) | Collector checkpoint |
 | `REFERENCE_ENABLED` | `0` | `1` compares contract figures with Perpl's public API (never used for metrics) |
 | `LANDSCAPE_ENABLED`, `LANDSCAPE_URL` | `1`, DefiLlama open-interest overview | Market-share context on the overview; `0` makes no outbound call |
