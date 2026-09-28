@@ -1,8 +1,8 @@
 // Trader leaderboard over a window: net PnL, volume, losses, liquidations,
 // with open positions from the live contract state.
 import { get } from '../api.js';
-import { usd, int, pct, num, esc, price, ago } from '../format.js';
-import { seg, table, addr, pnl, pctCell, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON } from '../ui.js';
+import { usd, int, pct, num, esc, price, ago, duration } from '../format.js';
+import { seg, table, addr, pnl, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON } from '../ui.js';
 import { SEA_ICONS } from '../cohort-icons.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -44,7 +44,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'rank', label: '#', render: r => `<span class="rank">${r.rank}</span>` },
     { key: 'addr', label: 'Trader', render: r => { const t = styleTags(r); return `${addr(r.address, r.account)}${t ? `<div class="sub tags">${t}</div>` : ''}`; } },
     { key: 'pnl', label: 'Net PnL', n: true, render: r => pnl(r.pnl) },
-    { key: 'roi', label: 'PnL / volume', n: true, render: r => pctCell(num(r.roi_on_volume_bps) === null ? null : r.roi_on_volume_bps / 100) },
+    { key: 'roi', label: 'PnL / volume', n: true, render: r => bpsCell(r.roi_on_volume_bps) }, // in bps, as the KPI above and the wallet page
     { key: 'volume', label: 'Volume', n: true, render: r => usd(r.volume) },
     { key: 'trades', label: 'Trades', n: true, render: r => int(r.trades) },
     { key: 'maker', label: 'Maker share', n: true, render: r => pct(r.maker_share_pct, { digits: 0 }) },
@@ -68,7 +68,6 @@ export function mount(el, { query, setQuery }) {
     // Flow rankings swap the fee and liquidation columns for the flows themselves.
     const flow = FLOW_SORTS.has(by), columns = COLS.filter(c => (flow ? !['fees', 'liq', 'maker'].includes(c.key) : !c.flow));
     lbColumns = columns; renderList();
-    $('count').textContent = data.total ? `${int(data.total)} accounts · showing ${int(page * LIMIT + 1)}–${int(page * LIMIT + data.rows.length)}` : '';
     $('csv').href = `/api/v1/leaderboard?window=${w}&by=${by}&limit=200&format=csv`;
     renderPager();
   }
@@ -84,6 +83,8 @@ export function mount(el, { query, setQuery }) {
     const f = filter.toLowerCase();
     const rows = f ? data.rows.filter(r => String(r.address ?? '').toLowerCase().includes(f) || String(r.account) === f.replace(/^#/, '')) : data.rows;
     $('list').innerHTML = table({ id: 'lb', columns: lbColumns, rows, rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"`, emptyText: f ? 'Not on this page. Press Enter to open the wallet, if it is a full address or account ID.' : 'No traders in this window' });
+    // The count says what is on screen: a filter's matches on this page, or the page's place in the ranking.
+    $('count').textContent = !data.total ? '' : f ? `${int(rows.length)} of ${int(data.rows.length)} on this page match` : `${int(data.total)} accounts · showing ${int(page * LIMIT + 1)}–${int(page * LIMIT + data.rows.length)}`;
   }
   $('lb-search').addEventListener('input', e => { filter = e.target.value.trim(); renderList(); });
   $('lb-search').addEventListener('keydown', e => { const q = e.target.value.trim(); if (e.key === 'Enter' && (/^0x[0-9a-fA-F]{40}$/.test(q) || /^\d{1,9}$/.test(q))) location.hash = `#/wallet/${q}`; });
@@ -105,14 +106,19 @@ export function mount(el, { query, setQuery }) {
     return out;
   }
   const moveAction = r => { const side = r.side === 'long' || r.side === 'short' ? r.side : ''; const opening = ['open', 'increase'].includes(r.kind) || (r.kind === 'invert'); const cls = r.kind === 'liquidation' ? 'neg' : (side === 'long') === opening ? 'pos' : 'neg'; return `<span class="${cls}">${MOVE_VERBS[r.kind] ?? r.kind} ${esc(side)}</span>${r.count > 1 ? ` <span class="tag" title="${r.count} fills over ${Math.max(1, Math.round((r.ts - r.oldest) / 60))} min">×${r.count}</span>` : ''}`; };
+  // The API returns at most this many raw fills; a busy leader can fill them all.
+  const MOVE_FILLS = 500;
   async function loadMoves() {
-    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=400`, { maxAge: 8000 });
+    const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=${MOVE_FILLS}`, { maxAge: 8000 });
     if (!alive) return;
     const wl = smWin === 'all' ? 'all-time' : smWin;
-    $('sm-desc').textContent = `Latest position changes of the top ${int(m.leaders)} traders by net PnL (${wl}), last 7 days${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts left out` : ''}`;
+    // Cut off by the fill limit, the list covers less than the 7 days asked for: it says how much.
+    const oldest = m.rows.at(-1)?.ts, cut = m.rows.length >= MOVE_FILLS && oldest;
+    const span = cut ? `the last ${duration(Date.now() / 1000 - oldest)} (the latest ${int(MOVE_FILLS)} fills)` : 'last 7 days';
+    $('sm-desc').textContent = `Latest position changes of the ${int(m.leaders)} most profitable directional traders by net PnL (${wl}), ${span}${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts (by ${wl} activity) left out` : ''}`;
     $('moves').innerHTML = table({ id: 'moves', compact: true, emptyText: 'No moves by these traders in the last 7 days', columns: [
       { key: 't', label: 'When', render: r => `<span class="muted num" title="${esc(new Date(r.ts * 1000).toISOString().replace('T', ' ').slice(0, 19))} UTC">${ago(r.ts)}</span>` },
-      { key: 'a', label: 'Trader', render: r => `<span class="sm-trader"><span class="rank-pill" title="Rank by net PnL, ${esc(wl)}">#${int(r.leader.rank)}</span>${addr(r.address, r.account)}</span>` },
+      { key: 'a', label: 'Trader', render: r => `<span class="sm-trader"><span class="rank-pill" title="Rank by net PnL among all traders, ${esc(wl)}">#${int(r.leader.rank)}</span>${addr(r.address, r.account)}</span>` },
       { key: 'x', label: 'Action', render: moveAction },
       { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
       { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
@@ -131,7 +137,7 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: `Traders · ${wl}`, value: int(t.traders), note: `${usd(t.volume)} volume${partial}` }),
       kpi({ label: `Profitable · ${wl}`, value: int(t.profitable), note: `${pct(t.profitable_pct, { digits: 1 })} of traders, after fees` }),
       kpi({ label: `Traders' net PnL · ${wl}`, value: pnl(t.net_pnl), note: 'all traders, after fees', tip: 'Realized PnL (price PnL and funding) minus fees, summed over every account that traded in the window.' }),
-      kpi({ label: 'Median PnL / volume', value: num(t.median_pnl_per_volume_bps) === null ? '—' : bpsCell(t.median_pnl_per_volume_bps), note: 'the typical trader, per $ traded', tip: 'Net PnL divided by volume for each trader, then the median across traders: what the typical trader keeps or loses per dollar traded.' })
+      kpi({ label: `Median PnL / volume · ${wl}`, value: num(t.median_pnl_per_volume_bps) === null ? '—' : bpsCell(t.median_pnl_per_volume_bps), note: 'the typical trader, per $ traded', tip: 'Net PnL divided by volume for each trader, then the median across traders: what the typical trader keeps or loses per dollar traded.' })
     ].join('');
   }
 

@@ -113,7 +113,8 @@ export function fundingCell(f, { apr = true } = {}) {
   return `<span class="${signClass(rate, 4)}">${pct(rate, { digits: 4, sign: true })}</span>${apr ? `<div class="sub">${pct(f.apr_pct, { digits: 1, sign: true })} APR</div>` : ''}`;
 }
 export const pctCell = (v, sign = true) => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${sign ? signClass(v) : ''}">${pct(v, { sign })}</span>`);
-export const bpsCell = v => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${signClass(v, 1)}">${bps(v, { sign: true })}</span>`);
+// Whole basis points from 100 up, where a decimal adds nothing (+2405 bps, +25.2 bps).
+export const bpsCell = v => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${signClass(v, 1)}">${bps(v, { sign: true, digits: Math.abs(num(v)) >= 100 ? 0 : 1 })}</span>`);
 export const skeleton = (rows = 6) => `<div class="panel-body">${Array.from({ length: rows }, (_, i) => `<div class="skeleton sk-line" style="width:${92 - (i % 3) * 14}%"></div>`).join('')}</div>`;
 export const skChart = () => '<div class="panel-body"><div class="skeleton sk-block"></div></div>';
 export const empty = text => `<div class="empty-state">${esc(text)}</div>`;
