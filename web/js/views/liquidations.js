@@ -6,16 +6,17 @@ import { kpi, seg, table, mktLink, sideTag, addr, pnl, skeleton, skChart, empty,
 import { stackedBars } from '../charts.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
+const BUCKETS = { 3600: 'Per hour', 14400: 'Per 4 hours', 86400: 'Per day', 604800: 'Per week' };
 
 export function mount(el, { query, setQuery }) {
   let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '7d';
   let market = query.get('market') ?? '';
-  let alive = true, markets = [];
+  let alive = true, markets = [], adl = null;
   el.innerHTML = `
     <div class="page-head"><div><h1>Liquidations</h1><div class="sub">Forced closes from exchange events: liquidations on the order book and auto-deleveraging.</div></div><div id="win">${seg('window', WINDOWS, w)}</div></div>
     <div class="stack"><div class="kpis k4" id="kpis"></div>
-      <section class="panel"><div class="panel-head"><h2>Liquidated notional</h2><div class="head-right"><div class="legend" id="legend"></div>${chartTools('chart', 'liquidations')}</div></div><div class="panel-body"><div class="chart" id="chart">${skChart()}</div></div></section>
-      <section class="panel"><div class="panel-head"><h2>Feed</h2><div style="display:flex;gap:10px;align-items:center"><span class="meta" id="feed-meta"></span><select id="mf" class="btn ghost" aria-label="Market filter"><option value="">All markets</option></select><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div><div class="panel-body flush" id="feed">${skeleton(10)}</div></section></div>`;
+      <section class="panel lq-chart"><div class="panel-head"><div><h2>Liquidated notional <span class="info-tip" title="Notional closed by liquidations in each period, by market, with the running total on the right axis. ADL and force closes are not included; the feed below lists them too.">i</span></h2><div class="desc" id="chart-desc"></div></div><div class="head-right"><div class="legend dots" id="legend"></div>${chartTools('chart', 'liquidations')}</div></div><div class="panel-body"><div class="chart" id="chart">${skChart()}</div></div></section>
+      <section class="panel"><div class="panel-head"><h2>Feed</h2><div class="lq-feed-ctl"><span class="meta" id="feed-meta"></span><select id="mf" class="btn ghost" aria-label="Market filter"><option value="">All markets</option></select><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div><div class="panel-body flush" id="feed">${skeleton(10)}</div></section></div>`;
   const $ = s => el.querySelector(`#${s}`);
   // The feed pages through every event of the window, newest first, fifty at a time.
   const PAGE = 50;
@@ -33,10 +34,11 @@ export function mount(el, { query, setQuery }) {
     // A market filter narrows the KPIs and the chart too, not only the feed.
     const liquidated = row ? row.liquidated : h.liquidated.value, count = row ? row.liquidations : h.liquidations.value, volume = row ? row.volume : h.volume.value;
     const largest = l.largest ?? null; // the largest inside the window, from the server
+    adl = row ? null : num(h.deleverages); // counted for all markets only
     $('kpis').innerHTML = [
       kpi({ label: `Liquidated · ${w}${row ? ` · ${row.symbol}` : ''}`, value: usd(liquidated), delta: row || w === 'all' || p.meta.previous_complete === false ? undefined : h.liquidated.change_pct, basis: 'vs prev', basisTitle: `Compared with the previous ${w}`, invert: true, note: `${int(count)} liquidations` }),
       kpi({ label: 'Share of volume', value: `${num(volume) ? (num(liquidated) / num(volume) * 100).toFixed(2) : '0.00'}%`, note: `of ${usd(volume)} traded` }),
-      kpi({ label: 'ADL and force closes', value: int(h.deleverages), note: row ? 'all markets' : 'positions closed by the protocol', tip: 'PositionDeleveraged events: auto-deleveraging against a bankrupt position, or a force close at the mark price (flagged on the event).' }),
+      kpi({ label: 'ADL, force closes', value: int(h.deleverages), note: row ? 'all markets' : 'positions closed by the protocol', tip: 'PositionDeleveraged events: auto-deleveraging against a bankrupt position, or a force close at the mark price (flagged on the event).' }),
       kpi({ label: `Largest · ${w === 'all' ? 'all-time' : w}`, value: largest ? usd(largest.notional) : '—', note: largest ? `${esc(largest.symbol)} ${esc(largest.side ?? '')} · ${ago(largest.ts)}` : 'none in this window' })
     ].join('');
     const node = $('chart'); node.innerHTML = '';
@@ -48,7 +50,8 @@ export function mount(el, { query, setQuery }) {
       list = top.map(m => ({ name: m.symbol, color: colorOf(m.id), data: m.liquidated.map(num) }));
       if (rest.length) list.push({ name: 'Other', color: OTHER_HEX, data: s.times.map((_, i) => rest.reduce((a, m) => a + num(m.liquidated[i]), 0)) });
     }
-    $('legend').innerHTML = list.map(x => `<span><i style="background:${x.color}"></i>${esc(x.name)}</span>`).join('') + (list.length ? '<span><i style="background:#fff;height:2px"></i>Cumulative</span>' : '');
+    $('legend').innerHTML = list.map(x => `<span><i style="background:${x.color}"></i>${esc(x.name)}</span>`).join('') + (list.length ? '<span><i style="background:#fff"></i>Cumulative</span>' : '');
+    $('chart-desc').textContent = list.length ? `${BUCKETS[s.meta.bucket_seconds] ?? 'Per period'}${row ? '' : ' by market'} · line: running total` : '';
     if (list.length) stackedBars(node, { times: s.times, series: list, bucketSeconds: s.meta.bucket_seconds, cumulative: true, zoom: true }); else node.innerHTML = empty('No liquidations in this window');
     // The delisted original and its relisting share a name: the old one says so.
     $('mf').innerHTML = `<option value="">All markets</option>${markets.filter(m => m.liquidations || m.id === Number(market)).map(m => `<option value="${m.id}" ${String(m.id) === market ? 'selected' : ''}>${esc(m.symbol)}${m.active === false ? ' (inactive)' : ''}</option>`).join('')}`;
@@ -58,7 +61,9 @@ export function mount(el, { query, setQuery }) {
   }
   function renderFeed(l) {
     const rows = l.rows, total = l.total ?? rows.length, pages = Math.max(1, Math.ceil(total / PAGE));
-    $('feed-meta').textContent = `${int(total)} events · ${w === 'all' ? 'all-time' : w}`;
+    // The feed has ADL and force closes too, so it runs longer than the liquidation count above.
+    $('feed-meta').textContent = `${int(total)} events${adl ? ` · incl. ${int(adl)} ADL and force close${adl === 1 ? '' : 's'}` : ''} · ${w === 'all' ? 'all-time' : w}`;
+    $('feed-meta').title = 'Liquidations plus ADL and force closes; the liquidation count above counts liquidations only.';
     const first = total ? page * PAGE + 1 : 0, last = page * PAGE + rows.length;
     const pager = pages > 1 ? `<div class="panel-foot pager"><span>${int(first)}–${int(last)} of ${int(total)}</span><span class="pager-ctl"><button class="btn ghost sm" data-action="prev" ${page === 0 ? 'disabled' : ''}>← Prev</button><span class="num">Page ${int(page + 1)} of ${int(pages)}</span><button class="btn ghost sm" data-action="next" ${page + 1 >= pages ? 'disabled' : ''}>Next →</button></span></div>` : '';
     $('feed').innerHTML = table({ id: 'liq', columns: [

@@ -33,7 +33,7 @@ export function mount(el, { navigate }) {
     $('bot').innerHTML = `<div class="alerts-grid">
       <div class="alerts-copy">
         <div class="alerts-kicker">${ICON.bell} Telegram bot${bot ? ` · @${esc(bot)}` : ''}</div>
-        <h2>Know before you get liquidated</h2>
+        <h2>Alerts for the wallets you watch</h2>
         <div class="alerts-features">${FEATURES.map(([i, t, d]) => `<div class="alerts-f"><span class="alerts-fi">${i}</span><div><b>${t}</b><span>${d}</span></div></div>`).join('')}</div>
         ${link ? `<div class="alerts-cta"><a class="btn primary" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open @${esc(bot)} ${ICON.ext}</a><span class="faint">Free · send it a wallet address to start</span></div>` : '<div class="faint" style="margin-top:14px">Telegram alerts are not enabled on this server.</div>'}
       </div>

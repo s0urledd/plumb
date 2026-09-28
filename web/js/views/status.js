@@ -8,13 +8,15 @@ const dot = s => `<span class="status-dot ${s}"></span>`;
 
 export function mount(el) {
   let alive = true;
-  el.innerHTML = `<div class="page-head"><div><h1>Data &amp; methodology</h1><div class="sub">How Plumb gets its numbers, and live proof that they match the contract.</div></div></div>
+  // The two short check lists share a row; the per-market table gets the full width.
+  el.innerHTML = `<div class="page-head"><div><h1>Data &amp; methodology</h1><div class="sub">How Plumb gets its numbers, and the live checks that compare them with the contract.</div></div></div>
     <div class="stack">
       <section class="panel"><div class="panel-head"><h2>Pipeline</h2><span class="meta" id="gen"></span></div><div class="pipeline" id="pipeline">${skeleton(3)}</div></section>
       <div class="grid g-2">
-        <section class="panel"><div class="panel-head"><h2>Integrity checks</h2><span class="meta">Indexed events vs contract counters</span></div><div id="integrity">${skeleton(6)}</div></section>
-        <section class="panel"><div class="panel-head"><h2>Contract snapshot checks</h2><span class="meta">Every poll and periodic full rescan</span></div><div id="checks">${skeleton(6)}</div></section>
+        <section class="panel st-checks"><div class="panel-head"><h2>Contract snapshot checks</h2><span class="meta">Every poll and periodic full rescan</span></div><div id="checks">${skeleton(3)}</div></section>
+        <section class="panel st-checks"><div class="panel-head"><h2>Decoder checks</h2><span class="meta" id="decoder-meta">Since the ingest started</span></div><div id="decoder">${skeleton(4)}</div></section>
       </div>
+      <section class="panel"><div class="panel-head"><h2>Integrity checks</h2><span class="meta">Indexed events vs contract counters</span></div><div id="integrity">${skeleton(6)}</div></section>
       <section class="panel"><div class="panel-head"><h2>Definitions</h2></div><div class="doc">
         <h3>Volume</h3>Sum of maker-fill notional (price × size of every <code>MakerOrderFilled</code>), so each match counts once. Notional is computed with integer arithmetic from the market's price and lot decimals.
         <h3>Fees</h3>Maker plus taker fees charged on fills. The exchange splits every fee into an insurance-fund part and a protocol part (<code>insFeeCNS + protFeeCNS</code> on the position event equals the fill fee, checked on every fill that opens, increases or flips a position; reducing fills carry no fee up to contract v1.1.7.4). A builder's share is part of the fill fee and of the protocol part. Fees are gross: rebates and referral shares are paid outside fills.
@@ -46,12 +48,13 @@ export function mount(el) {
     if (!ready) $('integrity').innerHTML = empty(integ?.complete ? 'Waiting for the index and the contract snapshot to reach the same block.' : 'Available once the full history is indexed (the running sums need every event since deployment).');
     // A relisted market shares its symbol with the old one; the id tells them apart.
     const seen = integ?.open_interest?.map(x => x.symbol) ?? [], twin = x => seen.filter(y => y === x.symbol).length > 1;
+    // The verdict sits beside the market, so a phone sees it before the table scrolls.
     if (ready) $('integrity').innerHTML = `<div class="panel-body faint" style="font-size:12.5px">${esc(integ.method)} Block ${esc(integ.block)}.</div>` + table({ id: 'int', compact: true, columns: [
       { key: 'm', label: 'Market', render: x => `${mkt(x.market, x.symbol)}${twin(x) ? ` <span class="faint">#${esc(x.market)}</span>` : ''}` },
+      { key: 'ok', label: 'Result', render: x => (x.ok ? '<span class="tag good">match</span>' : '<span class="tag bad">mismatch</span>') },
       { key: 'l', label: 'Long lots (events / contract)', n: true, render: x => `${esc(x.events_long)} / ${esc(x.contract_long)}` },
-      { key: 's', label: 'Short lots (events / contract)', n: true, render: x => `${esc(x.events_short)} / ${esc(x.contract_short)}` },
-      { key: 'ok', label: '', n: true, render: x => (x.ok ? '<span class="tag good">match</span>' : '<span class="tag bad">mismatch</span>') }
-    ], rows: integ.open_interest }) + (integ.tvl ? `<div class="panel-foot"><span>TVL from events ${usd(integ.tvl.events)} · contract ${usd(integ.tvl.contract)}</span>${integ.tvl.ok ? '<span class="tag good">match</span>' : '<span class="tag warn">differs</span>'}</div>` : '');
+      { key: 's', label: 'Short lots (events / contract)', n: true, render: x => `${esc(x.events_short)} / ${esc(x.contract_short)}` }
+    ], rows: integ.open_interest }) + (integ.tvl ? `<div class="panel-foot st-tvl"><span>TVL from events ${usd(integ.tvl.events)} · contract ${usd(integ.tvl.contract)}</span>${integ.tvl.ok ? '<span class="tag good">match</span>' : '<span class="tag warn">differs</span>'}</div>` : '');
     const rec = v?.reconciliation, ver = v?.verification;
     $('checks').innerHTML = `<div class="stat-grid" style="grid-template-columns:1fr">
       <div class="stat"><span>${dot(rec?.ok ? 'ok' : 'bad')} Stored positions sum to the contract's open-interest counters</span><span>${rec ? `${rec.ok ? 'OK' : 'mismatch'} · block ${esc(rec.block)}` : '—'}</span></div>
@@ -59,7 +62,9 @@ export function mount(el) {
       <div class="stat"><span>${dot((v?.pnl_agreement ?? []).every(x => (x.agree ?? 0) === (x.checked ?? 0)) ? 'ok' : 'bad')} Position PnL recomputed and compared with getPositionsV2</span><span>${(v?.pnl_agreement ?? []).reduce((a, x) => a + (x.agree ?? 0), 0)} / ${(v?.pnl_agreement ?? []).reduce((a, x) => a + (x.checked ?? 0), 0)} agree</span></div>
     </div>`;
     const c = h.index?.decoder_checks;
-    if (c) $('checks').innerHTML += `<div class="panel-head" style="min-height:36px"><h2 style="font-size:12.5px;color:var(--text-2)">Decoder checks since start (${int(c.logs)} logs)</h2></div><div class="stat-grid" style="grid-template-columns:1fr">
+    $('decoder-meta').textContent = c ? `Since the ingest started · ${int(c.logs)} logs` : 'Since the ingest started';
+    if (!c) $('decoder').innerHTML = empty('Counted once the ingest has decoded new logs.');
+    else $('decoder').innerHTML = `<div class="stat-grid" style="grid-template-columns:1fr">
       <div class="stat"><span>${dot(c.unlinked ? 'warn' : 'ok')} Position events linked to their fill</span><span>${int(c.linked)} / ${int(c.userEvents)}</span></div>
       <div class="stat"><span>${dot(c.lotMismatch ? 'bad' : 'ok')} Fill size equals the position change</span><span>${int(c.lotMismatch)} mismatches</span></div>
       <div class="stat"><span>${dot(c.feeMismatch ? 'bad' : 'ok')} Fill fee equals insurance + protocol fee</span><span>${int(c.feeChecked - c.feeMismatch)} / ${int(c.feeChecked)}</span></div>
