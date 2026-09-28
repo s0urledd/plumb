@@ -14,7 +14,7 @@ export const PARAM_EVENTS = [
   'ContractAdded', 'ContractAddedV2', 'ContractRemoved', 'ContractPaused', 'MaintenanceMarginFractionUpdated', 'InitialMarginFractionUpdated',
   'MaxOpenInterestUpdated', 'LiquidationParamsUpdated', 'FundingClampPctUpdated', 'FundingSumScalingExpUpdated', 'ExchangeHalted',
   'UnwindPrepared', 'UnwindInitialized', 'UnwindContractTrigger', 'UnwindIterationCompleted', 'UnwindCompleted',
-  'UnwindPreparationCleared', 'UnwindInitializationCleared', 'ContractVersionSet'];
+  'UnwindPreparationCleared', 'UnwindInitializationCleared', 'ContractVersionSet', 'FeeParamsUpdated'];
 export const VALIDATION_EVENTS = ['CantLiquidatePosAboveMMR', 'CantBuyToLiquidate', 'InsolventPositionCannotBeForcedClose'];
 export const ACCOUNT_EVENTS = ['AccountCreated'];
 export const WATCHED_EVENTS = [...new Set([...POSITION_EVENTS, ...FUNDING_EVENTS, ...PARAM_EVENTS, ...VALIDATION_EVENTS, ...ACCOUNT_EVENTS])];

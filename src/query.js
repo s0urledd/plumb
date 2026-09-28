@@ -2,7 +2,7 @@
 // rolled up (read from agg_* tables) and everything else (read from raw
 // events with the same expressions), so results are exact at any window
 // edge and never wait for a rollup.
-import { MARKET, PROTOCOL, ACCOUNT, USER, ACCOUNT_TRADES, merged, columns, raw, SQL_SETTINGS } from './aggregates.js';
+import { MARKET, marketDefs, PROTOCOL, ACCOUNT, USER, ACCOUNT_TRADES, merged, columns, raw, SQL_SETTINGS } from './aggregates.js';
 
 const HOUR = 3600;
 const int = v => { const n = Number(v); if (!Number.isSafeInteger(n)) throw new Error('INVALID_INTEGER'); return n; };
@@ -30,7 +30,8 @@ export function intersect(ranges, allowed) {
   return out;
 }
 
-export function createQueries({ ch, rollups, coverage = null }) {
+// `rates`: the revenue parameter history (revenue.js), for the split of raw rows.
+export function createQueries({ ch, rollups, coverage = null, rates = null }) {
   const q = (sql, params = {}) => ch.query(sql, params, SQL_SETTINGS);
   // Raw ranges only where blocks were ingested: elsewhere there are no rows.
   const split = (from, to) => {
@@ -44,7 +45,7 @@ export function createQueries({ ch, rollups, coverage = null }) {
     const key = bucket ? `toStartOfInterval(%T, INTERVAL ${int(bucket)} SECOND) AS t, market` : 'market';
     const parts = [];
     if (s.rolled.length) parts.push(`SELECT ${key.replace('%T', 'hour')}, ${columns(MARKET)} FROM agg_market_hour FINAL WHERE ${cond('hour', s.rolled)}`);
-    if (s.raw.length) parts.push(`SELECT ${key.replace('%T', 'ts')}, ${raw(MARKET)} FROM ev WHERE market != 0 AND (${cond('ts', s.raw)}) GROUP BY ${bucket ? 't, market' : 'market'}`);
+    if (s.raw.length) parts.push(`SELECT ${key.replace('%T', 'ts')}, ${raw(marketDefs(rates?.sql()))} FROM ev WHERE market != 0 AND (${cond('ts', s.raw)}) GROUP BY ${bucket ? 't, market' : 'market'}`);
     if (!parts.length) return [];
     const by = bucket ? 't, market' : groupBy;
     return q(`SELECT ${bucket ? 'toUnixTimestamp(t) AS t, market' : 'market'}, ${merged(MARKET)} FROM (${parts.join(' UNION ALL ')}) GROUP BY ${by} ORDER BY ${by}`);

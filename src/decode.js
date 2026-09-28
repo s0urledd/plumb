@@ -14,7 +14,11 @@
 //   * volume counts every match once: the sum of maker-fill notional;
 //   * fees charged = maker + taker fill fees (= insurance + protocol fee on
 //     the position event); a builder's share is included in the fill fee and
-//     in the protocol fee (perpl-sdk: "must not add it on top").
+//     in the protocol fee (perpl-sdk: "must not add it on top"). Decrease
+//     and close carry no split: the linked fill's fee and builder fee stored
+//     on the row give it when windows and rollups are summed (revenue.js),
+//     with the rates of FeeParamsUpdated, LiquidationParamsUpdated and
+//     ContractAdded, all kept as parameter rows.
 import { toEventSelector } from 'viem';
 import { eventsAbi, decodeLog } from './abi.js';
 import * as m from './math.js';
@@ -29,7 +33,8 @@ export const MARKET_EVENTS = ['ContractAdded', 'ContractAddedV2'];
 export const PARAM_EVENTS = [
   'ContractRemoved', 'ContractPaused', 'MaintenanceMarginFractionUpdated', 'InitialMarginFractionUpdated', 'MaxOpenInterestUpdated',
   'LiquidationParamsUpdated', 'FundingClampPctUpdated', 'FundingSumScalingExpUpdated', 'ExchangeHalted', 'UnwindPrepared', 'UnwindInitialized',
-  'UnwindContractTrigger', 'UnwindIterationCompleted', 'UnwindCompleted', 'UnwindPreparationCleared', 'UnwindInitializationCleared', 'ContractVersionSet'];
+  'UnwindContractTrigger', 'UnwindIterationCompleted', 'UnwindCompleted', 'UnwindPreparationCleared', 'UnwindInitializationCleared', 'ContractVersionSet',
+  'FeeParamsUpdated'];
 export const INGEST_EVENTS = [...TRADE_EVENTS, ...FORCED_EVENTS, ...FILL_EVENTS, ...FLOW_EVENTS, ...OTHER_EVENTS, ...MARKET_EVENTS, ...PARAM_EVENTS];
 
 const STATIC = /^(u?int\d*|bool|address)$/;
@@ -74,6 +79,7 @@ function blank(b, kind) {
   return { ...b, kind, market: 0, account: 0, side: -1, role: 'none', buy: -1, price: 0n, lot: 0n, start_lot: 0n, end_lot: 0n, notional: 0n, fee: 0n, ins_fee: 0n, prot_fee: 0n, builder_fee: 0n, pnl: 0n, funding: 0n, deposit: 0n, amount: 0n, balance: 0n, leverage: 0, mark: 0n, flags: 0, oi_long: 0n, oi_short: 0n };
 }
 const oiDelta = (row, side, lots) => { if (side === LONG) row.oi_long += lots; else if (side === SHORT) row.oi_short += lots; };
+const param = (b, name, a) => ({ block: b.block, log_index: b.log_index, ts: b.ts, tx: b.tx, name, market: a.perpId === undefined ? -1 : n(a.perpId), args: JSON.stringify(a, (_, v) => typeof v === 'bigint' ? v.toString() : v) });
 
 // Converts ordered logs (whole blocks, sorted by block and log index) into
 // table rows. unitsOf(marketId) returns math.units(...) or null; markets
@@ -211,10 +217,11 @@ export function rowsFromLogs(logs, { unitsOf, collateralDecimals = 6 } = {}) {
         const market = n(a.perpId);
         out.markets.push({ market, name: a.name, symbol: a.symbol, price_decimals: n(a.priceDecimals), lot_decimals: n(a.lotDecimals), base_price: a.basePricePNS, max_oi: a.maxOpenInterestLNS, init_margin_hdths: n(a.initMarginFracHdths), maint_margin_hdths: n(a.maintMarginFracHdths), block: b.block, ts: b.ts, source: 'event' });
         local.set(market, m.units(n(a.priceDecimals), n(a.lotDecimals), collateralDecimals));
+        out.params.push(param(b, name, a)); // the fee and liquidation rates the market starts with
         break;
       }
       default:
-        if (PARAM_EVENTS.includes(name)) out.params.push({ block: b.block, log_index: b.log_index, ts: b.ts, tx: b.tx, name, market: a.perpId === undefined ? -1 : n(a.perpId), args: JSON.stringify(a, (_, v) => typeof v === 'bigint' ? v.toString() : v) });
+        if (PARAM_EVENTS.includes(name)) out.params.push(param(b, name, a));
     }
     if (!row) continue;
     if (row.kind === 'liquidation') {

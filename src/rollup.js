@@ -4,13 +4,22 @@
 // Window queries read rolled-up hours from these tables and everything else
 // (window edges, the current hour, hours still being backfilled) from raw
 // events with the same expressions (aggregates.js).
-import { MARKET, PROTOCOL, ACCOUNT, raw, columns, SQL_SETTINGS } from './aggregates.js';
+import { marketDefs, PROTOCOL, ACCOUNT, raw, columns, SQL_SETTINGS } from './aggregates.js';
 import { ROLLUP_VERSION } from './schema.js';
 
 const HOUR = 3600;
 const hourOf = ts => Math.floor(ts / HOUR) * HOUR;
 
-export function rollupStatements() {
+// Version 3 only added the reducing-fee split and the liquidation shares
+// (columns that read 0 on rows rolled before). An hour rolled at version 2
+// with no charged decrease or close and no liquidation has the same figures
+// at version 3, so it is carried over as it is; every other hour is rolled
+// again from the stored events. Rerunning it carries nothing twice.
+export const CARRY = { from: 2, touched: "SELECT DISTINCT toUnixTimestamp(toStartOfHour(ts)) AS h FROM ev WHERE kind = 'liquidation' OR (kind IN ('decrease','close') AND fee != 0)" };
+
+// `rates`: the revenue split rates in force, as SQL (revenue.js sql()).
+export function rollupStatements(rates) {
+  const MARKET = marketDefs(rates);
   return {
     market: `INSERT INTO agg_market_hour (hour, market, ${columns(MARKET)}, traders, computed_at)
       SELECT toStartOfHour(ts) AS hour, market, ${raw(MARKET)}, uniqExactIf(account, kind IN ('open','increase','decrease','close','invert')) AS traders, now64(3)
@@ -29,16 +38,43 @@ export function rollupStatements() {
   };
 }
 
-export function createRollups({ ch, coverage, log = () => {}, maxHoursPerStatement = 24 * 7 }) {
+// `rates`: the revenue parameter history (revenue.js createRevenueParams);
+// without it the split uses the default rates.
+export function createRollups({ ch, coverage, rates = null, log = () => {}, maxHoursPerStatement = 24 * 7 }) {
   const done = new Set(); // hour starts rolled up at the current version
-  const statements = rollupStatements();
-  let running = null, loaded = false;
-  const status = { hours: 0, lastRunAt: null, lastRunMs: null, pending: 0, lastError: null };
+  let running = null, loaded = false, generation = 0;
+  const status = { hours: 0, lastRunAt: null, lastRunMs: null, pending: 0, lastError: null, carried: null };
+
+  async function carryOver() {
+    const old = (await ch.query('SELECT toUnixTimestamp(hour) AS h FROM rollup_hours FINAL WHERE version = {v:UInt32}', { v: CARRY.from })).map(r => Number(r.h));
+    if (!old.length) return 0;
+    const touched = new Set((await ch.query(CARRY.touched)).map(r => Number(r.h)));
+    const keep = old.filter(h => !touched.has(h));
+    await ch.insert('rollup_hours', keep.map(h => ({ hour: h, version: ROLLUP_VERSION, computed_at: Date.now() })));
+    log('info', `rollup version ${ROLLUP_VERSION}: ${keep.length} hours carried over, ${old.length - keep.length} to roll again`);
+    return keep.length;
+  }
 
   async function load() {
+    // A failed carry-over only means more hours are rolled again.
+    status.carried = await carryOver().catch(error => { log('warn', `rollup carry-over skipped: ${error.message}`); return null; });
     for (const r of await ch.query('SELECT toUnixTimestamp(hour) AS h FROM rollup_hours FINAL WHERE version = {v:UInt32}', { v: ROLLUP_VERSION })) done.add(Number(r.h));
     loaded = true;
     status.hours = done.size;
+  }
+
+  // Hours from `fromTs` on are rolled again: a fee or liquidation parameter
+  // change indexed after them (the backfill runs newest first) changes their
+  // split. A run in flight when this happens does not mark its hours.
+  async function invalidate(fromTs) {
+    generation++;
+    const hours = [...done].filter(h => h + HOUR > fromTs);
+    if (!hours.length) return 0;
+    await ch.insert('rollup_hours', hours.map(h => ({ hour: h, version: 0, computed_at: Date.now() })));
+    for (const h of hours) done.delete(h);
+    status.hours = done.size;
+    log('info', `${hours.length} rolled-up hours to roll again after a parameter change`);
+    return hours.length;
   }
 
   // Fully covered, closed, not yet rolled-up hours, as contiguous runs.
@@ -58,10 +94,12 @@ export function createRollups({ ch, coverage, log = () => {}, maxHoursPerStateme
   }
 
   async function rollRun({ from, to }) {
-    const params = { from, to };
+    const params = { from, to }, gen = generation;
+    const statements = rollupStatements(rates?.sql());
     await ch.exec(statements.market, params, SQL_SETTINGS);
     await ch.exec(statements.protocol, params, SQL_SETTINGS);
     await ch.exec(statements.account, params, SQL_SETTINGS);
+    if (gen !== generation) return; // rates changed meanwhile: the next run redoes these hours
     const hours = [];
     for (let h = from; h < to; h += HOUR) hours.push({ hour: h, version: ROLLUP_VERSION, computed_at: Date.now() });
     await ch.insert('rollup_hours', hours);
@@ -116,5 +154,5 @@ export function createRollups({ ch, coverage, log = () => {}, maxHoursPerStateme
     return out;
   }
 
-  return { load, run, pendingRuns, rolledRuns, isRolled: h => done.has(h), status, done };
+  return { load, run, invalidate, pendingRuns, rolledRuns, isRolled: h => done.has(h), status, done };
 }

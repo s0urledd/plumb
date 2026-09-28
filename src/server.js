@@ -37,9 +37,9 @@ const ingest = createIngest({ ch, config, liveRpc, archiveRpcs: config.archives.
 for (let attempt = 1; ; attempt++) {
   try { await ingest.init(); break; } catch (error) { log('warn', `ingest init failed (${attempt}): ${error.message}`); if (attempt >= 30) throw error; await sleep(5000); }
 }
-const rollups = createRollups({ ch, coverage: ingest.coverage, log });
+const rollups = createRollups({ ch, coverage: ingest.coverage, rates: ingest.revenueParams, log });
 await rollups.load();
-const queries = createQueries({ ch, rollups, coverage: ingest.coverage });
+const queries = createQueries({ ch, rollups, coverage: ingest.coverage, rates: ingest.revenueParams });
 
 // --- API -------------------------------------------------------------------
 const sse = createSse({ log });
@@ -91,6 +91,7 @@ ingest.on(event => {
     const hour = Math.floor(event.ts / 3600);
     if (hour !== lastRollup) { lastRollup = hour; setTimeout(() => rollups.run(), 5000); }
   } else if (event.type === 'backfill') sse.send('backfill', event.progress);
+  else if (event.type === 'revenue-params') rollups.invalidate(event.ts).catch(error => log('warn', `rollup invalidation failed: ${error.message}`));
 });
 if (config.monodeUrl) {
   feeds.execEvents = createExecEvents({ url: config.monodeUrl, exchange: config.exchange, log, onFinalized: n => ingest.notifyFinalized(n, 'exec-events'), onProposed: ({ block, blockId, ts, logs }) => { const rows = speculativeTrades(logs, ingest); if (rows.length) analytics.tradeViews(rows).then(views => sse.send('proposed', { block, block_id: blockId, ts, trades: views.map(v => ({ ...v, log_index: null })) })).catch(() => {}); }, onStage: s => sse.send('stage', { block: s.block, block_id: s.blockId, stage: s.stage, ms: s.ms }) }); // a proposed block has no final log index

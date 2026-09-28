@@ -115,7 +115,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
 
   // --- protocol -------------------------------------------------------------
   function sumMarkets(rows) {
-    const t = { volume: 0n, fills: 0, maker_fees: 0n, taker_fees: 0n, builder_fees: 0n, ins_fees: 0n, prot_fees: 0n, taker_buy: 0n, taker_sell: 0n, trades: 0, opens: 0, closes: 0, liquidations: 0, liquidated: 0n, deleverages: 0, deleveraged: 0n, realized: 0n };
+    const t = { volume: 0n, fills: 0, maker_fees: 0n, taker_fees: 0n, builder_fees: 0n, ins_fees: 0n, prot_fees: 0n, reduce_ins_fees: 0n, reduce_prot_fees: 0n, liq_ins_fees: 0n, liq_prot_fees: 0n, taker_buy: 0n, taker_sell: 0n, trades: 0, opens: 0, closes: 0, liquidations: 0, liquidated: 0n, deleverages: 0, deleveraged: 0n, realized: 0n };
     for (const r of rows) for (const k of Object.keys(t)) t[k] += typeof t[k] === 'bigint' ? B(r[k]) : Number(r[k]);
     return t;
   }
@@ -125,8 +125,16 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     return { markets, t: sumMarkets(markets), p: { deposits: B(p.deposits), withdrawals: B(p.withdrawals), deposit_count: Number(p.deposit_count ?? 0), withdrawal_count: Number(p.withdrawal_count ?? 0), protocol_in: B(p.protocol_in), protocol_out: B(p.protocol_out), new_accounts: Number(p.new_accounts ?? 0) }, traders: Number(traders[0]?.traders ?? 0), marketTraders: new Map(marketTraders.map(r => [Number(r.market), Number(r.traders)])) };
   }
   // Fees charged on fills; the exchange splits each into an insurance-fund
-  // part and a protocol part (ins_fees + prot_fees == fees, checked at ingest).
+  // part and a protocol part: carried by opening events (checked at ingest),
+  // derived for decreases and closes, so protocol + insurance == fees.
   const feesOf = t => t.maker_fees + t.taker_fees;
+  const protFeesOf = t => B(t.prot_fees) + B(t.reduce_prot_fees), insFeesOf = t => B(t.ins_fees) + B(t.reduce_ins_fees);
+  const protRevenueOf = t => protFeesOf(t) + B(t.liq_prot_fees);
+  // Revenue by source (revenue.js); builder fees are inside the protocol's fee share, owed to builders.
+  const revenueOf = (t, c = cd()) => {
+    const part = (open, reduce, liq) => ({ total: dec(B(open) + B(reduce) + B(liq), c), opening_fees: dec(open ?? 0, c), reducing_fees: dec(reduce ?? 0, c), liquidations: dec(liq ?? 0, c) });
+    return { protocol: part(t.prot_fees, t.reduce_prot_fees, t.liq_prot_fees), insurance: part(t.ins_fees, t.reduce_ins_fees, t.liq_ins_fees), builder_fees: dec(t.builder_fees ?? 0, c) };
+  };
 
   function current() {
     const computed = computeMetrics(state);
@@ -192,7 +200,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
         return {
           id, symbol: symbol(id), name: meta(id)?.name ?? null,
           volume: dec(vol, c), share_pct: share(vol, T.volume), trades: Number(r.trades), fills: Number(r.fills), traders: cur.marketTraders.get(id) ?? 0,
-          fees: dec(B(r.maker_fees) + B(r.taker_fees), c), protocol_fees: dec(r.prot_fees, c), insurance_fees: dec(r.ins_fees, c),
+          fees: dec(B(r.maker_fees) + B(r.taker_fees), c), protocol_fees: dec(protFeesOf(r), c), insurance_fees: dec(insFeesOf(r), c), revenue: revenueOf(r, c),
           open: open > 0n ? price(open, id) : null, close: close > 0n ? price(close, id) : null, high: B(r.high_price) > 0n ? price(r.high_price, id) : null, low: B(r.low_price) > 0n ? price(r.low_price, id) : null,
           change_pct: open > 0n && close > 0n ? pctChange(close, open) : null,
           taker_buy: dec(r.taker_buy, c), taker_sell: dec(r.taker_sell, c), taker_buy_share_pct: share(B(r.taker_buy), B(r.taker_buy) + B(r.taker_sell)),
@@ -201,13 +209,14 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
         };
       });
       // A listed market with nothing in the window: zero activity (not unknown) and its contract state.
-      for (const [id, lm] of live?.markets ?? []) if (!markets.some(x => x.id === id)) markets.push({ id, symbol: symbol(id), name: meta(id)?.name ?? null, volume: dec(0n, c), share_pct: 0, trades: 0, fills: 0, traders: 0, fees: dec(0n, c), liquidations: 0, liquidated: dec(0n, c), ...liveOf(id, lm) });
+      for (const [id, lm] of live?.markets ?? []) if (!markets.some(x => x.id === id)) markets.push({ id, symbol: symbol(id), name: meta(id)?.name ?? null, volume: dec(0n, c), share_pct: 0, trades: 0, fills: 0, traders: 0, fees: dec(0n, c), protocol_fees: dec(0n, c), insurance_fees: dec(0n, c), revenue: revenueOf({}, c), liquidations: 0, liquidated: dec(0n, c), ...liveOf(id, lm) });
       markets.sort((a, b) => Number(b.volume) - Number(a.volume) || Number(b.open_interest ?? 0) - Number(a.open_interest ?? 0));
       return {
         meta: metaOf({ window: w, from, to, coverage: coverageOf(from, to), previous_complete: prev ? ingest.coverage.spanCovered(from - len, from - 1) : null }),
         headline: {
           volume: hl(T.volume, P?.volume ?? null), fees: hl(feesOf(T), P ? feesOf(P) : null),
-          protocol_fees: hl(T.prot_fees, P?.prot_fees ?? null), insurance_fees: hl(T.ins_fees, P?.ins_fees ?? null), builder_fees: dec(T.builder_fees, c),
+          protocol_fees: hl(protFeesOf(T), P ? protFeesOf(P) : null), insurance_fees: hl(insFeesOf(T), P ? insFeesOf(P) : null), builder_fees: dec(T.builder_fees, c),
+          protocol_revenue: hl(protRevenueOf(T), P ? protRevenueOf(P) : null), revenue: revenueOf(T, c),
           trades: hn(T.trades, P?.trades ?? null), traders: hn(cur.traders, prev?.traders ?? null), new_accounts: hn(cur.p.new_accounts, pp?.new_accounts ?? null),
           liquidations: hn(T.liquidations, P?.liquidations ?? null), liquidated: hl(T.liquidated, P?.liquidated ?? null), deleverages: T.deleverages,
           deposits: hl(cur.p.deposits, pp?.deposits ?? null), withdrawals: hl(cur.p.withdrawals, pp?.withdrawals ?? null), net_flow: hl(cur.p.deposits - cur.p.withdrawals, pp ? pp.deposits - pp.withdrawals : null),
@@ -299,7 +308,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
         const f = flowT.get(t);
         const netFlow = f ? B(f.deposits) - B(f.withdrawals) : 0n;
         tvl += f ? netFlow + B(f.protocol_in) - B(f.protocol_out) : 0n;
-        const point = { t, volume: dec(s.volume, c), trades: s.trades, fees: dec(feesOf(s), c), protocol_fees: dec(s.prot_fees, c), insurance_fees: dec(s.ins_fees, c), taker_buy: dec(s.taker_buy, c), taker_sell: dec(s.taker_sell, c), liquidations: s.liquidations, liquidated: dec(s.liquidated, c), realized_pnl: dec(s.realized, c), open_interest: baseComplete ? dec(oi, c) : null };
+        const point = { t, volume: dec(s.volume, c), trades: s.trades, fees: dec(feesOf(s), c), protocol_fees: dec(protFeesOf(s), c), insurance_fees: dec(insFeesOf(s), c), revenue: revenueOf(s, c), taker_buy: dec(s.taker_buy, c), taker_sell: dec(s.taker_sell, c), liquidations: s.liquidations, liquidated: dec(s.liquidated, c), realized_pnl: dec(s.realized, c), open_interest: baseComplete ? dec(oi, c) : null };
         if (marketFilter === null) Object.assign(point, { traders: tradersT.get(t) ?? 0, new_traders: newT.get(t) ?? 0, deposits: dec(f?.deposits ?? 0, c), withdrawals: dec(f?.withdrawals ?? 0, c), net_flow: dec(netFlow, c), new_accounts: Number(f?.new_accounts ?? 0), tvl: baseComplete ? dec(tvl, c) : null });
         else { const r = pick[0]; Object.assign(point, { open: r && B(r.open_price) > 0n ? price(r.open_price, marketFilter) : null, high: r && B(r.high_price) > 0n ? price(r.high_price, marketFilter) : null, low: r && B(r.low_price) > 0n ? price(r.low_price, marketFilter) : null, close: prices.get(marketFilter) ? price(prices.get(marketFilter), marketFilter) : null }); }
         return point;
