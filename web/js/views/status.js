@@ -42,10 +42,11 @@ export function mount(el) {
       `<div class="stage"><h3>${dot(h.snapshot?.status === 'fresh' ? 'ok' : 'warn')}Contract state</h3><div class="v">#${int(h.snapshot?.block)}</div><div class="d">${esc(h.snapshot?.status ?? '')}${h.snapshot?.status_reason ? ` (${esc(h.snapshot.status_reason)})` : ''} · contract ${esc(h.snapshot?.contract_version ?? '—')} · ${int(h.collector?.polls)} polls · ${int(h.collector?.rpc_requests)} RPC requests</div><div class="d">${int(feed?.sse_clients)} live viewers</div></div>`
     ].join('');
     const integ = v?.integrity;
-    if (!integ || !integ.complete) $('integrity').innerHTML = empty(integ?.pending ? 'Waiting for the index to reach the contract snapshot block.' : 'Available once the full history is indexed (the running sums need every event since deployment).');
+    const ready = integ?.complete && !integ.pending && integ.block;
+    if (!ready) $('integrity').innerHTML = empty(integ?.complete ? 'Waiting for the index and the contract snapshot to reach the same block.' : 'Available once the full history is indexed (the running sums need every event since deployment).');
     // A relisted market shares its symbol with the old one; the id tells them apart.
     const seen = integ?.open_interest?.map(x => x.symbol) ?? [], twin = x => seen.filter(y => y === x.symbol).length > 1;
-    if (integ?.complete) $('integrity').innerHTML = `<div class="panel-body faint" style="font-size:12.5px">${esc(integ.method)} Block ${esc(integ.block)}.</div>` + table({ id: 'int', compact: true, columns: [
+    if (ready) $('integrity').innerHTML = `<div class="panel-body faint" style="font-size:12.5px">${esc(integ.method)} Block ${esc(integ.block)}.</div>` + table({ id: 'int', compact: true, columns: [
       { key: 'm', label: 'Market', render: x => `${mkt(x.market, x.symbol)}${twin(x) ? ` <span class="faint">#${esc(x.market)}</span>` : ''}` },
       { key: 'l', label: 'Long lots (events / contract)', n: true, render: x => `${esc(x.events_long)} / ${esc(x.contract_long)}` },
       { key: 's', label: 'Short lots (events / contract)', n: true, render: x => `${esc(x.events_short)} / ${esc(x.contract_short)}` },

@@ -597,14 +597,16 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   // --- data integrity -------------------------------------------------------------
   // Event-derived open interest and TVL at the ingested head against the
   // contract's own counters (the collector reads them every poll).
+  // Only a finished comparison is cached: right after a start the contract
+  // state or the index may not have reached a common block yet.
   async function integrity() {
+    const complete = ingest.coverage.contiguousTs() !== null && ingest.coverage.intervals.length === 1;
+    if (!complete) return { complete, open_interest: [], tvl: null };
+    if (!state.block || ingest.status.live.to === null || ingest.status.live.to < state.block.number) return { complete, pending: true, open_interest: [], tvl: null };
     return cache.get('integrity', 60000, async () => {
-      const complete = ingest.coverage.contiguousTs() !== null && ingest.coverage.intervals.length === 1;
-      if (!complete || !state.block) return { complete, open_interest: [], tvl: null };
       // The contract side is read before the query: a poll meanwhile moves the state to another block.
-      const block = state.block.number, blockTs = state.block.timestamp, head = ingest.status.live.to, balance = state.exchangeInfo.balanceCNS;
+      const block = state.block.number, blockTs = state.block.timestamp, balance = state.exchangeInfo.balanceCNS;
       const markets = [...state.markets.values()].map(x => ({ id: x.id, symbol: x.symbol, long: x.longOpenInterestLNS, short: x.shortOpenInterestLNS }));
-      if (head === null || head < block) return { complete, pending: true, open_interest: [], tvl: null };
       const cum = await queries.cumulativeAtBlock(block, blockTs);
       const checks = markets.map(market => {
         const ev = cum.oi.get(market.id) ?? { long: 0n, short: 0n };

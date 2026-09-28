@@ -60,8 +60,8 @@ export function mount(el, { query, setQuery }) {
         ${panel('oi', 'Open interest', 'One side, priced at the last trade')}
         ${panel('tvl', 'TVL', 'Collateral in the exchange contract')}
         ${panel('flows', 'Deposits and withdrawals', 'Deposits up, withdrawals down; line: net per period')}
-        ${panel('traders', 'Active traders', 'Distinct accounts trading per period: returning, and new (first trade ever)')}
-        ${panel('fees', 'Fees', 'Gross fees on fills', `<div id="fees-mode">${segSm('feesv', FEE_VIEWS, feeView)}</div>`)}
+        ${panel('traders', 'Active traders', 'Distinct accounts trading per period: returning, and first-time (first trade ever)')}
+        ${panel('fees', 'Fees', 'Gross fees on fills; the contract splits them only on trades that open or add', `<div id="fees-mode">${segSm('feesv', FEE_VIEWS, feeView)}</div>`)}
         ${panel('liq', 'Liquidations', 'Liquidated notional by market')}
         ${panel('tpnl', 'Trader PnL', 'Realized PnL of all traders per period (price PnL + funding, before fees)')}
         ${panel('taker', 'Taker flow', 'Aggressive buys up, sells down; line: net per period')}
@@ -119,14 +119,13 @@ export function mount(el, { query, setQuery }) {
     const ch = v => (w === 'all' || data.meta.previous_complete === false ? undefined : v);
     const partial = cov && !cov.complete ? ' <span class="tag warn" title="History for this window is still being indexed">partial</span>' : '';
     // Window totals compare with the window before; open interest and TVL show their change within the window.
-    const days = { '24h': 1, '7d': 7, '30d': 30 }[w], yearly = days ? (num(h.protocol_fees.value) ?? 0) * 365 / days : null;
     const vsPrev = { basis: 'vs prev', basisTitle: `Compared with the previous ${wl}` }, within = { basis: `in ${wl}`, basisTitle: `Change over the last ${wl}` };
     $('kpis').innerHTML = [
       kpi({ label: `Volume · ${wl}`, value: usd(h.volume.value), delta: ch(h.volume.change_pct), ...vsPrev, note: `${int(data.markets.reduce((a, m) => a + (m.fills ?? 0), 0))} trades${partial}`, spark: 'sp-vol', tip: 'Notional of every match, counted once (the maker side). A trade is one match between a maker and a taker.' }),
       kpi({ label: 'Open interest', value: usd(c?.open_interest), delta: seriesChange('open_interest'), ...within, note: c ? `${int(c.positions)} open positions` : '', spark: 'sp-oi', tip: 'Long notional at the mark price; equal to short notional by construction, so each contract counts once. The change compares the window\'s first and last points of the event-derived series.' }),
       kpi({ label: 'TVL', value: usd(c?.tvl), delta: seriesChange('tvl'), ...within, note: `${usd(h.net_flow.value, { sign: true })} net flow · ${wl}`, spark: 'sp-tvl', tip: 'Collateral held by the exchange contract, read from chain state.' }),
-      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: yearly ? `Revenue ≈${usd(yearly)}/yr` : `Revenue ${usd(h.protocol_fees.value)}`, spark: 'sp-fees', tip: `Revenue (the protocol share): ${usd(h.protocol_fees.value)} in ${wl}${yearly ? `, about ${usd(yearly)} a year at this pace` : ''}. Fees charged on fills, gross: ${usd(h.insurance_fees.value)} to the insurance fund and ${usd(h.protocol_fees.value)} protocol share, of which ${usd(h.builder_fees)} went to order builders. Rebates and referral shares are paid outside fills and are not deducted.` }),
-      kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr' }),
+      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.take_rate_bps === null || h.take_rate_bps === undefined ? '' : `${num(h.take_rate_bps).toFixed(2)} bps of volume`, spark: 'sp-fees', tip: `Fees charged on fills, gross. On trades that open or add to a position the contract emits the split: ${usd(h.protocol_fees.value)} protocol share (of which ${usd(h.builder_fees)} to order builders) and ${usd(h.insurance_fees.value)} to the insurance fund. Trades that reduce or close carry no split in their events: ${usd(unsplit(h))} in ${wl}. Rebates and referral shares are paid outside fills and are not deducted.` }),
+      kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr', tip: 'Accounts that traded in the window. New accounts: accounts created in the window, some of which have not traded yet.' }),
       kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq' })
     ].join('');
     spark('sp-vol', pts.map(p => num(p.volume)));
@@ -165,11 +164,12 @@ export function mount(el, { query, setQuery }) {
   }
   function headValue(id, value, note = '') { const n = $(`${id}-v`); if (n) n.innerHTML = `<div class="hv">${value}</div>${note ? `<div class="hn">${note}</div>` : ''}`; }
   // Fees per period by type (protocol revenue, insurance fund) or by market.
+  const unsplit = x => Math.max(0, (num(x.fees?.value ?? x.fees) ?? 0) - (num(x.protocol_fees?.value ?? x.protocol_fees) ?? 0) - (num(x.insurance_fees?.value ?? x.insurance_fees) ?? 0));
   function renderFees() {
     const d = trendOf.fees, node = $('fees'); if (!node || !d) return;
     const sr = d.s, pts = sr.points, times = sr.times, b = sr.meta.bucket_seconds;
     node.innerHTML = '';
-    const list = feeView === 'market' ? byMarket('fees', sr) : [{ name: 'Protocol (revenue)', color: SLOT_HEX[0], data: pts.map(p => num(p.protocol_fees)) }, { name: 'Insurance fund', color: SLOT_HEX[2], data: pts.map(p => num(p.insurance_fees)) }];
+    const list = feeView === 'market' ? byMarket('fees', sr) : [{ name: 'Protocol', color: SLOT_HEX[0], data: pts.map(p => num(p.protocol_fees)) }, { name: 'Insurance fund', color: SLOT_HEX[2], data: pts.map(p => num(p.insurance_fees)) }, { name: 'Reducing trades (no split)', color: OTHER_HEX, data: pts.map(unsplit) }].filter(x => x.data.some(v => v > 0));
     if (list.length) stackedBars(node, { times, series: list, bucketSeconds: b }); else node.innerHTML = empty('No fees in this window');
   }
   // Each trend panel: its window's totals (header) and series (chart).
@@ -205,17 +205,19 @@ export function mount(el, { query, setQuery }) {
         break;
       case 'traders':
         {
-          // New: accounts trading for the first time ever; the rest came back.
+          // First-time: accounts trading for the first time ever; the rest came back.
+          // "Ever" needs every event since launch, so the split waits for the backfill.
           const fresh = pts.reduce((a, p) => a + (p.new_traders ?? 0), 0);
-          headValue('traders', int(h.traders.value), `${winLabel(win)} distinct · ${int(fresh)} new`);
-          stackedBars(node, { times, series: [
+          headValue('traders', int(h.traders.value), `${winLabel(win)} distinct${cumulative ? ` · ${int(fresh)} first-time` : ''}`);
+          const split = cumulative ? [
             { name: 'Returning traders', color: COLORS.accent, data: pts.map(p => Math.max(0, (p.traders ?? 0) - (p.new_traders ?? 0))) },
-            { name: 'New traders', color: SLOT_HEX[2], data: pts.map(p => p.new_traders ?? 0) }
-          ], bucketSeconds: b, fmt: v => int(v), yFmt: v => (Math.abs(v) >= 1000 ? compact(v, { digits: 1 }) : int(v)) });
+            { name: 'First-time traders', color: SLOT_HEX[2], data: pts.map(p => p.new_traders ?? 0) }
+          ] : [{ name: 'Active traders', color: COLORS.accent, data: pts.map(p => p.traders ?? 0) }];
+          stackedBars(node, { times, series: split, bucketSeconds: b, fmt: v => int(v), yFmt: v => (Math.abs(v) >= 1000 ? compact(v, { digits: 1 }) : int(v)) });
         }
         break;
       case 'fees':
-        headValue('fees', usd(h.fees.value), `${usd(h.protocol_fees.value)} protocol · ${usd(h.insurance_fees.value)} insurance · ${winLabel(win)}`);
+        headValue('fees', usd(h.fees.value), `${usd(h.protocol_fees.value)} protocol · ${usd(h.insurance_fees.value)} insurance${unsplit(h) > 0 ? ` · ${usd(unsplit(h))} no split` : ''} · ${winLabel(win)}`);
         renderFees();
         break;
       case 'liq': {
@@ -382,6 +384,12 @@ export function mount(el, { query, setQuery }) {
     lastLongLoad = Date.now();
     get(`protocol?window=${w}`, { maxAge: 0 }).then(p => { if (!alive || w === '24h') return; data = p; renderKpis(); renderMarkets(); renderWindows(); }).catch(() => {});
     get(`flows?window=${w}`, { maxAge: 0 }).then(f => alive && renderFlows(f)).catch(() => {});
+  }));
+  let lastFlowLoad = Date.now();
+  off.push(stream.on('protocol', () => {
+    if (w !== '24h' || !alive || Date.now() - lastFlowLoad < LONG_WINDOW_REFRESH_MS) return;
+    lastFlowLoad = Date.now();
+    get('flows?window=24h', { maxAge: 0 }).then(f => { if (alive && w === '24h') renderFlows(f); }).catch(() => {});
   }));
   off.push(stream.on('protocol', p => { if (w !== '24h' || !data || !alive) return; data = { ...data, headline: p.headline, current: p.current, markets: data.markets.map(m => { const u = p.markets.find(x => x.id === m.id); return u ? { ...m, mark: u.mark ?? m.mark, volume: u.volume, change_pct: u.change_pct, open_interest: u.open_interest ?? m.open_interest, funding: u.funding ?? m.funding } : m; }) }; renderKpis(); renderMarkets(); }));
   const timer = setInterval(() => { get(seriesPath(), { maxAge: 0 }).then(s => { if (!alive) return; series = s; renderVolume(); if (w !== '24h') load().catch(() => {}); }).catch(() => {}); loadTrends(true); }, 60000);
