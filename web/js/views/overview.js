@@ -60,7 +60,7 @@ export function mount(el, { query, setQuery }) {
         ${panel('oi', 'Open interest', 'One side, priced at the last trade')}
         ${panel('tvl', 'TVL', 'Collateral in the exchange contract')}
         ${panel('flows', 'Deposits and withdrawals', 'Deposits up, withdrawals down; line: net per period')}
-        ${panel('traders', 'Active traders', 'Distinct accounts trading per period')}
+        ${panel('traders', 'Active traders', 'Distinct accounts trading per period: returning, and new (first trade ever)')}
         ${panel('fees', 'Fees', 'Gross fees on fills', `<div id="fees-mode">${segSm('feesv', FEE_VIEWS, feeView)}</div>`)}
         ${panel('liq', 'Liquidations', 'Liquidated notional by market')}
         ${panel('tpnl', 'Trader PnL', 'Realized PnL of all traders per period (price PnL + funding, before fees)')}
@@ -119,12 +119,13 @@ export function mount(el, { query, setQuery }) {
     const ch = v => (w === 'all' || data.meta.previous_complete === false ? undefined : v);
     const partial = cov && !cov.complete ? ' <span class="tag warn" title="History for this window is still being indexed">partial</span>' : '';
     // Window totals compare with the window before; open interest and TVL show their change within the window.
+    const days = { '24h': 1, '7d': 7, '30d': 30 }[w], yearly = days ? (num(h.protocol_fees.value) ?? 0) * 365 / days : null;
     const vsPrev = { basis: 'vs prev', basisTitle: `Compared with the previous ${wl}` }, within = { basis: `in ${wl}`, basisTitle: `Change over the last ${wl}` };
     $('kpis').innerHTML = [
       kpi({ label: `Volume · ${wl}`, value: usd(h.volume.value), delta: ch(h.volume.change_pct), ...vsPrev, note: `${int(data.markets.reduce((a, m) => a + (m.fills ?? 0), 0))} trades${partial}`, spark: 'sp-vol', tip: 'Notional of every match, counted once (the maker side). A trade is one match between a maker and a taker.' }),
       kpi({ label: 'Open interest', value: usd(c?.open_interest), delta: seriesChange('open_interest'), ...within, note: c ? `${int(c.positions)} open positions` : '', spark: 'sp-oi', tip: 'Long notional at the mark price; equal to short notional by construction, so each contract counts once. The change compares the window\'s first and last points of the event-derived series.' }),
       kpi({ label: 'TVL', value: usd(c?.tvl), delta: seriesChange('tvl'), ...within, note: `${usd(h.net_flow.value, { sign: true })} net flow · ${wl}`, spark: 'sp-tvl', tip: 'Collateral held by the exchange contract, read from chain state.' }),
-      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: `Revenue ${usd(h.protocol_fees.value)}`, spark: 'sp-fees', tip: `${w === '24h' ? `Revenue (the protocol share) runs at about ${usd((num(h.protocol_fees.value) ?? 0) * 365)} a year at this pace. ` : ''}Fees charged on fills, gross: ${usd(h.insurance_fees.value)} to the insurance fund and ${usd(h.protocol_fees.value)} protocol share, of which ${usd(h.builder_fees)} went to order builders. Rebates and referral shares are paid outside fills and are not deducted.` }),
+      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: `Revenue ${usd(h.protocol_fees.value)}${yearly ? ` · ≈${usd(yearly)}/yr` : ''}`, spark: 'sp-fees', tip: `${w === '24h' ? `Revenue (the protocol share) runs at about ${usd((num(h.protocol_fees.value) ?? 0) * 365)} a year at this pace. ` : ''}Fees charged on fills, gross: ${usd(h.insurance_fees.value)} to the insurance fund and ${usd(h.protocol_fees.value)} protocol share, of which ${usd(h.builder_fees)} went to order builders. Rebates and referral shares are paid outside fills and are not deducted.` }),
       kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr' }),
       kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq' })
     ].join('');
@@ -203,8 +204,15 @@ export function mount(el, { query, setQuery }) {
         twoSided(node, { times, bucketSeconds: b, up: { name: 'Deposits', data: pts.map(p => p.deposits) }, down: { name: 'Withdrawals', data: pts.map(p => p.withdrawals) }, net: 'Net deposits' });
         break;
       case 'traders':
-        headValue('traders', int(h.traders.value), `${winLabel(win)} distinct`);
-        stackedBars(node, { times, series: [{ name: 'Active traders', color: COLORS.accent, data: pts.map(p => p.traders) }], bucketSeconds: b, fmt: v => int(v), yFmt: v => (Math.abs(v) >= 1000 ? compact(v, { digits: 1 }) : int(v)) });
+        {
+          // New: accounts trading for the first time ever; the rest came back.
+          const fresh = pts.reduce((a, p) => a + (p.new_traders ?? 0), 0);
+          headValue('traders', int(h.traders.value), `${winLabel(win)} distinct · ${int(fresh)} new`);
+          stackedBars(node, { times, series: [
+            { name: 'Returning traders', color: COLORS.accent, data: pts.map(p => Math.max(0, (p.traders ?? 0) - (p.new_traders ?? 0))) },
+            { name: 'New traders', color: SLOT_HEX[2], data: pts.map(p => p.new_traders ?? 0) }
+          ], bucketSeconds: b, fmt: v => int(v), yFmt: v => (Math.abs(v) >= 1000 ? compact(v, { digits: 1 }) : int(v)) });
+        }
         break;
       case 'fees':
         headValue('fees', usd(h.fees.value), `${usd(h.protocol_fees.value)} protocol · ${usd(h.insurance_fees.value)} insurance · ${winLabel(win)}`);

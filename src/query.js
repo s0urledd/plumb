@@ -61,6 +61,17 @@ export function createQueries({ ch, rollups, coverage = null }) {
   }
 
   // Distinct accounts with at least one trade, overall / per market / per bucket.
+  // Accounts whose first trade ever falls in each bucket of [from, to): the
+  // first trade is the earliest over all history (`since`), from rolled-up
+  // hours where available and raw events elsewhere.
+  async function newTraders(from, to, { bucket, since }) {
+    const s = split(since, to);
+    const parts = [];
+    if (s.rolled.length) parts.push(`SELECT account, min(hour) AS first FROM agg_account_hour FINAL WHERE trades > 0 AND (${cond('hour', s.rolled)}) GROUP BY account`);
+    if (s.raw.length) parts.push(`SELECT account, min(ts) AS first FROM ev_account WHERE ${ACCOUNT_TRADES} AND (${cond('ts', s.raw)}) GROUP BY account`);
+    if (!parts.length) return [];
+    return q(`SELECT toUnixTimestamp(toStartOfInterval(first, INTERVAL ${int(bucket)} SECOND)) AS t, count() AS n FROM (SELECT account, min(first) AS first FROM (${parts.join(' UNION ALL ')}) GROUP BY account) WHERE first >= toDateTime(${int(from)}, 'UTC') AND first < toDateTime(${int(to)}, 'UTC') GROUP BY t`);
+  }
   async function traders(from, to, { by = null, bucket = null } = {}) {
     const s = split(from, to);
     const key = bucket ? `toStartOfInterval(%T, INTERVAL ${int(bucket)} SECOND) AS t, ` : '';
@@ -260,5 +271,5 @@ export function createQueries({ ch, rollups, coverage = null }) {
     return new Map(rows.map(r => [Number(r.account), { address: r.address, created: Number(r.ts) }]));
   }
 
-  return { marketTotals, protocolTotals, traders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
+  return { marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
 }

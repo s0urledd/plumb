@@ -260,12 +260,13 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       // Buckets are labelled on the bucket grid, but the data starts at the window's
       // own start: the first bucket is partial, so chart sums equal the headline.
       const start = Math.floor(range.from / bucket.seconds) * bucket.seconds, from = range.from, to = range.to;
-      const [rows, flows, traderRows, base, lastPrices] = await Promise.all([
+      const [rows, flows, traderRows, base, lastPrices, newRows] = await Promise.all([
         queries.marketTotals(from, to, { bucket: bucket.seconds }),
         queries.protocolTotals(from, to, { bucket: bucket.seconds }),
         queries.traders(from, to, { bucket: bucket.seconds }),
         queries.cumulativeBefore(from),
-        queries.lastPricesBefore(from)
+        queries.lastPricesBefore(from),
+        marketFilter === null ? queries.newTraders(from, to, { bucket: bucket.seconds, since: firstTs() }) : []
       ]);
       const c = cd();
       const baseComplete = ingest.coverage.contiguousTs() !== null && ingest.coverage.contiguousTs() >= from;
@@ -275,6 +276,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       for (const r of rows) { const list = byT.get(Number(r.t)); if (list) list.push(r); }
       const flowT = new Map(flows.map(r => [Number(r.t), r]));
       const tradersT = new Map(traderRows.map(r => [Number(r.t), Number(r.traders)]));
+      const newT = new Map(newRows.map(r => [Number(r.t), Number(r.n)]));
       const lots = new Map([...base.oi].map(([id, v]) => [id, v.long]));
       const prices = new Map(lastPrices);
       let tvl = base.net;
@@ -295,7 +297,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
         const netFlow = f ? B(f.deposits) - B(f.withdrawals) : 0n;
         tvl += f ? netFlow + B(f.protocol_in) - B(f.protocol_out) : 0n;
         const point = { t, volume: dec(s.volume, c), trades: s.trades, fees: dec(feesOf(s), c), protocol_fees: dec(s.prot_fees, c), insurance_fees: dec(s.ins_fees, c), taker_buy: dec(s.taker_buy, c), taker_sell: dec(s.taker_sell, c), liquidations: s.liquidations, liquidated: dec(s.liquidated, c), realized_pnl: dec(s.realized, c), open_interest: baseComplete ? dec(oi, c) : null };
-        if (marketFilter === null) Object.assign(point, { traders: tradersT.get(t) ?? 0, deposits: dec(f?.deposits ?? 0, c), withdrawals: dec(f?.withdrawals ?? 0, c), net_flow: dec(netFlow, c), new_accounts: Number(f?.new_accounts ?? 0), tvl: baseComplete ? dec(tvl, c) : null });
+        if (marketFilter === null) Object.assign(point, { traders: tradersT.get(t) ?? 0, new_traders: newT.get(t) ?? 0, deposits: dec(f?.deposits ?? 0, c), withdrawals: dec(f?.withdrawals ?? 0, c), net_flow: dec(netFlow, c), new_accounts: Number(f?.new_accounts ?? 0), tvl: baseComplete ? dec(tvl, c) : null });
         else { const r = pick[0]; Object.assign(point, { open: r && B(r.open_price) > 0n ? price(r.open_price, marketFilter) : null, high: r && B(r.high_price) > 0n ? price(r.high_price, marketFilter) : null, low: r && B(r.low_price) > 0n ? price(r.low_price, marketFilter) : null, close: prices.get(marketFilter) ? price(prices.get(marketFilter), marketFilter) : null }); }
         return point;
       });
