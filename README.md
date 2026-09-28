@@ -151,8 +151,6 @@ npm ci && npm run check && npm test   # unit tests, no network needed
 
 ## Roadmap
 
-- **Trading bot** (planned): trading on Perpl through its API, with Plumb's
-  data for signals and risk limits. Notes: [docs/bot.md](docs/bot.md).
 - **More alerts**: webhooks alongside Telegram, and alerts on a market's
   liquidation ladder.
 

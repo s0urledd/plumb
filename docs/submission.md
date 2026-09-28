@@ -3,8 +3,7 @@
 - **Entry:** one project (the rules allow one per participant, §2.5) in
   track 01, Onchain Finance & Trading, entered for Perpl's "Best Analytics /
   Risk Tool" bounty: the dashboard, the API and the Telegram alerts (this
-  document). A trading bot for "Best use of Perpl's API" is planned, not
-  built ([bot.md](bot.md)).
+  document).
 - **Submissions:** open 2 October 2026 and close 14 October 2026, 06:59
   GMT+3 (13 October, 11:59 PM ET).
 - **Required (rules §4.1, §9):** a public repository with source, README,
