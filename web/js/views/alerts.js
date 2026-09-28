@@ -50,7 +50,7 @@ export function mount(el, { navigate }) {
     $('list').innerHTML = table({ id: 'watch', columns: [
       { key: 'a', label: 'Wallet', render: r => `<span class="addr"><a class="mono" href="#/wallet/${esc(r.d?.account.address ?? r.key)}">${esc(short(r.d?.account.address ?? r.key))}</a><button class="icon-btn on" data-watch="${esc(r.key)}" title="Remove">${ICON.star}</button></span>` },
       { key: 'v', label: 'Account value', n: true, render: r => usd(r.d?.portfolio?.account_value) },
-      { key: 'o', label: 'Open positions', n: true, render: r => int(r.d?.positions?.length ?? 0) },
+      { key: 'o', label: 'Open positions', n: true, render: r => int(r.d ? r.d.positions?.length ?? 0 : null) }, // a wallet that failed to load: unknown, not none
       { key: 'c', label: 'Closest liq.', n: true, render: r => { const d = r.d?.portfolio?.closest_liquidation?.distance_pct ?? null; return d === null ? '<span class="faint">—</span>' : `<span class="${d < 5 ? 'neg' : d < 15 ? 'warn-text' : 'muted'}">${d.toFixed(1)}% away</span>`; } },
       { key: 'u', label: 'Unrealized PnL', n: true, render: r => pnl(r.d?.portfolio?.unrealized_pnl) },
       { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.d?.summary.net_pnl) },

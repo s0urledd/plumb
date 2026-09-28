@@ -427,9 +427,12 @@ tr.inactive td { opacity: 0.5; }
    so a logo, an icon button or a badge never shifts the row's values:
    - a logo-first chip would otherwise align on the logo's bottom edge;
    - 24px icon buttons would otherwise grow the line;
+   - a 26px small button would otherwise grow the line and sit low (it
+     reaches 3px past the line on each side instead);
    - small badges would otherwise sit low on the text baseline. */
 .t td .mkt, .t td .addr { vertical-align: top; height: 20px; }
 .t td .addr .icon-btn { width: 20px; height: 20px; }
+.t td .btn.sm { vertical-align: top; margin: -3px 0; }
 .t td .tag, .t td .side { vertical-align: top; margin-top: 1px; height: 18px; line-height: 18px; padding-top: 0; padding-bottom: 0; }
 /* Rank pills take the text line's own height, and the "of N" beside them a fixed
    width, so pills line up in one column and centre on the row's values. */
