@@ -16,7 +16,7 @@ export function mount(el, { query, setQuery }) {
   let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '7d';
   let by = SORTS.some(([v]) => v === query.get('by')) ? query.get('by') : 'pnl';
   let page = 0, alive = true, data = null, cohorts = null, coTab = 'size', coSel = null, smWin = '30d', smMin = '1000';
-  const LIMIT = 50;
+  const LIMIT = 20;
   el.innerHTML = `
     <div class="page-head"><div><h1>Traders</h1><div class="sub">Rankings of every account that traded, how traders are positioned now, and the latest moves of the most profitable ones.</div></div><div id="win">${seg('window', WINDOWS, w)}</div></div>
     <div class="stack traders-page">
