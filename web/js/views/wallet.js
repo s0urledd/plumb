@@ -2,7 +2,7 @@
 // history, trader analytics (win rate, profit factor, drawdown, streaks,
 // hold time, best/worst markets), behaviour notes, trades, round trips, flows.
 import { get, stream } from '../api.js';
-import { usd, usdFull, int, price, pct, num, esc, size, duration, date, dateTime, ago, short } from '../format.js';
+import { usd, usdFull, int, price, pct, num, esc, size, duration, date, dateTime, ago, short, signClass } from '../format.js';
 import { kpi, tabs, table, mktLink, sideTag, pnl, pctCell, bpsCell, skeleton, skChart, empty, watch, ICON, EXPLORER, toast, chartTools, alertsLink, alertsBotReady } from '../ui.js';
 import { lineChart, signedBars, COLORS } from '../charts.js';
 
@@ -150,6 +150,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
           <div class="stat"><span>Balance</span><span>${usdFull(p.balance)}</span></div><div class="stat"><span>Available</span><span>${usdFull(p.available_balance ?? p.balance)}</span></div><div class="stat"><span>Locked by orders</span><span>${usdFull(p.locked_balance)}</span></div>
           <div class="stat"><span>Position margin</span><span>${usdFull(p.position_margin)}</span></div><div class="stat"><span>Account value</span><span>${usdFull(p.account_value)}</span></div>
           <div class="stat"><span>Margin usage</span><span>${pct(p.margin_usage_pct, { digits: 1 })}</span></div><div class="stat"><span>Effective leverage</span><span>${p.leverage ?? 0}x</span></div>
+          <div class="stat"><span>Unrealized PnL</span><span class="${signClass(p.unrealized_pnl)}">${num(p.unrealized_pnl) > 0 ? '+' : ''}${usdFull(p.unrealized_pnl)}</span></div>
         </div></section>` : ''}<section class="panel"><div class="panel-head"><h2>Open positions</h2><span class="meta">${int(d.positions.length)} open</span></div><div class="panel-body flush">${table({ id: 'pos', columns: POS_COLS, rows: d.positions, emptyText: 'No open positions' })}</div></section>`;
     } else if (tab === 'trades') {
       body.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>Trade history</h2><div class="desc">Newest first · every position change with its fill</div></div><a class="btn ghost" href="/api/v1/wallets/${esc(d.account.address)}/trades?format=csv&limit=10000">${ICON.download} CSV</a></div><div class="panel-body flush" id="trade-list">${skeleton(8)}</div><div class="panel-foot"><span id="trade-count"></span><button class="btn ghost" data-action="more" id="more">Load more</button></div></section>`;
@@ -157,7 +158,9 @@ export function mount(el, { params, query, setQuery, navigate }) {
     } else if (tab === 'trips') {
       if (!an) { body.innerHTML = `<section class="panel">${perfSkeleton()}</section>`; return; }
       const tripRows = [...an.open_trips.map(t => ({ ...t, open: true })), ...an.trips];
-      body.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>Round trips</h2><div class="desc">Open trips first, then closed trips, newest close first</div></div></div>` + table({ id: 'trips', columns: [
+      // The list holds the latest closed trips only; the totals above count them all.
+      const closedAll = an.performance?.closed_trips ?? an.trips.length, capped = an.trips.length < closedAll;
+      body.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>Round trips</h2><div class="desc">Open trips first, then ${capped ? `the latest ${int(an.trips.length)} of ${int(closedAll)} closed trips` : 'closed trips'}, newest close first</div></div></div>` + table({ id: 'trips', columns: [
         { key: 'm', label: 'Market', render: twinLink(tripRows) },
         { key: 's', label: 'Side', render: r => sideTag(r.side) },
         { key: 'c', label: 'Closed', render: r => (r.open ? '<span class="faint">open</span>' : `<span class="muted num">${dateTime(r.close_ts)}</span>`) },
@@ -194,14 +197,15 @@ export function mount(el, { params, query, setQuery, navigate }) {
     const end = lastDay + (6 - ((lastDay + 3) % 7)); // Sunday closing the last week (day 0 was a Thursday)
     const start = Math.max(end - weeks * 7 + 1, Math.floor(rows[0].t / 86400) - ((Math.floor(rows[0].t / 86400) + 3) % 7));
     const max = Math.max(1, ...rows.filter(r => Math.floor(r.t / 86400) >= start).map(r => Math.abs(num(r.net_pnl) ?? 0)));
-    const cells = [], months = [];
+    const cells = [], months = [], today = Math.floor(Date.now() / 86400000);
     let green = 0, red = 0;
     for (let d = start; d <= end; d++) {
       const r = byDay.get(d), v = num(r?.net_pnl) ?? 0, dateText = date(d * 86400);
       if (r && v > 0) green++; else if (r && v < 0) red++;
       const a = r ? 0.18 + 0.82 * Math.min(1, Math.abs(v) / max) : 0;
       const bg = !r ? NO_DAY : v >= 0 ? `rgba(129,199,132,${a})` : `rgba(246,90,110,${a})`;
-      cells.push(`<i style="background:${bg}" title="${esc(dateText)}${r ? ` · ${esc(usd(v, { sign: true }))} · ${int(r.trades)} trades` : ' · no closed trades'}"></i>`);
+      // The days after today that close the week hold its place, blank: they have not happened.
+      cells.push(d > today ? '<i></i>' : `<i style="background:${bg}" title="${esc(dateText)}${r ? ` · ${esc(usd(v, { sign: true }))} · ${int(r.trades)} trades` : ' · no closed trades'}"></i>`);
       // A month is named at its first week; the first column only when its month has weeks left, so two names never touch.
       if ((d - start) % 7 === 0) { const day = new Date(d * 86400000).getUTCDate(); months.push(day <= 7 || (d === start && day <= 21) ? esc(dateText.split(' ')[0]) : ''); }
     }
@@ -244,7 +248,8 @@ export function mount(el, { params, query, setQuery, navigate }) {
     const v = $('pnl-v'), lg = $('pnl-lg');
     const since = data.summary.first_trade ?? rows[0]?.t;
     if (v) v.innerHTML = `<div class="hv">${pnl(data.summary.net_pnl)}</div><div class="hn">${note || `all-time, after fees${since ? ` · since ${esc(date(since))}` : ''}`}</div>`;
-    if (lg) lg.innerHTML = keys.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('');
+    // ring: a key colour too faint to see on the card as a bare dot gets an outline.
+    if (lg) lg.innerHTML = keys.map(s => `<span><i style="background:${s.color}${s.ring ? ';box-shadow:inset 0 0 0 1px rgba(255,255,255,0.28)' : ''}"></i>${esc(s.name)}</span>`).join('');
   }
   function drawPnl() {
     const node = $('pnl-chart');
@@ -256,7 +261,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
       // Measured empty: the room less day names, month row, key line and padding.
       const cal = pnlCalendar(rows, node.clientWidth - 70, node.clientHeight - 84);
       node.innerHTML = cal.html;
-      pnlHead(rows, `<span class="pos">${int(cal.green)} profit</span> · <span class="neg">${int(cal.red)} loss</span> days in the ${int(cal.weeks)} weeks shown`, [...DAY_KEYS, { name: 'No closed trades', color: NO_DAY }]);
+      pnlHead(rows, `<span class="pos">${int(cal.green)} profit</span> · <span class="neg">${int(cal.red)} loss</span> days in the ${int(cal.weeks)} weeks shown`, [...DAY_KEYS, { name: 'No closed trades', color: NO_DAY, ring: true }]);
       return;
     }
     if (pnlMode === 'daily') {
@@ -271,7 +276,12 @@ export function mount(el, { params, query, setQuery, navigate }) {
       const times = [], vals = []; let carry = null;
       for (let d = Math.floor(rows[0].t / 86400); d <= Math.floor(rows.at(-1).t / 86400); d++) { if (byDay.has(d)) carry = byDay.get(d); times.push(d * 86400); vals.push(carry); }
       lineChart(node, { times, series: [{ name: 'Cumulative net PnL', color: last >= 0 ? COLORS.long : COLORS.short, data: vals }], bucketSeconds: 86400, fmt: v => usd(v, { sign: true }) });
-    } else signedBars(node, { times: rows.map(r => r.t), values: rows.map(r => num(r.net_pnl)), bucketSeconds: 86400, name: 'Net PnL' });
+    } else {
+      // Every calendar day too, as the cumulative line: days without closes have no bar, and the time scale holds between views.
+      const byDay = new Map(rows.map(r => [Math.floor(r.t / 86400), num(r.net_pnl)]));
+      const days = []; for (let d = Math.floor(rows[0].t / 86400); d <= Math.floor(rows.at(-1).t / 86400); d++) days.push(d);
+      signedBars(node, { times: days.map(d => d * 86400), values: days.map(d => byDay.get(d) ?? null), bucketSeconds: 86400, name: 'Net PnL' });
+    }
   }
   async function loadTrades() {
     const r = await get(`wallets/${encodeURIComponent(data.account.address)}/trades?limit=100${next ? `&before=${next}` : ''}`, { maxAge: 0 });

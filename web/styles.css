@@ -644,7 +644,12 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
   .wallet-page .kpis.k7 > .kpi { grid-column: span 3; }
   .wallet-page .kpis.k7 > .kpi:nth-child(n+5) { grid-column: span 4; }
 }
-@media (max-width: 860px) { .wallet-page .kpis.k7 > .kpi:last-child { grid-column: 1 / -1; } }
+@media (max-width: 860px) {
+  .wallet-page .kpis.k7 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .wallet-page .kpis.k7 > .kpi:first-child { grid-column: auto; }
+  .wallet-page .kpis.k7 > .kpi:last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) { .wallet-page .kpis.k7 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* Account balances four to a row; stats go one to a row on phones. */
 .acct-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .acct-grid .stat { border-right: 1px solid var(--line); }
