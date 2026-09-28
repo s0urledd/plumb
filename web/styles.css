@@ -439,51 +439,6 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 /* Trader style tags (Whale, Maker, High frequency): Monad purple, white text. */
 .tags .tag { color: #fff; background: var(--accent-strong); }
 
-/* Cohort cards (Traders): purple marks identity, green/red only direction. */
-.co-strip { margin-bottom: 14px; }
-.co-strip-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
-.co-strip-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; background: var(--surface-2); }
-.co-strip-bar i { display: block; min-width: 3px; }
-.co-strip-keys { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 12px; color: var(--text-2); }
-.co-strip-keys i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
-.co-strip-keys b { color: var(--text); font-weight: 500; margin-left: 2px; font-variant-numeric: tabular-nums; }
-.co-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 1100px) { .co-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .co-grid { grid-template-columns: minmax(0, 1fr); } }
-.co-card { display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 14px; background: linear-gradient(180deg, rgba(111, 92, 255, 0.07), rgba(111, 92, 255, 0.015) 60%), var(--surface-2); border: 0; box-shadow: var(--card-edge); border-radius: var(--radius); color: var(--text); font: inherit; cursor: pointer; transition: box-shadow .15s, background-color .15s; min-width: 0; }
-.co-card:hover { box-shadow: 0 0 0 1px rgba(143, 130, 255, 0.4), var(--card-edge); }
-.co-card.sel { box-shadow: 0 0 0 1px var(--accent-strong), inset 0 0 0 1px var(--accent-strong), var(--card-edge); }
-.co-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.co-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.co-ic { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 30% 25%, rgba(143, 130, 255, 0.34), rgba(111, 92, 255, 0.12) 70%); box-shadow: inset 0 0 0 1px var(--shade, rgba(143, 130, 255, 0.4)); color: #cfc8ff; }
-.co-ic svg { width: 21px; height: 21px; }
-.co-ic svg[viewBox="0 0 512 512"] { width: 25px; height: 25px; }
-.co-id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.co-id b { font-size: 14px; font-weight: 600; }
-.co-id span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.co-pill { flex: none; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
-.co-pill.long { color: var(--long); background: var(--long-soft); }
-.co-pill.short { color: var(--short); background: var(--short-soft); }
-.co-pill.flat { color: #b8b3d6; background: rgba(139, 133, 168, 0.16); }
-.co-count { font-size: 12.5px; color: var(--text-2); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-.co-count b { font-size: 22px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.co-ls { margin-left: auto; font-size: 11.5px; }
-.co-bar { height: 8px; border-radius: 4px; background: var(--short); overflow: hidden; opacity: 0.9; }
-.co-bar i { display: block; height: 100%; background: var(--long); border-right: 2px solid var(--surface-2); }
-.co-ends { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: -4px; }
-.co-ends small { font-size: 10px; opacity: .75; }
-.co-share { color: var(--text-3); font-size: 11px; }
-.co-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
-.co-stats > span { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--text-3); min-width: 0; }
-.co-stats b { font-size: 12.5px; font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.co-stats b.pos, .co-stats b .pos { color: var(--long); }
-.co-stats b.neg, .co-stats b .neg { color: var(--short); }
-.co-mks { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; }
-.co-mk { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; padding: 2px 8px 2px 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); }
-.co-mk.long { color: var(--long); }
-.co-mk.short { color: var(--short); }
-.co-mk .tk { border-radius: 50%; }
-
 /* Alerts page: the Telegram bot above the watchlist. */
 .btn.sm { height: 26px; padding: 0 9px; font-size: 12px; }
 .btn.sm svg { width: 13px; height: 13px; }
@@ -550,11 +505,6 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .trend-win { display: inline-flex; align-items: center; gap: 6px; }
 .trend-reset { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 11.5px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
 .trend-reset:hover { background: var(--accent-soft); }
-/* Smart money moves (Traders). */
-.sm-list { max-height: 420px; overflow: auto; }
-.sm-trader { display: inline-flex; align-items: center; gap: 8px; }
-.sm-trader .rank-pill { min-width: 36px; }
-.sm-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* ========== page: markets (market.js, markets.js) ========== */
 /* markets rules */
@@ -575,18 +525,59 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 /* ========== page: traders (traders.js, wallet.js, compare.js) ========== */
 /* traders rules */
 /* Cohort cards: raised tiles inside their panel with no outline; the picked
-   one takes the accent tint and inset ring of an active switch. */
-.co-card { background: var(--surface-2); border: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); transition: background-color .15s, box-shadow .15s; }
-.co-card:hover { background: var(--surface-3); }
+   one takes the accent tint and inset ring of an active switch. Purple marks
+   identity; green and red only ever mean long and short. */
+.co-strip { margin-bottom: 14px; }
+.co-strip-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+.co-strip-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; background: var(--surface-2); }
+.co-strip-bar i { display: block; min-width: 3px; }
+.co-strip-keys { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 12px; color: var(--text-2); }
+.co-strip-keys i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.co-strip-keys b { color: var(--text); font-weight: 500; margin-left: 2px; font-variant-numeric: tabular-nums; }
+.co-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .co-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .co-grid { grid-template-columns: minmax(0, 1fr); } }
+.co-card { display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 14px; background: var(--surface-2); border: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); border-radius: var(--radius); color: var(--text); font: inherit; cursor: pointer; transition: background-color .15s, box-shadow .15s; min-width: 0; }
+.co-card:hover { background: var(--surface-3); box-shadow: 0 0 0 1px rgba(143, 130, 255, 0.4), var(--card-edge); }
 .co-card.sel { background: linear-gradient(rgba(162, 164, 255, 0.10), rgba(162, 164, 255, 0.10)), var(--surface-2); box-shadow: inset 0 0 0 1px rgba(162, 164, 255, 0.35); }
-.co-id b { font-weight: 500; }
-.co-count b { font-size: 24px; font-weight: 400; letter-spacing: -0.03em; }
+.co-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.co-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.co-ic { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 30% 25%, rgba(143, 130, 255, 0.34), rgba(111, 92, 255, 0.12) 70%); box-shadow: inset 0 0 0 1px var(--shade, rgba(143, 130, 255, 0.4)); color: #cfc8ff; }
+.co-ic svg { width: 21px; height: 21px; }
+.co-ic svg[viewBox="0 0 512 512"] { width: 25px; height: 25px; }
+.co-id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.co-id b { font-size: 14px; font-weight: 500; }
+.co-id span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-pill { flex: none; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.co-pill.long { color: var(--long); background: var(--long-soft); }
+.co-pill.short { color: var(--short); background: var(--short-soft); }
+.co-pill.flat { color: #b8b3d6; background: rgba(139, 133, 168, 0.16); }
+.co-count { font-size: 12.5px; color: var(--text-2); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.co-count b { font-size: 24px; font-weight: 400; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+.co-ls { margin-left: auto; font-size: 11.5px; }
 /* Long and short as two segments with a gap, so the split needs no card-coloured edge. */
-.co-bar { display: flex; gap: 2px; background: rgba(255, 255, 255, 0.06); opacity: 1; }
-.co-bar i { border-right: 0; flex: none; }
+.co-bar { display: flex; gap: 2px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.co-bar i { display: block; height: 100%; background: var(--long); flex: none; }
 .co-bar i + i { flex: 1; background: var(--short); }
-.co-mk { border: 0; background: rgba(255, 255, 255, 0.05); }
-.co-strip-keys i { width: 7px; height: 7px; border-radius: 50%; }
+.co-ends { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: -4px; }
+.co-ends small { font-size: 10px; opacity: .75; }
+.co-share { color: var(--text-3); font-size: 11px; }
+/* Three equal columns, except that one whose figure needs more room (a net
+   exposure of "short $316.9K" on a narrow card) widens and the others give
+   way, so no figure is cut short. */
+.co-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.co-stats > span { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--text-3); }
+.co-stats b { font-size: 12.5px; font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.co-mks { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; }
+.co-mk { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; padding: 2px 8px 2px 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.05); }
+.co-mk.long { color: var(--long); }
+.co-mk.short { color: var(--short); }
+.co-mk .tk { border-radius: 50%; }
+/* Smart money moves. */
+.sm-list { max-height: 420px; overflow: auto; }
+.sm-trader { display: inline-flex; align-items: center; gap: 8px; }
+.sm-trader .rank-pill { min-width: 36px; }
+.sm-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* Leaderboard head: filter and CSV together; on phones the filter takes the row. */
 .lb-tools { display: flex; align-items: center; gap: 10px; }
 .lb-ctl { min-height: 0; padding-top: 0; flex-wrap: wrap; gap: 10px; }
