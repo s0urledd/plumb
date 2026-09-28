@@ -15,7 +15,7 @@ from the [API](api.md).
   - trading volume stacked by market, per period or cumulative;
   - open interest and TVL;
   - deposits against withdrawals, with the net per period;
-  - active traders, fees, liquidations by market;
+  - active traders (new and returning), fees, liquidations by market;
   - realized PnL of all traders, and taker buying against selling.
 
   Every chart downloads as CSV or PNG.
@@ -35,9 +35,12 @@ from the [API](api.md).
   APR, long/short skew, taker buy share, traders, liquidations, cost of a
   $10K market order.
 - A markets × time funding map.
-- Each market has its own page: candles built from fills, positioning, the
-  largest open positions, funding history with the next funding block, the
-  liquidation ladder, top traders and a live tape.
+- Each market has its own page: candles built from fills with the price
+  bands where open positions would be liquidated (click one for its largest
+  wallet), positioning, position flow (open interest opened and closed per
+  side), entry prices of open positions, the largest open positions, funding
+  history with the next funding block, the liquidation ladder, top traders
+  and a live tape.
 
 ## Traders
 
@@ -45,6 +48,9 @@ from the [API](api.md).
   ≥ $100K open, dolphins, fish, shrimp < $1K) and by track record (top
   winners to rekt), with each cohort's long/short split, bias, unrealized
   PnL, main markets and largest wallets.
+- **Smart money moves**: the latest position changes of the top 50 traders
+  by net PnL (market makers and high-frequency accounts left out), split
+  fills folded into one row, with a size floor.
 - **Leaderboard** for any window by net PnL, losses, volume, liquidated
   notional, fees or net inflow, with open positions now; CSV export and
   paging. Net PnL counts what the contract settles, including funding
