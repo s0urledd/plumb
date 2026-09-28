@@ -18,7 +18,7 @@ from the [API](api.md).
   - deposits against withdrawals, with the net per period;
   - active traders (new and returning), liquidations by market;
   - fees by market, or by who receives them: the protocol and the insurance
-    fund, with the protocol's share of liquidations;
+    fund;
   - realized PnL of all traders, and taker buying against selling.
 
   Every chart downloads as CSV or PNG.

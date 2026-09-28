@@ -8,7 +8,7 @@ import { sparkline, stackedBars, lineChart, signedBars, twoSided, toggleSeries, 
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
 const MIN_SIZES = [['0', 'All'], ['100', '≥$100'], ['1000', '≥$1K'], ['10000', '≥$10K']];
-const FEE_VIEWS = [['type', 'By type'], ['market', 'By market']];
+const FEE_VIEWS = [['type', 'By recipient'], ['market', 'By market']];
 const FLOW_VIEWS = [['recent', 'Latest'], ['in', 'Top in'], ['out', 'Top out']];
 // Windows other than 24h have no push of their own: refetch at most this often while blocks arrive.
 const LONG_WINDOW_REFRESH_MS = 15000;
@@ -55,7 +55,7 @@ export function mount(el, { query, setQuery }) {
         ${panel('tvl', 'TVL', 'Collateral in the exchange contract')}
         ${panel('flows', 'Deposits and withdrawals', 'Deposits (up) and withdrawals (down) per period; the line is the net')}
         ${panel('traders', 'Active traders', 'Accounts that traded in each period, split into returning and first-time (first trade ever)')}
-        ${panel('fees', 'Fees', 'Trading fees before rebates, split between the protocol and the insurance fund. Protocol revenue adds the protocol’s share of liquidations; builder fees are part of the protocol share.', `<div id="fees-mode">${segSm('feesv', FEE_VIEWS, feeView)}</div>`)}
+        ${panel('fees', 'Fees', 'Trading fees before rebates, split between the protocol and the insurance fund', `<div id="fees-mode">${segSm('feesv', FEE_VIEWS, feeView)}</div>`)}
         ${panel('liq', 'Liquidations', 'Value of positions liquidated, by market; the line is the running total')}
         ${panel('tpnl', 'Trader PnL', 'Realized PnL of all traders per period, funding included, before fees. The after-fees figure subtracts trading and liquidation fees.')}
         ${panel('taker', 'Taker flow', 'Volume bought (up) and sold (down) by takers per period; the line is net buying')}
@@ -118,7 +118,7 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: `Volume · ${wl}`, value: usd(h.volume.value), delta: ch(h.volume.change_pct), ...vsPrev, note: `${int(data.markets.reduce((a, m) => a + (m.fills ?? 0), 0))} trades${partial}`, spark: 'sp-vol' }),
       kpi({ label: 'Open interest', value: usd(c?.open_interest), delta: seriesChange('open_interest'), ...within, note: c ? `${int(c.positions)} open positions` : '', spark: 'sp-oi' }),
       kpi({ label: 'TVL', value: usd(c?.tvl), delta: seriesChange('tvl'), ...within, note: `${usd(h.net_flow.value, { sign: true })} net flow · ${wl}`, spark: 'sp-tvl' }),
-      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.revenue ? `Revenue ${usd(h.revenue.protocol.total)}` : '', spark: 'sp-fees' }),
+      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.protocol_revenue ? `${usd(h.protocol_revenue.value)} protocol revenue` : '', spark: 'sp-fees' }),
       kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr' }),
       kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq' })
     ].join('');
@@ -163,12 +163,12 @@ export function mount(el, { query, setQuery }) {
   // A note wraps only between its parts ("$267.8K insurance" stays whole), each "·" with the part before it.
   const noteParts = note => keepDots(note.split(' · ').map(x => `<span class="nw">${x}</span>`).join(' · '));
   function headValue(id, value, note = '') { const n = $(`${id}-v`); if (n) n.innerHTML = `<div class="hv">${value}</div>${note ? `<div class="hn">${noteParts(note)}</div>` : ''}`; }
-  // Fees per period by type (the protocol's share, next to it its share of
-  // liquidations, together its revenue; then the insurance fund's) or by market.
+  // Fees per period by recipient (the protocol's and the insurance fund's
+  // shares, which add up to the fees) or by market.
   function renderFees() {
     const d = trendOf.fees, node = $('fees'); if (!node || !d) return;
     const sr = d.s, pts = sr.points, times = sr.times, b = sr.meta.bucket_seconds;
-    const list = feeView === 'market' ? byMarket('fees', sr) : [{ name: 'Protocol', color: SLOT_HEX[0], data: pts.map(p => num(p.protocol_fees)) }, { name: 'Protocol, liquidations', color: SLOT_HEX[4], data: pts.map(p => num(p.revenue?.protocol.liquidations) ?? 0) }, { name: 'Insurance fund', color: SLOT_HEX[2], data: pts.map(p => num(p.insurance_fees)) }].filter(x => x.data.some(v => v > 0));
+    const list = feeView === 'market' ? byMarket('fees', sr) : [{ name: 'Protocol', color: SLOT_HEX[0], data: pts.map(p => num(p.protocol_fees)) }, { name: 'Insurance fund', color: SLOT_HEX[2], data: pts.map(p => num(p.insurance_fees)) }].filter(x => x.data.some(v => v > 0));
     legendOf('fees', list);
     if (list.length) stackedBars(node, { times, series: list, bucketSeconds: b }); else node.innerHTML = empty('No fees in this window');
   }
@@ -221,7 +221,7 @@ export function mount(el, { query, setQuery }) {
         }
         break;
       case 'fees':
-        headValue('fees', usd(h.fees.value), `${usd(h.revenue?.protocol.total)} protocol revenue · ${usd(h.insurance_fees.value)} insurance · ${winLabel(win)}`);
+        headValue('fees', usd(h.fees.value), `${usd(h.protocol_fees.value)} protocol · ${usd(h.insurance_fees.value)} insurance · ${winLabel(win)}`);
         renderFees();
         break;
       case 'liq': {
