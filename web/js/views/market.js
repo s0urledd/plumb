@@ -1,7 +1,7 @@
 // One market: price candles and volume, positioning, funding history,
 // liquidation ladder from live positions, top traders and recent trades.
 import { get, stream } from '../api.js';
-import { usd, int, price, pct, num, esc, size, signClass, timeOnly, dateTime, duration } from '../format.js';
+import { usd, int, price, pct, num, esc, size, share, signClass, timeOnly, dateTime, duration } from '../format.js';
 import { kpi, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, skeleton, skChart, empty, colorOf, chartTools, logo } from '../ui.js';
 import { candles, signedBars, mirrored, flowBars, entryProfile, COLORS } from '../charts.js';
 
@@ -65,7 +65,7 @@ export function mount(el, { params, query, setQuery }) {
     const lev = row.max_leverage ?? risk?.margin?.max_leverage;
     const tag = closed() ? ' · <span class="tag warn" title="Not open for trading; the mark is the last one the contract holds">inactive · last mark</span>'
       : idle() ? ` · <span class="tag" title="Open for trading, but no trades ${w === 'all' ? 'yet' : `in ${w}`} and no open positions">inactive</span>` : '';
-    $('subtitle').innerHTML = `Mark <b class="num" style="color:var(--text)">${price(row.mark ?? row.close)}</b> · ${num(row.change_pct) === null ? '' : `${pctCell(row.change_pct)} ${w} · `}max leverage ${lev ? `${lev}x` : '—'}${tag}`;
+    $('subtitle').innerHTML = `Mark <b class="num" style="color:var(--text)">${price(row.mark ?? row.close)}</b> · ${num(row.change_pct) === null ? '' : `${pctCell(row.change_pct)} ${wl()} · `}max leverage ${lev ? `${lev}x` : '—'}${tag}`;
   }
 
   let levels = null; // liquidation bands from contract state, drawn on the candles
@@ -88,9 +88,9 @@ export function mount(el, { params, query, setQuery }) {
     // A market with nothing in the window has no stats row: no liquidations and no taker trades, not unknowns.
     const liqs = row.liquidations ?? 0;
     $('kpis').innerHTML = [
-      kpi({ label: `Volume ${w}`, value: usd(row.volume), note: `${pct(row.share_pct, { digits: 1 })} of exchange` }),
+      kpi({ label: `Volume · ${wl()}`, value: usd(row.volume), note: num(row.volume) ? `${share(row.share_pct)} of exchange` : 'no trades' }),
       kpi({ label: 'Open interest', value: usd(row.open_interest), note: row.oi_cap_pct !== undefined && row.oi_cap_pct !== null ? `${pct(row.oi_cap_pct, { digits: 1 })} of cap` : '' }),
-      kpi({ label: 'Funding 8h', tip: fundingTip(row.funding?.interval_seconds), value: row.funding ? fundingCell(row.funding, { apr: false }) : '—', note: closed() ? 'not open for trading' : !row.funding ? '' : num(row.funding.rate_8h_pct) === 0 ? 'flat · no payments this interval' : `${pct(row.funding.apr_pct, { digits: 1, sign: true })} APR · ${row.funding.rate_8h_pct > 0 ? 'longs pay' : 'shorts pay'}` }),
+      kpi({ label: 'Funding 8h', tip: fundingTip(row.funding?.interval_seconds), value: row.funding ? fundingCell(row.funding, { apr: false }) : '—', note: closed() ? 'not open for trading' : !row.funding ? '' : num(row.funding.rate_8h_pct) === 0 ? 'no payments this interval' : `${pct(row.funding.apr_pct, { digits: 1, sign: true })} APR · ${row.funding.rate_8h_pct > 0 ? 'longs pay' : 'shorts pay'}` }),
       kpi({ label: 'Traders', value: int(row.traders), note: `${int(row.fills)} trades` }),
       kpi({ label: 'Taker buy share', value: pct(row.taker_buy_share_pct, { digits: 1 }), note: num(row.taker_buy_share_pct) === null ? 'no trades' : `${usd(row.taker_buy)} bought · ${usd(row.taker_sell)} sold` }),
       kpi({ label: 'Liquidated', value: usd(row.liquidated ?? 0), note: `${int(liqs)} ${liqs === 1 ? 'liquidation' : 'liquidations'}` })
@@ -110,9 +110,13 @@ export function mount(el, { params, query, setQuery }) {
     const node = $('candles');
     if (!traded) node.innerHTML = none('No trades in this window');
     else {
+      // The chart spans the trading: buckets before the first trade have no price, and
+      // a closed market's after its last trade would draw its last close as flat candles.
+      const first = s.points.findIndex(x => x.close !== null), last = closed() ? s.points.findLastIndex(x => num(x.volume) > 0) : s.points.length - 1;
+      const span = s.points.slice(first, last + 1);
       let prev = null;
-      const ohlc = s.points.map(x => { const c = num(x.close), o = num(x.open) ?? prev ?? c, h = num(x.high) ?? Math.max(o, c), l = num(x.low) ?? Math.min(o, c); prev = c; return c === null ? '-' : [o, c, l, h]; });
-      candles(node, { times: s.times, ohlc, volume: s.points.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''), volColor: colorOf(id) + '99', zoom: true,
+      const ohlc = span.map(x => { const c = num(x.close), o = num(x.open) ?? prev ?? c, h = num(x.high) ?? Math.max(o, c), l = num(x.low) ?? Math.min(o, c); prev = c; return c === null ? '-' : [o, c, l, h]; });
+      candles(node, { times: s.times.slice(first, last + 1), ohlc, volume: span.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''), volColor: colorOf(id) + '99', zoom: true,
         levels: showLevels ? levels?.levels ?? null : null, mark: num(levels?.mark), levelSpan: LEVEL_SPAN, onLevel: l => { const t = l.top; if (t) location.hash = `#/wallet/${t.address || t.account_id}`; } });
     }
   }
@@ -144,10 +148,11 @@ export function mount(el, { params, query, setQuery }) {
     if (!alive) return;
     risk = r.market;
     const L = risk.long, S = risk.short;
+    // With no positions there is no split to draw, and a zero count stays neutral.
     $('positioning').innerHTML = `
-      <div class="panel-body" style="padding-top:4px">${ratio(L.count, S.count)}</div>
+      ${L.count + S.count ? `<div class="panel-body" style="padding-top:4px">${ratio(L.count, S.count)}</div>` : ''}
       <div class="stat-grid">
-        <div class="stat"><span>Long positions</span><span class="pos">${int(L.count)}</span></div><div class="stat"><span>Short positions</span><span class="neg">${int(S.count)}</span></div>
+        <div class="stat"><span>Long positions</span><span class="${L.count ? 'pos' : ''}">${int(L.count)}</span></div><div class="stat"><span>Short positions</span><span class="${S.count ? 'neg' : ''}">${int(S.count)}</span></div>
         <div class="stat"><span>Long notional</span><span>${usd(L.notional)}</span></div><div class="stat"><span>Short notional</span><span>${usd(S.notional)}</span></div>
         <div class="stat"><span>Long avg lev.</span><span>${L.average_leverage ? L.average_leverage.toFixed(1) + 'x' : '—'}</span></div><div class="stat"><span>Short avg lev.</span><span>${S.average_leverage ? S.average_leverage.toFixed(1) + 'x' : '—'}</span></div>
         <div class="stat"><span>Long uPnL</span><span>${pnl(num(L.delta_pnl) + num(L.premium_pnl))}</span></div><div class="stat"><span>Short uPnL</span><span>${pnl(num(S.delta_pnl) + num(S.premium_pnl))}</span></div>
@@ -189,18 +194,23 @@ export function mount(el, { params, query, setQuery }) {
     if (!alive) return;
     const node = $('book');
     if (b.error || (!b.bids?.length && !b.asks?.length)) { node.innerHTML = empty(b.error ? (b.error.status === 404 ? 'No order book for this market' : 'Order book unavailable') : 'No resting orders'); $('book-meta').textContent = ''; return; }
-    const cum = side => { let run = 0; return side.slice(0, BOOK_LEVELS).map(l => ({ ...l, cum: (run += num(l.notional) || 0) })); };
+    // A level whose orders have all expired has no live size left: it is not shown.
+    const cum = side => { let run = 0; return side.filter(l => num(l.size) > 0).slice(0, BOOK_LEVELS).map(l => ({ ...l, cum: (run += num(l.notional) || 0) })); };
     const asks = cum(b.asks), bids = cum(b.bids);
+    if (!asks.length && !bids.length) { node.innerHTML = empty('No resting orders'); $('book-meta').textContent = ''; return; }
     const max = Math.max(asks.at(-1)?.cum ?? 0, bids.at(-1)?.cum ?? 0) || 1;
     const line = (l, side) => `<div class="book-row ${side}"><i style="width:${(l.cum / max * 100).toFixed(1)}%"></i><span class="num">${price(l.price)}</span><span class="num">${size(l.size)}</span><span class="num muted">${usd(l.cum)}</span></div>`;
     const L = b.liquidity ?? {};
     const spread = L.spread_bps === null || L.spread_bps === undefined ? '—' : `${L.spread_bps.toFixed(L.spread_bps < 1 ? 2 : 1)} bps`;
     // The book's own midpoint; the mark follows the oracle and can sit outside the touch.
-    const bestBid = num(L.best_bid ?? b.bids[0]?.price), bestAsk = num(L.best_ask ?? b.asks[0]?.price);
+    const bestBid = num(bids[0]?.price ?? L.best_bid), bestAsk = num(asks[0]?.price ?? L.best_ask);
     const mid = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : null;
+    // A one-tick spread puts the mid between two ticks: one more decimal, so it never prints as the ask or the bid.
+    const places = (price(bestAsk).split('.')[1] ?? '').length;
+    const midText = mid && [bestBid, bestAsk].map(price).includes(price(mid)) ? mid.toLocaleString('en-US', { minimumFractionDigits: places + 1, maximumFractionDigits: places + 1 }) : price(mid);
     node.innerHTML = `<div class="book"><div class="book-row head"><span>Price</span><span>Size</span><span>Total</span></div>
       ${asks.slice().reverse().map(l => line(l, 'ask')).join('')}
-      <div class="book-mid"><span class="num">${mid ? price(mid) : price(b.mark)}</span><span class="faint">${mid ? 'mid' : 'mark'} · spread ${spread}${mid ? ` · mark ${price(b.mark)}` : ''}</span></div>
+      <div class="book-mid"><span class="num">${mid ? midText : price(b.mark)}</span><span class="faint">${mid ? 'mid' : 'mark'} · spread ${spread}${mid ? ` · mark ${price(b.mark)}` : ''}</span></div>
       ${bids.map(l => line(l, 'bid')).join('')}</div>`;
     $('book-meta').textContent = b.stale ? 'stale read' : L.age_blocks !== null && L.age_blocks !== undefined ? `read ${int(L.age_blocks)} blocks ago` : '';
   }
@@ -216,7 +226,9 @@ export function mount(el, { params, query, setQuery }) {
     const mark = num(risk.prices?.mark ?? row?.mark ?? row?.close);
     if (!mark) { node.innerHTML = empty('No price for this market'); return; }
     if (calc.entry === null) calc.entry = mark;
-    if (calc.exit === null) calc.exit = mark * (calc.side === 'long' ? 1.05 : 0.95);
+    // The default exit, 5% from the mark, keeps the mark's own decimals.
+    const places = (String(+mark.toPrecision(8)).split('.')[1] ?? '').length;
+    if (calc.exit === null) calc.exit = +(mark * (calc.side === 'long' ? 1.05 : 0.95)).toFixed(places);
     calc.lev = Math.min(Math.max(1, calc.lev), maxLev);
     const E = calc.entry, L = calc.lev, qty = calc.usd / E, margin = calc.usd / L, long = calc.side === 'long';
     const liq = long ? E * (1 - 1 / L) / (1 - m) : E * (1 + 1 / L) / (1 + m);
@@ -293,7 +305,7 @@ export function mount(el, { params, query, setQuery }) {
     const [t, lb] = await Promise.all([get(`trades?market=${id}&limit=60`, { maxAge: 1000 }), get(`leaderboard?window=${w}&market=${id}&limit=10`)]);
     if (!alive) return;
     renderTrades(t.rows);
-    $('lb-meta').textContent = `By net PnL · ${w}`;
+    $('lb-meta').textContent = `By net PnL · ${wl()}`;
     $('lb').innerHTML = table({ id: 'lb', compact: true, emptyText: closed() ? CLOSED : `No trades ${w === 'all' ? 'yet' : `in ${w}`}`, columns: [
       { key: 'r', label: '#', render: r => `<span class="rank">${r.rank}</span>` },
       { key: 'a', label: 'Trader', render: r => addr(r.address, r.account) },
