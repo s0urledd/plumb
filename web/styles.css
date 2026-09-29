@@ -625,14 +625,20 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .sm-ctl { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; } /* wrapped, the switches keep to the card's right edge */
 /* Leaderboard head: filter and CSV together; on phones the filter takes the row. */
 .lb-tools { display: flex; align-items: center; gap: 10px; }
-.lb-ctl { min-height: 0; padding-top: 0; flex-wrap: wrap; gap: 10px; }
-.lb-ctl #by { flex: 1 1 100%; max-width: 100%; min-width: 0; }
-/* Every ranking in view, spread over the card's width; the switch wraps instead of scrolling out of sight. */
-.lb-ctl .seg { display: flex; width: 100%; flex-wrap: wrap; }
-.lb-ctl .seg button { flex: 1 1 auto; }
+/* Title and filter on top; under them the ranking switches, labelled and
+   kept apart from the table's columns. On phones they scroll in one row. */
+.lb-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 24px; row-gap: 14px; padding-bottom: 18px; }
+.lb-head > .lb-rank { grid-column: 1 / -1; }
+.lb-rank { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.lb-rank::-webkit-scrollbar { display: none; }
+.lb-rank .seg { flex: none; overflow: visible; }
+.lb-label { font-size: 12px; color: var(--text-3); white-space: nowrap; flex: none; }
+.lb-label.flows { margin-left: 8px; padding-left: 16px; border-left: 1px solid var(--line); }
 #board { scroll-margin-top: 72px; }
 @media (max-width: 860px) { #board { scroll-margin-top: 112px; } }
 @media (max-width: 640px) {
+  .lb-head { grid-template-columns: minmax(0, 1fr); }
+  .lb-rank { margin-right: -18px; padding-right: 18px; mask-image: linear-gradient(90deg, #000 85%, transparent); }
   .lb-tools { width: 100%; }
   .lb-tools .lb-search { flex: 1; width: auto; min-width: 0; }
 }
