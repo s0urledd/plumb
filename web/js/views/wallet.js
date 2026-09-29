@@ -7,6 +7,8 @@ import { kpi, tabs, table, mktLink, sideTag, pnl, pctCell, bpsCell, skeleton, sk
 import { lineChart, signedBars, COLORS } from '../charts.js';
 
 const twinLink = rows => { const ids = {}; for (const r of rows) (ids[r.symbol] ??= new Set()).add(r.market); return r => `${mktLink(r.market, r.symbol)}${ids[r.symbol]?.size > 1 ? ` <span class="faint" title="Relisted market: the same asset under a new market id">#${esc(r.market)}</span>` : ''}`; };
+// Flow rows: deposits and withdrawals, and transfers with the protocol balance.
+const FLOW_KIND = { deposit: ['Deposit', 'pos'], withdrawal: ['Withdrawal', 'neg'], payout: ['Paid by the protocol', 'pos'], sweep: ['Moved to the protocol', 'neg'] };
 const TABS = [['overview', 'Overview'], ['positions', 'Positions'], ['trades', 'Trade history'], ['trips', 'Round trips'], ['flows', 'Deposits & withdrawals']];
 const KIND = { open: 'Open', increase: 'Add', decrease: 'Reduce', close: 'Close', invert: 'Flip', liquidation: 'Liquidated', deleverage: 'ADL', unwind: 'Unwind' };
 // "Aug 30 → Sep 6, 2026": the year once when both ends share it, so the range fits a KPI note.
@@ -174,9 +176,9 @@ export function mount(el, { params, query, setQuery, navigate }) {
         { key: 'f', label: 'Outcome', render: r => (r.open ? '<span class="tag" title="Still open: Net PnL counts only what is realized so far, after fees">open</span>' : r.liquidated ? '<span class="tag bad">liquidated</span>' : r.deleveraged ? '<span class="tag warn">ADL</span>' : num(r.net_pnl) > 0 ? '<span class="tag good">win</span>' : num(r.net_pnl) < 0 ? '<span class="tag">loss</span>' : '<span class="tag">flat</span>') }
       ], rows: tripRows, rowAttrs: r => (r.open ? 'title="Still open"' : ''), emptyText: 'No round trips yet' }) + '</section>';
     } else if (tab === 'flows') {
-      body.innerHTML = `<section class="panel"><div class="panel-head"><h2>Deposits and withdrawals</h2><span class="meta">Newest first</span></div><div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div></div>` + table({ id: 'flows', columns: [
+      body.innerHTML = `<section class="panel"><div class="panel-head"><h2>Deposits and withdrawals</h2><span class="meta">Newest first</span></div><div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div>${num(d.summary.payouts_received) > 0 ? `<div class="stat"><span title="Transfers from Perpl's protocol balance to this account, such as rebates or rewards">Paid by the protocol</span><span class="pos">${usdFull(d.summary.payouts_received)}</span></div>` : ''}${num(d.summary.swept_to_protocol) > 0 ? `<div class="stat"><span title="Transfers from this account into Perpl's protocol balance">Moved to the protocol</span><span class="neg">${usdFull(d.summary.swept_to_protocol)}</span></div>` : ''}</div>` + table({ id: 'flows', columns: [
         { key: 't', label: 'Time (UTC)', render: r => `<span class="muted num">${dateTime(r.ts)}</span>` },
-        { key: 'k', label: 'Type', render: r => `<span class="${r.kind === 'deposit' ? 'pos' : 'neg'}">${r.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}</span>` },
+        { key: 'k', label: 'Type', render: r => `<span class="${FLOW_KIND[r.kind]?.[1] ?? ''}">${FLOW_KIND[r.kind]?.[0] ?? esc(r.kind)}</span>` },
         { key: 'a', label: 'Amount', n: true, render: r => usdFull(r.amount) },
         { key: 'b', label: 'Balance after', n: true, render: r => usdFull(r.balance_after) },
         { key: 'tx', label: 'Tx', render: r => `<a class="faint mono" href="${EXPLORER}/tx/${esc(r.tx)}" target="_blank" rel="noopener noreferrer">${esc(r.tx.slice(0, 10))}…</a>` }

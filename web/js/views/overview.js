@@ -221,7 +221,7 @@ export function mount(el, { query, setQuery }) {
         }
         break;
       case 'fees':
-        headValue('fees', usd(h.fees.value), `${usd(h.protocol_fees.value)} protocol · ${usd(h.insurance_fees.value)} insurance · ${winLabel(win)}`);
+        headValue('fees', usd(h.fees.value), `${usd(h.protocol_fees.value)} protocol · ${usd(h.insurance_fees.value)} insurance${num(h.protocol_payouts?.value) > 0 ? ` · ${usd(h.protocol_payouts.value)} paid to traders` : ''} · ${winLabel(win)}`);
         renderFees();
         break;
       case 'liq': {
