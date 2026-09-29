@@ -225,14 +225,23 @@ from 23 September 15:20 UTC; 15,000 was checked from 25 September 12:03 UTC.
 Liquidations before a market's first indexed `LiquidationParamsUpdated` use
 10,000 / 80,000, verified from 25 September only.
 
-**Which liquidations are split.** The split applies to liquidations filled
-on the book where the trader was paid ⌊X × user⌋ as `accAmountCNS` (the
-stored fee is then exactly the rest of X), full or partial. The contract's
-own notes describe two other cases with other rules, so Plumb splits neither
-and counts them apart (`unverified`, with the fee they kept): liquidations
-off the book (`buyLiquidations`, where a buyer also takes a share) and
-partial liquidations that add the trader's share to the remaining position
-instead of paying it (`accAmountCNS` = 0).
+**Every liquidation follows the protocol's rules** (the Exchange contract's
+notes on `liquidation` and `buyLiquidations`): the margin left splits
+between the trader, the insurance fund and the protocol by the market's rates,
+and the protocol keeps the rest.
+- On the book, when the trader's share is paid (`accAmountCNS` = ⌊X × user⌋,
+  the stored fee is the rest of X): the split above, full or partial.
+- On the book, when the trader's share is added to the position left open
+  (`accAmountCNS` = 0): the event's X is the margin less that share, so the
+  margin is X ÷ (1 − user) and the insurance fund's share is taken of it; the
+  protocol gets the rest of X.
+- Off the book (buy to liquidate): the buyer takes a share as well, by the
+  buy-to-liquidate rates (`ContractAdded`, `BuyToLiquidateParamsUpdated`;
+  25 % each to the insurance fund, the trader and the buyer unless indexed);
+  the protocol gets the rest.
+
+The last two have not happened on Perpl yet; they are counted like the rest
+and listed under `unverified` so the balance check shows them if they do.
 
 **Partial liquidations** that pay the trader follow the same split. Example, block 97,375,221:
 perp 20, account 1767, 74,906 lots liquidated on the book and 9,628 left;
@@ -260,12 +269,12 @@ inside the protocol share were $105.65
 (`docs/evidence/protocol-revenue-2026-09-28.json`; block ranges, so a window
 by block time can differ by the trades of its edge seconds).
 
-**Not verified**, so Plumb assumes no rule for them: bankrupt liquidations
-(X ≤ 0) count as no revenue (on the book they cannot happen: a fill past the
-bankruptcy price reverts); liquidations off the book and partial ones that
-add the trader's share to the position get no split and are counted apart
-as `unsplit_liquidations`; deleverages and buy-to-liquidate settlements
-count as no revenue (the SDK treats liquidation, deleverage, force close and
+**Not seen on chain yet**: bankrupt liquidations (X ≤ 0) leave nothing to
+split (on the book they cannot happen: a fill past the bankruptcy price
+reverts); liquidations off the book and those that add the trader's share to
+the position are counted by the protocol's rules above and listed as
+`unsplit_liquidations`; deleverages and buy-to-liquidate settlements bring
+the protocol nothing (the SDK treats liquidation, deleverage, force close and
 unwind as uncharged). What the payouts are for is not stated on-chain; the
 docs say rebates and referral shares are paid off-chain every two weeks.
 
@@ -273,9 +282,9 @@ docs say rebates and referral shares are paid off-chain every two weeks.
 windows and hourly rollups are summed, so no event was read from the chain
 again. Rollup version 3 added the reducing-fee split and the liquidation
 shares as new columns (`ADD COLUMN IF NOT EXISTS … DEFAULT 0`); version 4
-splits every book liquidation that paid the trader, partial ones included,
-and counts the others as unsplit. At
-start, the hours of each UTC day rolled at version 3 with no liquidation are
+splits every book liquidation that paid the trader, partial ones included;
+version 5 applies the protocol's rules to every liquidation. At
+start, the hours of each UTC day rolled at the previous version with no liquidation are
 carried over unchanged, and every other day is rolled again from the stored
 events (whole days, so the hours left to roll form few ranges); both steps
 are safe to repeat. A database at an older version rolls everything again. A rate change indexed

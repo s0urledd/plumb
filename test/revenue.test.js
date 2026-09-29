@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { feeSplit, liquidationSplit, liquidationMargin, rowRevenue, createRevenueParams, DEFAULT_RATES } from '../src/revenue.js';
-import { revenueSql, liqSplit, liqUnsplit, MARKET, REVENUE_COLUMNS, columns } from '../src/aggregates.js';
+import { revenueSql, liqInferred, MARKET, REVENUE_COLUMNS, columns } from '../src/aggregates.js';
 import { rollupStatements, createRollups, markStale, CARRY } from '../src/rollup.js';
 import { DDL, migrate, ROLLUP_VERSION } from '../src/schema.js';
 import { rowsFromLogs } from '../src/decode.js';
@@ -30,7 +30,7 @@ const fns = {
 function sqlEval(expr, row) {
   const js = expr
     .replace(/\(block, log_index\) > \((\d+), (\d+)\)/g, 'after(block, log_index, $1, $2)')
-    .replace(/ AND /g, ' && ').replace(/ = /g, ' === ').replace(/\bif\(/g, 'iff(')
+    .replace(/ AND /g, ' && ').replace(/ OR /g, ' || ').replace(/ = /g, ' === ').replace(/\bif\(/g, 'iff(')
     .replace(/\b(\d+)\b/g, '$1n');
   const r = Object.fromEntries(['fee', 'builder_fee', 'pnl', 'funding', 'amount', 'market', 'block', 'log_index', 'flags', 'end_lot'].map(k => [k, BigInt(row[k] ?? 0)]));
   r.kind = row.kind;
@@ -39,7 +39,7 @@ function sqlEval(expr, row) {
 const sqlRevenue = (row, sql) => {
   const s = revenueSql(sql);
   if (row.kind === 'decrease' || row.kind === 'close') { const ins = sqlEval(s.reduceIns, row); return { ins, prot: BigInt(row.fee) - ins }; }
-  if (row.kind === 'liquidation') return sqlEval(liqSplit(sql), row) ? { ins: sqlEval(s.liqIns, row), prot: sqlEval(s.liqProt, row) } : { ins: 0n, prot: 0n };
+  if (row.kind === 'liquidation') return { ins: sqlEval(s.liqIns, row), prot: sqlEval(s.liqProt, row) };
   return null;
 };
 
@@ -122,7 +122,7 @@ test('a bankrupt liquidation adds no revenue', () => {
   assert.deepEqual(sqlRevenue(liq), { ins: 0n, prot: 0n });
 });
 
-test('book liquidations that paid the trader are split, full or partial; the others are counted apart', () => {
+test('liquidations follow the protocol: paid to the trader, added to the position, or bought off the book', () => {
   // 70 USD of margin left, 80 % paid to the trader: 7 USD to the insurance fund, 7 to the protocol.
   const margin = { posAmountCNS: -100000000n, accAmountCNS: 56000000n };
   const b = logBuilder();
@@ -135,14 +135,16 @@ test('book liquidations that paid the trader are split, full or partial; the oth
   const [full, partial, toPosition, offBook] = byKind(rowsFromLogs(b.logs, { unitsOf }).ev, 'liquidation');
   assert.deepEqual(rowRevenue(full), { source: 'liquidation', ins: 7000000n, prot: 7000000n });
   assert.deepEqual(rowRevenue(partial), { source: 'liquidation', ins: 7000000n, prot: 7000000n });
-  assert.deepEqual(rowRevenue(toPosition), { source: 'liquidation', ins: 0n, prot: 0n, unsplit: true });
-  assert.deepEqual(rowRevenue(offBook), { source: 'liquidation', ins: 0n, prot: 0n, unsplit: true });
+  // Added to the position: the event's 70 is the margin less the trader's 80 %, so the margin was 350: 35 each.
+  assert.deepEqual(rowRevenue(toPosition), { source: 'liquidation', ins: 35000000n, prot: 35000000n, inferred: true });
+  // Off the book: 25 % each to the insurance fund, the trader and the buyer, the rest to the protocol.
+  assert.deepEqual(rowRevenue(offBook), { source: 'liquidation', ins: 17500000n, prot: 17500000n, inferred: true });
   assert.equal(toPosition.fee, 70000000n, 'nothing paid: the stored fee is all of the margin');
   for (const row of [full, partial, toPosition, offBook]) {
     assert.deepEqual(sqlRevenue(row), { ins: rowRevenue(row).ins, prot: rowRevenue(row).prot });
-    assert.equal(sqlEval(liqSplit(), row), !rowRevenue(row).unsplit);
+    assert.equal(sqlEval(liqInferred, row), Boolean(rowRevenue(row).inferred));
   }
-  assert.equal(MARKET.find(([c]) => c === 'liq_unsplit')[1], `countIf(${liqUnsplit()})`);
+  assert.equal(MARKET.find(([c]) => c === 'liq_unsplit')[1], `countIf(${liqInferred})`);
 });
 
 test('a partial liquidation as at block 97,375,221 gives the protocol its reconciled share', () => {
@@ -166,7 +168,7 @@ test('rates follow FeeParamsUpdated and LiquidationParamsUpdated from their bloc
   assert.deepEqual(out.params.map(p => [p.name, p.market]), [['FeeParamsUpdated', 1], ['LiquidationParamsUpdated', 50]]);
   assert.equal(JSON.parse(out.params[0].args).insAmtPer100K, '20000');
   const p = createRevenueParams();
-  assert.deepEqual(p.sql(), { feeIns: '15000', liqIns: '10000', liqUser: '80000' }, 'constants until a change is indexed');
+  assert.deepEqual(p.sql(), { feeIns: '15000', liqIns: '10000', liqUser: '80000', btlIns: '25000', btlUser: '25000', btlBuyer: '25000' }, 'constants until a change is indexed');
   assert.equal(p.add(out.params), out.params[0].ts);
   assert.equal(p.add(out.params), null, 'a replayed batch changes nothing');
   assert.deepEqual(p.at(1, 499), DEFAULT_RATES);
@@ -201,7 +203,7 @@ test('a market added from now on starts with the rates of its ContractAdded even
   const out = rowsFromLogs([added], { unitsOf });
   assert.equal(out.markets[0].market, 3);
   const p = createRevenueParams(out.params);
-  assert.deepEqual(p.at(3, 100), { feeIns: 12000n, liqIns: 5000n, liqUser: 90000n });
+  assert.deepEqual(p.at(3, 100), { feeIns: 12000n, liqIns: 5000n, liqUser: 90000n, btlIns: 0n, btlUser: 0n, btlBuyer: 0n });
   assert.deepEqual(p.at(3, 98), DEFAULT_RATES);
   assert.deepEqual(p.at(1, 100), DEFAULT_RATES);
 });
@@ -243,8 +245,8 @@ const HOUR = 3600, DAY = 86400, START = 1790985600; // a UTC day start
 const coverage = { intervals: [{ from: 1n, to: 2n, fromTs: START, toTs: START + 3 * HOUR }], hourCovered: () => true };
 const hoursOf = runs => runs.flatMap(([a, b]) => Array.from({ length: (b - a) / HOUR }, (_, i) => a + i * HOUR));
 
-test('version 4 carries over days without liquidations and rolls the rest again, once', async () => {
-  assert.deepEqual([ROLLUP_VERSION, CARRY.from, CARRY.to], [4, 3, 4], 'the carry-over is only right from 3 to 4');
+test('version 5 carries over days without liquidations and rolls the rest again, once', async () => {
+  assert.deepEqual([ROLLUP_VERSION, CARRY.from, CARRY.to], [5, 4, 5], 'the carry-over is only right from 4 to 5');
   assert.equal(CARRY.touched, "SELECT DISTINCT toUnixTimestamp(toStartOfDay(ts)) AS d FROM ev WHERE kind = 'liquidation'");
   // Two days rolled at version 3; the first has a liquidation.
   const f = fakeRollupCh({ old: [START, START + DAY].flatMap(d => Array.from({ length: 24 }, (_, i) => d + i * HOUR)), touched: [START] });
@@ -254,13 +256,13 @@ test('version 4 carries over days without liquidations and rolls the rest again,
   assert.equal(rollups.status.carried, 24);
   await rollups.run(START + 2 * DAY + HOUR);
   assert.deepEqual(f.rolled, [[START, START + DAY]], 'the whole touched day, as one run');
-  assert.ok([...f.hours.values()].every(v => v === 4));
+  assert.ok([...f.hours.values()].every(v => v === ROLLUP_VERSION));
   // A restart finds nothing left at version 3 and nothing to roll.
   const again = createRollups({ ch: f.ch, coverage: cover });
   await again.load();
   assert.equal(again.status.carried, 0);
   assert.equal(await again.run(START + 2 * DAY + HOUR), 0);
-  assert.equal(f.queries.filter(q => q === CARRY.touched).length, 1, 'the events are scanned only while hours wait at version 3');
+  assert.equal(f.queries.filter(q => q === CARRY.touched).length, 1, 'the events are scanned only while hours wait at the old version');
 });
 
 test('a parameter change found later rolls its hours again; a run it overtakes does not mark them', async () => {

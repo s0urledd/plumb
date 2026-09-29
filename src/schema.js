@@ -64,7 +64,7 @@ const revenueColumns = REVENUE_COLUMNS.map(c => `${c} ${revenueType(c)} DEFAULT 
 
 // Version 3 adds the reducing-fee split and the liquidation shares
 // (rollup.js carries over the hours they do not change).
-export const ROLLUP_VERSION = 4;
+export const ROLLUP_VERSION = 5;
 
 export const DDL = [
   `CREATE TABLE IF NOT EXISTS ev (${evColumns}

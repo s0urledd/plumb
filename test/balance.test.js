@@ -56,7 +56,8 @@ test('the topic backfill reads the transfers and the rates that were not stored 
   for (const t of topicsFor([...BALANCE_EVENTS, 'FeeParamsUpdated', 'ContractAdded', 'ContractAddedV2'])) assert.ok(set.has(t));
   assert.equal(set.size, TOPIC_SET.events.length);
   assert.ok(TOPIC_SET.events.includes('ResidueTransferred'));
-  assert.equal(TOPIC_SET.name, 'protocol-v2', 'a new name: the set is read over the whole history again');
+  assert.ok(TOPIC_SET.events.includes('BuyToLiquidateParamsUpdated'));
+  assert.equal(TOPIC_SET.name, 'protocol-v3', 'a new name: the set is read over the whole history again');
   for (const t of topicSetTopics) assert.ok(ingestTopics.includes(t), 'live commits count toward the topic coverage only if the ingest reads the topic too');
 });
 

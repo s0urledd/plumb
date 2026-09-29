@@ -39,7 +39,7 @@ export const PARAM_EVENTS = [
   'ContractRemoved', 'ContractPaused', 'MaintenanceMarginFractionUpdated', 'InitialMarginFractionUpdated', 'MaxOpenInterestUpdated',
   'LiquidationParamsUpdated', 'FundingClampPctUpdated', 'FundingSumScalingExpUpdated', 'ExchangeHalted', 'UnwindPrepared', 'UnwindInitialized',
   'UnwindContractTrigger', 'UnwindIterationCompleted', 'UnwindCompleted', 'UnwindPreparationCleared', 'UnwindInitializationCleared', 'ContractVersionSet',
-  'FeeParamsUpdated'];
+  'FeeParamsUpdated', 'BuyToLiquidateParamsUpdated'];
 export const BALANCE_EVENTS = ['TransferProtocolToAccount', 'TransferAccountToProtocol', 'TransferPerpInsToProtocol', 'TransferPerpPosToProtocol', 'TransferProtocolToPerp', 'TransferProtocolToRecycleBal', 'RecycleFeeToProtocol', 'ResidueTransferred'];
 export const TRANSFER_KINDS = ['payout', 'sweep', 'insurance_to_protocol', 'positions_to_protocol', 'protocol_to_market', 'protocol_to_recycle', 'recycle_fee', 'residue_to_protocol']; // their row kinds
 export const INGEST_EVENTS = [...TRADE_EVENTS, ...FORCED_EVENTS, ...FILL_EVENTS, ...FLOW_EVENTS, ...OTHER_EVENTS, ...MARKET_EVENTS, ...PARAM_EVENTS, ...BALANCE_EVENTS];
@@ -49,7 +49,7 @@ export const INGEST_EVENTS = [...TRADE_EVENTS, ...FORCED_EVENTS, ...FILL_EVENTS,
 // were not stored before either. A new name starts the set's coverage empty,
 // so adding an event (ResidueTransferred, in 'protocol-v2') reads the whole
 // history again; rows already stored are skipped.
-export const TOPIC_SET = { name: 'protocol-v2', events: [...BALANCE_EVENTS, 'FeeParamsUpdated', 'ContractAdded', 'ContractAddedV2'] };
+export const TOPIC_SET = { name: 'protocol-v3', events: [...BALANCE_EVENTS, 'FeeParamsUpdated', 'BuyToLiquidateParamsUpdated', 'ContractAdded', 'ContractAddedV2'] };
 export const topicSetTopics = topicsFor(TOPIC_SET.events);
 
 const STATIC = /^(u?int\d*|bool|address)$/;

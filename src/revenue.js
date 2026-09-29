@@ -50,7 +50,7 @@ export function protocolBalance({ revenue, moves }) {
 export const CHECKED_FROM_TS = 1790337780;
 
 // A market's rates: set when it is added, then changed by the two updates.
-export const REVENUE_PARAM_EVENTS = ['FeeParamsUpdated', 'LiquidationParamsUpdated', 'ContractAdded', 'ContractAddedV2'];
+export const REVENUE_PARAM_EVENTS = ['FeeParamsUpdated', 'LiquidationParamsUpdated', 'BuyToLiquidateParamsUpdated', 'ContractAdded', 'ContractAddedV2'];
 const PER = 100000n;
 
 // Rates in force on every market from 25 Sep 2026 (getInsuranceProtocolSplit,
@@ -60,7 +60,9 @@ const PER = 100000n;
 // from then (23 Sep 15:20 UTC) to the first check (25 Sep 12:03 UTC) their
 // split rests on 15000 unchecked. Liquidations before a market's first
 // indexed LiquidationParamsUpdated use 10000 / 80000 (not verified before 25 Sep).
-export const DEFAULT_RATES = Object.freeze({ feeIns: 15000n, liqIns: 10000n, liqUser: 80000n });
+// Buy to liquidate: 25 % each to the insurance fund, the trader and the buyer, the rest to the protocol.
+export const DEFAULT_RATES = Object.freeze({ feeIns: 15000n, liqIns: 10000n, liqUser: 80000n, btlIns: 25000n, btlUser: 25000n, btlBuyer: 25000n });
+const RATE_FIELDS = Object.keys(DEFAULT_RATES);
 
 export function feeSplit(fee, builderFee = 0n, insPer100K = DEFAULT_RATES.feeIns) {
   const net = fee - builderFee;
@@ -86,11 +88,21 @@ export function rowRevenue(row, rates = DEFAULT_RATES) {
     case 'open': case 'increase': case 'invert': return { source: 'opening', ins: BigInt(row.ins_fee), prot: BigInt(row.prot_fee) };
     case 'decrease': case 'close': return { source: 'reducing', ...feeSplit(BigInt(row.fee), BigInt(row.builder_fee), rates.feeIns) };
     case 'liquidation': {
-      // Verified where the book filled it and the trader was paid floor(X * user):
-      // the stored fee is then the rest of X (aggregates.liqSplit).
-      const x = liquidationMargin(row), split = liquidationSplit(x, rates);
-      if (onBook(row) && x > 0n && BigInt(row.fee) === x - split.user) return { source: 'liquidation', ins: split.ins, prot: split.prot };
-      return { source: 'liquidation', ins: 0n, prot: 0n, ...(BigInt(row.fee) > 0n ? { unsplit: true } : {}) };
+      // The protocol's rules, as aggregates.revenueSql: paid to the trader, added
+      // to the position (the event's X is the margin less that share), or bought
+      // off the book with a buyer's share.
+      const x = liquidationMargin(row);
+      if (x <= 0n) return { source: 'liquidation', ins: 0n, prot: 0n };
+      if (!onBook(row)) {
+        const user = x * rates.btlUser / PER, ins = x * rates.btlIns / PER, buyer = x * rates.btlBuyer / PER;
+        return { source: 'liquidation', ins, prot: x - user - ins - buyer, inferred: true };
+      }
+      if (BigInt(row.fee) === x) {
+        const whole = x * PER / (PER - rates.liqUser > 0n ? PER - rates.liqUser : 1n), ins = whole * rates.liqIns / PER;
+        return { source: 'liquidation', ins, prot: x - ins, inferred: true };
+      }
+      const { ins, prot } = liquidationSplit(x, rates);
+      return { source: 'liquidation', ins, prot };
     }
     default: return null;
   }
@@ -115,12 +127,13 @@ export function createRevenueParams(rows = []) {
       const c = { market: Number(r.market), block: Number(r.block), log_index: Number(r.log_index), ts: Number(r.ts) };
       if (r.name === 'FeeParamsUpdated') c.feeIns = big(a?.insAmtPer100K);
       else if (r.name === 'LiquidationParamsUpdated') { c.liqIns = big(a?.insAmtPer100K); c.liqUser = big(a?.userAmtPer100K); }
-      else Object.assign(c, { feeIns: big(a?.insAmtPer100K), liqIns: big(a?.liqInsAmtPer100K), liqUser: big(a?.liqUserAmtPer100K) });
-      if (c.feeIns === null || c.liqIns === null || c.liqUser === null || ![c.market, c.block, c.log_index].every(Number.isSafeInteger)) continue;
+      else if (r.name === 'BuyToLiquidateParamsUpdated') Object.assign(c, { btlIns: big(a?.insAmtPer100K), btlUser: big(a?.userAmtPer100K), btlBuyer: big(a?.buyerAmtPer100K) });
+      else Object.assign(c, { feeIns: big(a?.insAmtPer100K), liqIns: big(a?.liqInsAmtPer100K), liqUser: big(a?.liqUserAmtPer100K), btlIns: big(a?.btlInsAmtPer100K), btlUser: big(a?.btlUserAmtPer100K), btlBuyer: big(a?.btlBuyerAmtPer100K) });
+      if (RATE_FIELDS.some(k => c[k] === null) || ![c.market, c.block, c.log_index].every(Number.isSafeInteger)) continue;
       const before = at(c.market, c.block, c.log_index);
       seen.add(key); changes.push(c);
       changes.sort((x, y) => x.block - y.block || x.log_index - y.log_index);
-      if (['feeIns', 'liqIns', 'liqUser'].some(k => c[k] !== undefined && c[k] !== before[k]) && (since === null || c.ts < since)) since = c.ts;
+      if (RATE_FIELDS.some(k => c[k] !== undefined && c[k] !== before[k]) && (since === null || c.ts < since)) since = c.ts;
     }
     return since;
   }
@@ -131,7 +144,7 @@ export function createRevenueParams(rows = []) {
     for (const c of changes) {
       if (c.block > block || (c.block === block && c.log_index >= logIndex)) break;
       if (c.market !== market) continue;
-      for (const k of ['feeIns', 'liqIns', 'liqUser']) if (c[k] !== undefined) r[k] = c[k];
+      for (const k of RATE_FIELDS) if (c[k] !== undefined) r[k] = c[k];
     }
     return r;
   }
@@ -141,7 +154,7 @@ export function createRevenueParams(rows = []) {
       const arms = changes.filter(c => c[field] !== undefined).reverse().map(c => `market = ${c.market} AND (block, log_index) > (${c.block}, ${c.log_index}), ${c[field]}`);
       return arms.length ? `multiIf(${arms.join(', ')}, ${DEFAULT_RATES[field]})` : String(DEFAULT_RATES[field]);
     };
-    return { feeIns: pick('feeIns'), liqIns: pick('liqIns'), liqUser: pick('liqUser') };
+    return Object.fromEntries(RATE_FIELDS.map(k => [k, pick(k)]));
   }
   add(rows);
   return { add, at, sql, get size() { return changes.length; } };

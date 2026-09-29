@@ -18,7 +18,7 @@ const hourOf = ts => Math.floor(ts / HOUR) * HOUR;
 // roll would each become a raw range in every window query (one OR term
 // each) until rolled. Only a bump from 3 to 4 carries (an older database
 // rolls everything again); rerunning it carries nothing twice.
-export const CARRY = { from: 3, to: 4, touched: "SELECT DISTINCT toUnixTimestamp(toStartOfDay(ts)) AS d FROM ev WHERE kind = 'liquidation'" };
+export const CARRY = { from: 4, to: 5, touched: "SELECT DISTINCT toUnixTimestamp(toStartOfDay(ts)) AS d FROM ev WHERE kind = 'liquidation'" };
 
 // Marks every hour rolled at the current version from `fromTs` on to be
 // rolled again, in the database, whether or not a rollups object has loaded
