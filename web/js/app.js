@@ -1,8 +1,8 @@
-// Shell: hash router, header (search, live status), event delegation, the
+// Shell: router, header (search, live status), event delegation, the
 // server-sent event stream and the indexing banner.
 import { get, stream } from './api.js';
 import { esc, short, int, dateTime, price, pct, signClass } from './format.js';
-import { watch, toast, ICON, assignColors, download, logo, setAlertsBot } from './ui.js';
+import { watch, toast, ICON, assignColors, download, logo, setAlertsBot, go } from './ui.js';
 import { disposeAll, chartCsv, chartPng } from './charts.js';
 
 const routes = [
@@ -21,20 +21,22 @@ const routes = [
 const view = document.getElementById('view');
 let current = null; // { key, mod, instance }
 
-function parseHash() {
-  const raw = location.hash.replace(/^#/, '') || '/';
-  const [path, qs = ''] = raw.split('?');
-  return { path: path || '/', query: new URLSearchParams(qs) };
+// Links from before the dashboard used paths (#/wallet/…, as in older
+// Telegram alerts) open the same page.
+if (location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1));
+
+function parseLocation() {
+  return { path: location.pathname || '/', query: new URLSearchParams(location.search) };
 }
 export function navigate(path, query = null) {
-  const qs = query ? `?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== null && v !== undefined && v !== '')).toString()}` : '';
-  location.hash = `#${path}${qs === '?' ? '' : qs}`;
+  const qs = query ? new URLSearchParams(Object.entries(query).filter(([, v]) => v !== null && v !== undefined && v !== '')).toString() : '';
+  go(`${path}${qs ? `?${qs}` : ''}`);
 }
 export function setQuery(patch) {
-  const { path, query } = parseHash();
+  const { path, query } = parseLocation();
   for (const [k, v] of Object.entries(patch)) { if (v === null || v === undefined || v === '') query.delete(k); else query.set(k, v); }
   const qs = query.toString();
-  history.replaceState(null, '', `#${path}${qs ? `?${qs}` : ''}`);
+  history.replaceState(null, '', `${path}${qs ? `?${qs}` : ''}`);
   route(true);
 }
 
@@ -43,10 +45,11 @@ export function setQuery(patch) {
 let navigation = 0;
 async function route(queryOnly = false) {
   const nav = ++navigation;
-  const { path, query } = parseHash();
+  const { path, query } = parseLocation();
+  shown = location.pathname + location.search;
   const hit = routes.find(([re]) => re.test(path));
-  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === `#${path.match(/^\/[a-z]*/)?.[0] ?? '/'}` || (path === '/' && a.dataset.nav === 'overview') || ((path.startsWith('/wallet') || path.startsWith('/compare')) && a.dataset.nav === 'traders') || (path.startsWith('/markets') && a.dataset.nav === 'markets') || (path.startsWith('/watchlist') && a.dataset.nav === 'alerts')));
-  if (!hit) { view.innerHTML = '<div class="empty-state">Page not found. <a href="#/">Back to overview</a></div>'; return; }
+  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === (path.match(/^\/[a-z]*/)?.[0] ?? '/') || (path === '/' && a.dataset.nav === 'overview') || ((path.startsWith('/wallet') || path.startsWith('/compare')) && a.dataset.nav === 'traders') || (path.startsWith('/markets') && a.dataset.nav === 'markets') || (path.startsWith('/watchlist') && a.dataset.nav === 'alerts')));
+  if (!hit) { view.innerHTML = '<div class="empty-state">Page not found. <a href="/">Back to overview</a></div>'; return; }
   const params = path.match(hit[0]).slice(1);
   const key = `${hit[0]}:${params.join('/')}`;
   if (queryOnly && current?.key === key && current.instance?.update) { current.instance.update(query); return; }
@@ -60,14 +63,16 @@ async function route(queryOnly = false) {
   const instance = mod.mount(view, { params, query, navigate, setQuery });
   current = { key, mod, instance };
 }
-window.addEventListener('hashchange', () => route(false));
+// Back and forward, and go(); a change of the #fragment alone is not a new page.
+let shown = null;
+window.addEventListener('popstate', () => { if (location.pathname + location.search !== shown) route(false); });
 
 // --- delegated interactions -------------------------------------------------------------
 document.addEventListener('click', async event => {
   const t = event.target.closest('[data-copy],[data-watch],[data-seg],[data-tab],[data-sort],tr[data-href],[data-action],[data-export]');
   if (!t) return;
   if (t.dataset.export) {
-    const w = parseHash().query.get('window');
+    const w = parseLocation().query.get('window');
     const node = document.getElementById(t.dataset.chart), file = `plumb-${t.dataset.name || 'chart'}${w ? `-${w}` : ''}-${new Date().toISOString().slice(0, 10)}`;
     if (t.dataset.export === 'csv') { const csv = chartCsv(node); if (csv) download(`${file}.csv`, csv); else toast('Nothing to export yet'); }
     else { const url = chartPng(node); if (url) Object.assign(document.createElement('a'), { href: url, download: `${file}.png` }).click(); else toast('Nothing to export yet'); }
@@ -79,7 +84,17 @@ document.addEventListener('click', async event => {
   if (t.dataset.tab) { current?.instance?.onTab?.(t.dataset.tab, t.dataset.v); return; }
   if (t.dataset.sort) { const [id, key] = t.dataset.sort.split(':'); current?.instance?.onSort?.(id, key); return; }
   if (t.dataset.action) { current?.instance?.onAction?.(t.dataset.action, t, event); return; }
-  if (t.dataset.href && !event.target.closest('a,button')) { location.hash = t.dataset.href; }
+  if (t.dataset.href && !event.target.closest('a,button')) { go(t.dataset.href); }
+});
+
+document.addEventListener('click', event => {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const a = event.target.closest('a[href]');
+  if (!a || a.target || a.hasAttribute('download')) return;
+  const url = new URL(a.href, location.href);
+  if (url.origin !== location.origin || !routes.some(([re]) => re.test(url.pathname))) return;
+  event.preventDefault();
+  go(url.pathname + url.search);
 });
 
 // --- search ------------------------------------------------------------------------------
@@ -95,7 +110,7 @@ input.addEventListener('input', () => {
     try {
       const r = await get(`search?q=${encodeURIComponent(q)}`, { maxAge: 10000 });
       selected = -1;
-      results.innerHTML = r.rows.length ? r.rows.map(x => `<a href="#/wallet/${esc(x.address)}" data-key="${esc(x.address)}"><span class="mono">${esc(short(x.address))}</span><span class="faint">#${esc(x.account)}</span></a>`).join('') : '<div class="empty">No Perpl account found</div>';
+      results.innerHTML = r.rows.length ? r.rows.map(x => `<a href="/wallet/${esc(x.address)}" data-key="${esc(x.address)}"><span class="mono">${esc(short(x.address))}</span><span class="faint">#${esc(x.account)}</span></a>`).join('') : '<div class="empty">No Perpl account found</div>';
       results.hidden = false;
     } catch { results.innerHTML = '<div class="empty">Search unavailable</div>'; results.hidden = false; }
   }, 160);
@@ -148,7 +163,7 @@ function renderTicker(markets) {
   if (!m || p === null || p === undefined) return;
   const ch = Number(m.change_pct);
   ticker.hidden = false;
-  ticker.href = `#/markets/${m.id}`;
+  ticker.href = `/markets/${m.id}`;
   ticker.innerHTML = `${logo(m.id, 'MON', 16)}<span class="tp">$${esc(price(p))}</span>${Number.isFinite(ch) ? `<span class="${signClass(ch) || 'faint'}">${pct(ch, { sign: true })}</span>` : ''}`;
 }
 stream.on('protocol', p => renderTicker(p.markets));

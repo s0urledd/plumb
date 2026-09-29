@@ -2,7 +2,7 @@
 // with open positions from the live contract state.
 import { get } from '../api.js';
 import { usd, int, pct, num, esc, price, ago, duration } from '../format.js';
-import { seg, table, addr, pnl, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON } from '../ui.js';
+import { seg, table, addr, pnl, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON, go } from '../ui.js';
 import { SEA_ICONS } from '../cohort-icons.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -82,12 +82,12 @@ export function mount(el, { query, setQuery }) {
     if (!data || !lbColumns) return;
     const f = filter.toLowerCase();
     const rows = f ? data.rows.filter(r => String(r.address ?? '').toLowerCase().includes(f) || String(r.account) === f.replace(/^#/, '')) : data.rows;
-    $('list').innerHTML = table({ id: 'lb', columns: lbColumns, rows, rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"`, emptyText: f ? 'Not on this page. Press Enter to open the wallet, if it is a full address or account ID.' : 'No traders in this window' });
+    $('list').innerHTML = table({ id: 'lb', columns: lbColumns, rows, rowAttrs: r => `class="link" data-href="/wallet/${esc(r.address || r.account)}"`, emptyText: f ? 'Not on this page. Press Enter to open the wallet, if it is a full address or account ID.' : 'No traders in this window' });
     // The count says what is on screen: a filter's matches on this page, or the page's place in the ranking.
     $('count').textContent = !data.total ? '' : f ? `${int(rows.length)} of ${int(data.rows.length)} on this page match` : `${int(data.total)} accounts · showing ${int(page * LIMIT + 1)}–${int(page * LIMIT + data.rows.length)}`;
   }
   $('lb-search').addEventListener('input', e => { filter = e.target.value.trim(); renderList(); });
-  $('lb-search').addEventListener('keydown', e => { const q = e.target.value.trim(); if (e.key === 'Enter' && (/^0x[0-9a-fA-F]{40}$/.test(q) || /^\d{1,9}$/.test(q))) location.hash = `#/wallet/${q}`; });
+  $('lb-search').addEventListener('keydown', e => { const q = e.target.value.trim(); if (e.key === 'Enter' && (/^0x[0-9a-fA-F]{40}$/.test(q) || /^\d{1,9}$/.test(q))) go(`/wallet/${q}`); });
 
   // The latest position changes of the top directional traders (makers and
   // high-frequency accounts left out server-side), ranked by net PnL in smWin.
@@ -125,7 +125,7 @@ export function mount(el, { query, setQuery }) {
       { key: 'p', label: 'Price', n: true, render: r => price(r.count > 1 && r.size ? r.notional / r.size : r.price) },
       { key: 'r', label: 'Realized', n: true, render: r => (['decrease', 'close', 'invert', 'liquidation', 'deleverage'].includes(r.kind) && num(r.pnl) ? pnl(r.pnl) : '<span class="faint">—</span>') },
       { key: 'l', label: `Net PnL · ${wl}`, n: true, render: r => pnl(r.leader.pnl) }
-    ], rows: foldMoves(m.rows).slice(0, 30), rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"` });
+    ], rows: foldMoves(m.rows).slice(0, 30), rowAttrs: r => `class="link" data-href="/wallet/${esc(r.address || r.account)}"` });
   }
 
   // Traders at a glance for the leaderboard's window.
@@ -188,7 +188,7 @@ export function mount(el, { query, setQuery }) {
       { key: 'd', label: 'Net exposure', n: true, render: a => netSide(a.net) },
       { key: 'u', label: 'uPnL', n: true, render: a => pnl(a.upnl) },
       { key: 'p', label: 'Net PnL (history)', n: true, render: a => (a.pnl === null ? '<span class="faint">—</span>' : pnl(a.pnl)) }
-    ], rows: g.top, rowAttrs: a => `class="link" data-href="#/wallet/${esc(a.address || a.account)}"` })}` : '';
+    ], rows: g.top, rowAttrs: a => `class="link" data-href="/wallet/${esc(a.address || a.account)}"` })}` : '';
   }
   const loadCohorts = () => get('cohorts', { maxAge: 5000 }).then(c => { if (!alive) return; cohorts = c; renderCohorts(); }).catch(() => { if (!cohorts) $('cohorts').innerHTML = '<div class="empty-state">Live positions unavailable</div>'; });
   loadCohorts();

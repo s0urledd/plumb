@@ -174,7 +174,7 @@ step.
   - `index.decoder_checks`: decoder counters;
   - `feeds`: which wake-up source is connected.
 
-  The dashboard's status page (`#/status`) shows the same, plus the
+  The dashboard's status page (`/status`) shows the same, plus the
   integrity check.
 - **Logs**: JSON lines on stdout. RPC URLs never appear in logs or
   responses.

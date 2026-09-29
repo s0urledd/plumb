@@ -56,7 +56,7 @@ export const assetOf = symbol => String(symbol ?? '').replace(/(\s+perp|[_-]v\d+
 // colour, at the logo's size, until one is added.
 export const logo = (id, symbol, size = 16) => {
   const file = LOGOS[assetOf(symbol)];
-  if (file) return `<img class="tk" src="img/markets/${file}" alt="" width="${size}" height="${size}">`;
+  if (file) return `<img class="tk" src="/img/markets/${file}" alt="" width="${size}" height="${size}">`;
   return `<i class="tk tk-letter" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.55)}px;background:${colorOf(id)}">${esc(assetOf(symbol).slice(0, 1) || '?')}</i>`;
 };
 
@@ -64,7 +64,7 @@ export const logo = (id, symbol, size = 16) => {
 // `link` makes the cell open the market page (for views that are not the market itself).
 export const mkt = (id, symbol, name = null, { link = false } = {}) => {
   const inner = `${logo(id, symbol)}${esc(symbol ?? `#${id}`)}${name ? ` <span class="nm">${esc(name)}</span>` : ''}`;
-  return link ? `<a class="mkt" href="#/markets/${esc(id)}">${inner}</a>` : `<span class="mkt">${inner}</span>`;
+  return link ? `<a class="mkt" href="/markets/${esc(id)}">${inner}</a>` : `<span class="mkt">${inner}</span>`;
 };
 export const mktLink = (id, symbol) => mkt(id, symbol, null, { link: true });
 // Funding interval as the chain runs it now (seconds from the API), not a fixed text.
@@ -78,7 +78,7 @@ export function addr(address, account, { star = true } = {}) {
   const key = address || String(account ?? '');
   if (!key) return '<span class="faint">—</span>';
   const label = address ? short(address) : `#${esc(account)}`;
-  return `<span class="addr"><a href="#/wallet/${esc(key)}" title="${esc(address || `Account ${account}`)}">${label}</a>${address ? `<button class="icon-btn" data-copy="${esc(address)}" title="Copy address">${ICON.copy}</button>` : ''}${star ? `<button class="icon-btn ${watch.has(key) ? 'on' : ''}" data-watch="${esc(key)}" title="Watch wallet">${watch.has(key) ? ICON.star : ICON.starOff}</button>` : ''}</span>`;
+  return `<span class="addr"><a href="/wallet/${esc(key)}" title="${esc(address || `Account ${account}`)}">${label}</a>${address ? `<button class="icon-btn" data-copy="${esc(address)}" title="Copy address">${ICON.copy}</button>` : ''}${star ? `<button class="icon-btn ${watch.has(key) ? 'on' : ''}" data-watch="${esc(key)}" title="Watch wallet">${watch.has(key) ? ICON.star : ICON.starOff}</button>` : ''}</span>`;
 }
 // basis: what the delta compares with, shown after it ("vs prev", "in 24h").
 // A " · " in the label or the note keeps to the word before it, so a wrapped line never starts with it.
@@ -86,6 +86,8 @@ export const keepDots = html => String(html).replaceAll(' · ', '\u00a0· ');
 export function kpi({ label, value, delta = undefined, invert = false, basis = null, basisTitle = null, note = '', spark = null, tip = null, cls = '' }) {
   return `<div class="kpi ${cls}"><div class="kpi-label">${keepDots(esc(label))}${tip ? ` <span class="info-tip" tabindex="0" title="${esc(tip)}">i</span>` : ''}</div><div class="kpi-value">${value}</div><div class="kpi-row">${delta === undefined ? '' : `${deltaHtml(delta, invert, basisTitle)}${basis ? `<span class="kpi-basis">${esc(basis)}</span>` : ''}`}<span class="kpi-note">${keepDots(note)}</span></div>${spark ? `<div class="spark" id="${esc(spark)}"></div>` : ''}</div>`;
 }
+// Moves to a page of the dashboard; the router in app.js answers the popstate.
+export const go = url => { history.pushState(null, '', url); dispatchEvent(new PopStateEvent('popstate')); };
 export const seg = (name, options, active) => `<div class="seg" role="group">${options.map(([v, label]) => `<button data-seg="${esc(name)}" data-v="${esc(v)}" class="${String(v) === String(active) ? 'on' : ''}">${esc(label)}</button>`).join('')}</div>`;
 export const tabs = (name, options, active) => `<div class="tabs" role="tablist">${options.map(([v, label]) => `<button role="tab" data-tab="${esc(name)}" data-v="${esc(v)}" class="${v === active ? 'on' : ''}">${esc(label)}</button>`).join('')}</div>`;
 export function ratio(long, short) {
@@ -230,5 +232,5 @@ if (typeof document !== 'undefined') {
   // A tap on (i) toggles its note (the tap's own mouseover has just opened it); a tap elsewhere closes it.
   document.addEventListener('click', e => { const el = e.target.closest?.('.info-tip'); if (el) { if (on === el && Date.now() - shownAt > 400) hide(); else show(el); } else if (on) hide(); });
   window.addEventListener('scroll', hide, true);
-  window.addEventListener('hashchange', hide);
+  window.addEventListener('popstate', hide);
 }

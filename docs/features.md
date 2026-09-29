@@ -133,7 +133,7 @@ commands.
   set with `/liqs 25k BTC`, `/trades 100k` (optionally for one market).
 - **Funding flips**: a message when a market's funding changes direction.
 
-The Alerts page (`#/alerts`) introduces the bot above the watchlist. The wallet page and each watchlist row link to the bot with the wallet pre-filled
+The Alerts page (`/alerts`) introduces the bot above the watchlist. The wallet page and each watchlist row link to the bot with the wallet pre-filled
 (`t.me/<bot>?start=watch_<address>`). Events more than five minutes old,
 such as those replayed after downtime, are not sent. The bot sets its own
 command list and profile text on start.

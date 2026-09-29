@@ -406,6 +406,8 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
     zipped.set(file, { key, body });
     return body;
   }
+  // The dashboard's own pages (the router in web/js/app.js) are served the page itself.
+  const APP_PATH = /^\/(?:markets(?:\/\d+)?|traders|liquidations|risk|wallet\/[0-9a-zA-Zx]{1,42}|compare|alerts|watchlist|status)\/?$/;
   async function serveStatic(pathname, req, res) {
     if (Object.hasOwn(VENDOR, pathname)) {
       const file = VENDOR[pathname];
@@ -416,7 +418,7 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
       res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'public, max-age=86400, immutable', 'content-length': body.length, 'access-control-allow-origin': '*', ...(zip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}), ...SECURITY_HEADERS });
       return res.end(body);
     }
-    const relative = pathname === '/' ? 'index.html' : normalize(pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
+    const relative = pathname === '/' || APP_PATH.test(pathname) ? 'index.html' : normalize(pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
     const file = join(webDir, relative);
     if (!file.startsWith(webDir) || relative.includes('..')) return send(res, 404, { error: 'NOT_FOUND' });
     try {
