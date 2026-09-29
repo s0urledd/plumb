@@ -55,27 +55,27 @@ export function mount(el, { params, query, setQuery, navigate }) {
   const POS_COLS = [
     { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
     { key: 's', label: 'Side', render: r => sideTag(r.side) },
-    { key: 'size', label: 'Size', n: true, render: r => size(r.size) },
+    { key: 'size', label: 'Size', phone: false, n: true, render: r => size(r.size) },
     { key: 'notional', label: 'Notional', n: true, render: r => usd(r.notional) },
-    { key: 'entry', label: 'Entry', n: true, render: r => price(r.entry_price) },
-    { key: 'mark', label: 'Mark', n: true, render: r => price(r.mark) },
-    { key: 'lev', label: 'Leverage', n: true, render: r => (r.leverage ? `${Number(r.leverage).toFixed(1)}x` : '—') },
-    { key: 'upnl', label: 'uPnL', n: true, render: r => pnl(r.pnl) },
-    { key: 'liq', label: 'Liq. price', n: true, render: r => (num(r.liquidation_price) > 0 ? price(r.liquidation_price) : '<span class="faint" title="No liquidation price: the margin covers any price move">none</span>') },
+    { key: 'entry', label: 'Entry', phone: false, n: true, render: r => price(r.entry_price) },
+    { key: 'mark', label: 'Mark', phone: false, n: true, render: r => price(r.mark) },
+    { key: 'lev', label: 'Leverage', phone: false, n: true, render: r => (r.leverage ? `${Number(r.leverage).toFixed(1)}x` : '—') },
+    { key: 'upnl', label: 'uPnL', phone: false, n: true, render: r => pnl(r.pnl) },
+    { key: 'liq', label: 'Liq. price', phone: false, n: true, render: r => (num(r.liquidation_price) > 0 ? price(r.liquidation_price) : '<span class="faint" title="No liquidation price: the margin covers any price move">none</span>') },
     { key: 'dist', label: 'Distance', n: true, render: r => (r.liquidation_distance_pct === null || !(num(r.liquidation_price) > 0) ? '<span class="faint">—</span>' : `<span class="${r.liquidation_distance_pct < 5 ? 'neg' : r.liquidation_distance_pct < 15 ? '' : 'muted'}">${pct(r.liquidation_distance_pct, { digits: 1 })}</span>`) },
-    { key: 'margin', label: 'Margin', n: true, render: r => usd(r.deposit) }
+    { key: 'margin', label: 'Margin', phone: false, n: true, render: r => usd(r.deposit) }
   ];
   const TRADE_COLS = [
-    { key: 'ts', label: 'Time (UTC)', render: r => `<span class="muted num">${dateTime(r.ts)}</span>` },
+    { key: 'ts', label: 'Time (UTC)', phone: false, render: r => `<span class="muted num">${dateTime(r.ts)}</span>` },
     { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
     { key: 'k', label: 'Action', render: r => `${esc(KIND[r.kind] ?? r.kind)} ${sideTag(r.side)}` },
-    { key: 'role', label: 'Role', render: r => `<span class="muted">${esc(r.role === 'none' ? '—' : r.role)}</span>` },
-    { key: 'p', label: 'Price', n: true, render: r => price(r.price) },
-    { key: 'sz', label: 'Size', n: true, render: r => size(r.size) },
+    { key: 'role', label: 'Role', phone: false, render: r => `<span class="muted">${esc(r.role === 'none' ? '—' : r.role)}</span>` },
+    { key: 'p', label: 'Price', phone: false, n: true, render: r => price(r.price) },
+    { key: 'sz', label: 'Size', phone: false, n: true, render: r => size(r.size) },
     { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
     { key: 'pnl', label: 'Realized', n: true, render: r => (['decrease', 'close', 'invert', 'liquidation', 'deleverage'].includes(r.kind) ? pnl(r.pnl) : '<span class="faint">—</span>') },
-    { key: 'fee', label: 'Fee', n: true, render: r => (num(r.fee) ? usd(r.fee) : '<span class="faint">0</span>') },
-    { key: 'tx', label: 'Tx', render: r => `<a class="faint mono" href="${EXPLORER}/tx/${esc(r.tx)}" target="_blank" rel="noopener noreferrer">${esc(r.tx.slice(0, 8))}…</a>` }
+    { key: 'fee', label: 'Fee', phone: false, n: true, render: r => (num(r.fee) ? usd(r.fee) : '<span class="faint">0</span>') },
+    { key: 'tx', label: 'Tx', phone: false, render: r => `<a class="faint mono" href="${EXPLORER}/tx/${esc(r.tx)}" target="_blank" rel="noopener noreferrer">${esc(r.tx.slice(0, 8))}…</a>` }
   ];
 
   function perfPanel(perf, s) {
@@ -142,7 +142,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
             { key: 'v', label: 'Volume', n: true, render: r => usd(r.volume) },
             { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.net_pnl) },
             { key: 'w', label: 'Win rate', n: true, render: r => (r.win_rate_pct === null ? '—' : pct(r.win_rate_pct, { digits: 0 })) },
-            { key: 't', label: 'Trips', n: true, render: r => (r.trips === null ? '—' : int(r.trips)) }
+            { key: 't', label: 'Trips', phone: false, n: true, render: r => (r.trips === null ? '—' : int(r.trips)) }
           ], rows: marketRows(d), emptyText: 'No trades' })}</div></section>
         </div>`;
       drawPnl();
@@ -165,23 +165,23 @@ export function mount(el, { params, query, setQuery, navigate }) {
       body.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>Round trips</h2><div class="desc">Open trips first, then ${capped ? `the latest ${int(an.trips.length)} of ${int(closedAll)} closed trips` : 'closed trips'}, newest close first</div></div></div>` + table({ id: 'trips', columns: [
         { key: 'm', label: 'Market', render: twinLink(tripRows) },
         { key: 's', label: 'Side', render: r => sideTag(r.side) },
-        { key: 'c', label: 'Closed', render: r => (r.open ? '<span class="faint">open</span>' : `<span class="muted num">${dateTime(r.close_ts)}</span>`) },
-        { key: 'o', label: 'Opened', render: r => `<span class="muted num">${r.open_ts ? dateTime(r.open_ts) : `before ${dateTime(r.first_ts)}`}</span>` },
+        { key: 'c', label: 'Closed', phone: false, render: r => (r.open ? '<span class="faint">open</span>' : `<span class="muted num">${dateTime(r.close_ts)}</span>`) },
+        { key: 'o', label: 'Opened', phone: false, render: r => `<span class="muted num">${r.open_ts ? dateTime(r.open_ts) : `before ${dateTime(r.first_ts)}`}</span>` },
         { key: 'h', label: 'Held', n: true, render: r => duration(r.hold_seconds) },
-        { key: 'sz', label: 'Max size', n: true, render: r => size(r.max_size) },
-        { key: 'e', label: 'Entry notional', n: true, render: r => usd(r.entry_notional) },
-        { key: 'lev', label: 'Max lev.', n: true, render: r => (r.max_leverage ? `${r.max_leverage.toFixed(1)}x` : '—') },
+        { key: 'sz', label: 'Max size', phone: false, n: true, render: r => size(r.max_size) },
+        { key: 'e', label: 'Entry notional', phone: false, n: true, render: r => usd(r.entry_notional) },
+        { key: 'lev', label: 'Max lev.', phone: false, n: true, render: r => (r.max_leverage ? `${r.max_leverage.toFixed(1)}x` : '—') },
         { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.net_pnl) },
-        { key: 'r', label: 'Return', n: true, render: r => pctCell(r.return_pct) },
-        { key: 'f', label: 'Outcome', render: r => (r.open ? '<span class="tag" title="Still open: Net PnL counts only what is realized so far, after fees">open</span>' : r.liquidated ? '<span class="tag bad">liquidated</span>' : r.deleveraged ? '<span class="tag warn">ADL</span>' : num(r.net_pnl) > 0 ? '<span class="tag good">win</span>' : num(r.net_pnl) < 0 ? '<span class="tag">loss</span>' : '<span class="tag">flat</span>') }
+        { key: 'r', label: 'Return', phone: false, n: true, render: r => pctCell(r.return_pct) },
+        { key: 'f', label: 'Outcome', phone: false, render: r => (r.open ? '<span class="tag" title="Still open: Net PnL counts only what is realized so far, after fees">open</span>' : r.liquidated ? '<span class="tag bad">liquidated</span>' : r.deleveraged ? '<span class="tag warn">ADL</span>' : num(r.net_pnl) > 0 ? '<span class="tag good">win</span>' : num(r.net_pnl) < 0 ? '<span class="tag">loss</span>' : '<span class="tag">flat</span>') }
       ], rows: tripRows, rowAttrs: r => (r.open ? 'title="Still open"' : ''), emptyText: 'No round trips yet' }) + '</section>';
     } else if (tab === 'flows') {
       body.innerHTML = `<section class="panel"><div class="panel-head"><h2>Deposits and withdrawals</h2><span class="meta">Newest first</span></div><div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div>${num(d.summary.payouts_received) > 0 ? `<div class="stat"><span title="Transfers from Perpl's protocol balance to this account, such as rebates or rewards">Paid by the protocol</span><span class="pos">${usdFull(d.summary.payouts_received)}</span></div>` : ''}${num(d.summary.swept_to_protocol) > 0 ? `<div class="stat"><span title="Transfers from this account into Perpl's protocol balance">Moved to the protocol</span><span class="neg">${usdFull(d.summary.swept_to_protocol)}</span></div>` : ''}</div>` + table({ id: 'flows', columns: [
         { key: 't', label: 'Time (UTC)', render: r => `<span class="muted num">${dateTime(r.ts)}</span>` },
         { key: 'k', label: 'Type', render: r => `<span class="${FLOW_KIND[r.kind]?.[1] ?? ''}">${FLOW_KIND[r.kind]?.[0] ?? esc(r.kind)}</span>` },
         { key: 'a', label: 'Amount', n: true, render: r => usdFull(r.amount) },
-        { key: 'b', label: 'Balance after', n: true, render: r => usdFull(r.balance_after) },
-        { key: 'tx', label: 'Tx', render: r => `<a class="faint mono" href="${EXPLORER}/tx/${esc(r.tx)}" target="_blank" rel="noopener noreferrer">${esc(r.tx.slice(0, 10))}…</a>` }
+        { key: 'b', label: 'Balance after', phone: false, n: true, render: r => usdFull(r.balance_after) },
+        { key: 'tx', label: 'Tx', phone: false, render: r => `<a class="faint mono" href="${EXPLORER}/tx/${esc(r.tx)}" target="_blank" rel="noopener noreferrer">${esc(r.tx.slice(0, 10))}…</a>` }
       ], rows: d.flows, emptyText: 'No deposits or withdrawals indexed' }) + '</section>';
     }
   }
@@ -304,11 +304,11 @@ export function mount(el, { params, query, setQuery, navigate }) {
     return table({ id: 'periods', compact: true, columns: [
       { key: 'w', label: 'Period', render: r => `${PERIOD_LABEL[r.window] ?? esc(r.window)}${r.coverage_complete ? '' : ' <span class="tag warn" title="History for this window is still being indexed">partial</span>'}` },
       { key: 'v', label: 'Volume', n: true, render: r => (r.trades ? usd(r.volume) : '<span class="faint">—</span>') },
-      { key: 't', label: 'Trades', n: true, render: r => (r.trades ? int(r.trades) : '<span class="faint">0</span>') },
+      { key: 't', label: 'Trades', phone: false, n: true, render: r => (r.trades ? int(r.trades) : '<span class="faint">0</span>') },
       { key: 'p', label: 'Net PnL', n: true, render: r => (r.trades ? pnl(r.net_pnl) : '<span class="faint">—</span>') },
-      { key: 'e', label: 'PnL / volume', n: true, render: r => bpsCell(r.pnl_per_volume_bps) },
+      { key: 'e', label: 'PnL / volume', phone: false, n: true, render: r => bpsCell(r.pnl_per_volume_bps) },
       { key: 'rp', label: 'Rank by PnL', n: true, render: r => rankCell(r.rank?.pnl, r.rank?.of) },
-      { key: 'rv', label: 'Rank by volume', n: true, render: r => rankCell(r.rank?.volume, r.rank?.of) }
+      { key: 'rv', label: 'Rank by volume', phone: false, n: true, render: r => rankCell(r.rank?.volume, r.rank?.of) }
     ], rows: periods.periods });
   }
   const loadPeriods = () => get(`wallets/${encodeURIComponent(key)}/periods`, { maxAge: 20000 }).then(p => { if (!alive) return; periods = p; const n = $('periods'); if (n) n.innerHTML = periodsTable(); markPartial(); }).catch(() => { const n = $('periods'); if (n && !periods) n.innerHTML = empty('Period totals unavailable'); });

@@ -72,17 +72,17 @@ export function mount(el, { query, setQuery }) {
     const first = total ? page * PAGE + 1 : 0, last = page * PAGE + rows.length;
     const pager = pages > 1 ? `<div class="panel-foot pager"><span>${int(first)}–${int(last)} of ${int(total)}</span><span class="pager-ctl"><button class="btn ghost sm" data-action="prev" ${page === 0 ? 'disabled' : ''}>← Prev</button><span class="num">Page ${int(page + 1)} of ${int(pages)}</span><button class="btn ghost sm" data-action="next" ${page + 1 >= pages ? 'disabled' : ''}>Next →</button></span></div>` : '';
     $('feed').innerHTML = table({ id: 'liq', columns: [
-      { key: 't', label: 'Time (UTC)', render: r => `<span class="muted num">${dateTime(r.ts)}</span>` },
+      { key: 't', label: 'Time (UTC)', render: r => { const d = dateTime(r.ts); return `<span class="muted num"><span class="yr">${d.slice(0, 5)}</span>${d.slice(5)}</span>`; } },
       { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
-      { key: 'k', label: 'Type', render: r => (r.kind === 'deleverage' ? (r.force_close ? '<span class="tag warn">Force close</span>' : '<span class="tag warn">ADL</span>') : `<span class="tag">${r.on_book ? 'Order book' : 'Liquidation'}</span>`) },
+      { key: 'k', label: 'Type', phone: false, render: r => (r.kind === 'deleverage' ? (r.force_close ? '<span class="tag warn">Force close</span>' : '<span class="tag warn">ADL</span>') : `<span class="tag">${r.on_book ? 'Order book' : 'Liquidation'}</span>`) },
       { key: 's', label: 'Position', render: r => sideTag(r.side) },
-      { key: 'a', label: 'Trader', render: r => addr(r.address, r.account) },
-      { key: 'sz', label: 'Size', n: true, render: r => size(r.size) },
-      { key: 'p', label: 'Price', n: true, render: r => price(r.price) },
-      { key: 'mk', label: 'Mark', n: true, render: r => price(r.mark) },
+      { key: 'a', label: 'Trader', phone: false, render: r => addr(r.address, r.account) },
+      { key: 'sz', label: 'Size', phone: false, n: true, render: r => size(r.size) },
+      { key: 'p', label: 'Price', phone: false, n: true, render: r => price(r.price) },
+      { key: 'mk', label: 'Mark', phone: false, n: true, render: r => price(r.mark) },
       { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
-      { key: 'pnl', label: 'Realized', n: true, render: r => pnl(r.pnl) },
-      { key: 'rem', label: 'Remaining', n: true, render: r => (num(r.remaining) ? size(r.remaining) : '<span class="faint">closed</span>') }
+      { key: 'pnl', label: 'Realized', phone: false, n: true, render: r => pnl(r.pnl) },
+      { key: 'rem', label: 'Remaining', phone: false, n: true, render: r => (num(r.remaining) ? size(r.remaining) : '<span class="faint">closed</span>') }
     ], rows, rowAttrs: r => `class="link ${r.fresh ? 'flash' : ''}" data-href="/wallet/${esc(r.address || r.account)}"`, emptyText: 'No liquidations indexed in this range' }) + pager;
   }
   async function goTo(n) {

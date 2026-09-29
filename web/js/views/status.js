@@ -65,8 +65,8 @@ export function mount(el) {
     if (ready) $('integrity').innerHTML = `<div class="panel-body faint" style="font-size:12.5px">${esc(integ.method)} Block ${grouped(integ.block)}.</div>` + table({ id: 'int', compact: true, columns: [
       { key: 'm', label: 'Market', render: x => `${mkt(x.market, x.symbol)}${twin(x) ? ` <span class="faint">#${esc(x.market)}</span>` : ''}` },
       { key: 'ok', label: 'Result', render: x => (x.ok ? '<span class="tag good">match</span>' : '<span class="tag bad">mismatch</span>') },
-      { key: 'l', label: 'Long lots (events / contract)', n: true, render: x => `${grouped(x.events_long)} / ${grouped(x.contract_long)}` },
-      { key: 's', label: 'Short lots (events / contract)', n: true, render: x => `${grouped(x.events_short)} / ${grouped(x.contract_short)}` }
+      { key: 'l', label: 'Long lots (events / contract)', phone: false, n: true, render: x => `${grouped(x.events_long)} / ${grouped(x.contract_long)}` },
+      { key: 's', label: 'Short lots (events / contract)', phone: false, n: true, render: x => `${grouped(x.events_short)} / ${grouped(x.contract_short)}` }
     ], rows: integ.open_interest }) + (integ.tvl ? `<div class="panel-foot st-tvl"><span>TVL from events ${usd(integ.tvl.events)} · contract ${usd(integ.tvl.contract)}</span>${integ.tvl.ok ? '<span class="tag good">match</span>' : '<span class="tag warn">differs</span>'}</div>` : '') + protocolLine(integ.protocol_balance);
     const rec = v?.reconciliation, ver = v?.verification;
     $('checks').innerHTML = `<div class="stat-grid one">

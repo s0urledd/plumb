@@ -23,19 +23,19 @@ export function mount(el, { query, setQuery }) {
   const idleTitle = r => (r.active === false ? 'Not open for trading' : `Open for trading, but no trades ${w === 'all' ? 'yet' : `in ${w}`} and no open positions`);
   const COLS = [
     { key: 'symbol', label: 'Market', sort: r => r.symbol, render: r => `${mkt(r.id, r.symbol, r.name && r.name !== r.symbol && r.name !== `${r.symbol} Perp` ? r.name : null)}${idle(r) ? ` <span class="tag" title="${idleTitle(r)}">inactive</span>` : ''}` },
-    { key: 'mark', label: 'Mark', n: true, sort: r => num(r.mark ?? r.close), render: r => price(r.mark ?? r.close) },
-    { key: 'change_pct', label: 'Change', n: true, sort: r => num(r.change_pct) ?? -1e9, render: r => pctCell(r.change_pct) },
-    { key: 'range', label: 'Low – High', n: true, render: r => r.low ? `<span class="muted">${price(r.low)} – ${price(r.high)}</span>` : '—' },
-    { key: 'volume', label: 'Volume', n: true, sort: r => num(r.volume), render: r => usd(r.volume) },
-    { key: 'trades', label: 'Trades', tip: 'Matches between a maker and a taker, each counted once', n: true, sort: r => r.fills ?? 0, render: r => int(r.fills) },
-    { key: 'fees', label: 'Fees', n: true, sort: r => num(r.fees) ?? 0, render: r => usd(r.fees) },
-    { key: 'open_interest', label: 'Open interest', n: true, sort: r => num(r.open_interest) ?? 0, render: r => `${usd(r.open_interest)}${r.oi_cap_pct !== null && r.oi_cap_pct !== undefined ? `<div class="sub">${pct(r.oi_cap_pct, { digits: 1 })} of cap</div>` : ''}` },
-    { key: 'funding', label: 'Funding 8h', get tip() { return fundingTip(data?.markets?.find(m => m.funding?.interval_seconds)?.funding.interval_seconds); }, n: true, sort: r => r.funding?.rate_8h_pct ?? 0, render: r => fundingCell(r.funding) },
-    { key: 'cost', label: 'Cost $10K', n: true, tip: 'Average cost of a $10K market buy and sell on the onchain order book, versus the mid price. Includes half the spread.', sort: r => r.cost_10k_bps ?? -1, render: r => (r.cost_10k_bps === null || r.cost_10k_bps === undefined ? '<span class="faint">—</span>' : `${r.cost_10k_bps.toFixed(1)} bps${r.spread_bps !== null && r.spread_bps !== undefined ? `<div class="sub">spread ${r.spread_bps.toFixed(r.spread_bps < 1 ? 2 : 1)}</div>` : ''}`) },
-    { key: 'ls', label: 'Long / short positions', sort: r => r.long_position_share_pct ?? 0, render: r => ratio(r.long_positions, r.short_positions) },
-    { key: 'lev', label: 'Avg lev. L / S', n: true, render: r => r.long_leverage || r.short_leverage ? `${r.long_leverage ? r.long_leverage.toFixed(1) + 'x' : '—'} / ${r.short_leverage ? r.short_leverage.toFixed(1) + 'x' : '—'}` : '—' },
-    { key: 'max_leverage', label: 'Max lev.', n: true, sort: r => r.max_leverage ?? 0, render: r => (r.max_leverage ? `${r.max_leverage}x` : '—') },
-    { key: 'insurance', label: 'Insurance', n: true, sort: r => num(r.insurance) ?? 0, render: r => usd(r.insurance) }
+    { key: 'mark', label: 'Mark', n: true, sort: r => num(r.mark ?? r.close), render: r => `${price(r.mark ?? r.close)}<div class="sub-sm">${pctCell(r.change_pct)}</div>` },
+    { key: 'change_pct', label: 'Change', phone: false, n: true, sort: r => num(r.change_pct) ?? -1e9, render: r => pctCell(r.change_pct) },
+    { key: 'range', label: 'Low – High', phone: false, n: true, render: r => r.low ? `<span class="muted">${price(r.low)} – ${price(r.high)}</span>` : '—' },
+    { key: 'volume', label: 'Volume', phone: false, n: true, sort: r => num(r.volume), render: r => usd(r.volume) },
+    { key: 'trades', label: 'Trades', phone: false, tip: 'Matches between a maker and a taker, each counted once', n: true, sort: r => r.fills ?? 0, render: r => int(r.fills) },
+    { key: 'fees', label: 'Fees', phone: false, n: true, sort: r => num(r.fees) ?? 0, render: r => usd(r.fees) },
+    { key: 'open_interest', label: 'Open interest', n: true, sort: r => num(r.open_interest) ?? 0, render: r => `${usd(r.open_interest)}${r.oi_cap_pct !== null && r.oi_cap_pct !== undefined ? `<div class="sub hide-sm">${pct(r.oi_cap_pct, { digits: 1 })} of cap</div>` : ''}` },
+    { key: 'funding', label: 'Funding 8h', phone: false, get tip() { return fundingTip(data?.markets?.find(m => m.funding?.interval_seconds)?.funding.interval_seconds); }, n: true, sort: r => r.funding?.rate_8h_pct ?? 0, render: r => fundingCell(r.funding) },
+    { key: 'cost', label: 'Cost $10K', phone: false, n: true, tip: 'Average cost of a $10K market buy and sell on the onchain order book, versus the mid price. Includes half the spread.', sort: r => r.cost_10k_bps ?? -1, render: r => (r.cost_10k_bps === null || r.cost_10k_bps === undefined ? '<span class="faint">—</span>' : `${r.cost_10k_bps.toFixed(1)} bps${r.spread_bps !== null && r.spread_bps !== undefined ? `<div class="sub">spread ${r.spread_bps.toFixed(r.spread_bps < 1 ? 2 : 1)}</div>` : ''}`) },
+    { key: 'ls', label: 'Long / short positions', phone: false, sort: r => r.long_position_share_pct ?? 0, render: r => ratio(r.long_positions, r.short_positions) },
+    { key: 'lev', label: 'Avg lev. L / S', phone: false, n: true, render: r => r.long_leverage || r.short_leverage ? `${r.long_leverage ? r.long_leverage.toFixed(1) + 'x' : '—'} / ${r.short_leverage ? r.short_leverage.toFixed(1) + 'x' : '—'}` : '—' },
+    { key: 'max_leverage', label: 'Max lev.', phone: false, n: true, sort: r => r.max_leverage ?? 0, render: r => (r.max_leverage ? `${r.max_leverage}x` : '—') },
+    { key: 'insurance', label: 'Insurance', phone: false, n: true, sort: r => num(r.insurance) ?? 0, render: r => usd(r.insurance) }
   ];
   function render() { if (data) el.querySelector('#list').innerHTML = table({ id: 'm', columns: COLS, rows: data.markets, sortKey: sort.key, sortDir: sort.dir, rowAttrs: r => `class="link${idle(r) ? ' inactive' : ''}" data-href="/markets/${r.id}"` }); }
   async function load() { data = await get(`protocol?window=${w}`); if (!alive) return; assignColors([...data.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol }))); render(); }

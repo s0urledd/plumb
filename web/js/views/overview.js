@@ -272,7 +272,7 @@ export function mount(el, { query, setQuery }) {
       { key: 't', label: 'Time', render: r => `<span class="muted num">${timeOnly(r.ts)}</span>` },
       { key: 'm', label: 'Market', render: r => mkt(r.market, r.symbol) },
       { key: 's', label: 'Action', render: tradeAction },
-      { key: 'p', label: 'Price', n: true, render: r => price(r.price) },
+      { key: 'p', label: 'Price', phone: false, n: true, render: r => price(r.price) },
       { key: 'v', label: 'Value', n: true, render: r => usd(r.notional) }
     ], rows: rows.slice(0, 60), rowAttrs: r => `class="link ${r.fresh ? 'flash' : ''} ${r.proposed ? 'proposed' : ''}" data-href="/wallet/${esc(r.address || r.account)}" ${r.proposed ? `title="${stageTitle(r)}"` : ''}` });
     for (const r of tape) r.fresh = false;
@@ -296,7 +296,7 @@ export function mount(el, { query, setQuery }) {
         { key: 'k', label: 'Type', render: r => `<span class="${r.kind === 'deposit' ? 'pos' : 'neg'}">${r.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}</span>` },
         { key: 'a', label: 'Wallet', render: r => addr(r.address, r.account, { star: false }) },
         { key: 'v', label: 'Amount', n: true, render: r => usd(r.amount) },
-        { key: 't', label: 'When', n: true, render: r => `<span class="muted">${ago(r.ts)}</span>` }
+        { key: 't', label: 'When', phone: false, n: true, render: r => `<span class="muted">${ago(r.ts)}</span>` }
       ], rows, rowAttrs: link }) : empty('No recent deposits or withdrawals');
       return;
     }
