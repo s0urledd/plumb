@@ -58,7 +58,7 @@ const alerts = env.TELEGRAM_BOT_TOKEN ? createAlerts({
   fundingSeed: () => ch.query('SELECT market, argMax(actual_rate, funding_block) AS rate FROM funding FINAL WHERE actual_rate != 0 GROUP BY market')
 }) : null;
 const statusOf = () => ({
-  index: { live: { ...ingest.status.live, from: ingest.status.live.from?.toString() ?? null, to: ingest.status.live.to?.toString() ?? null, finalized: ingest.status.live.finalized?.toString() ?? null }, backfill: ingest.progress(), coverage: ingest.coverage.intervals.map(x => ({ from: x.from.toString(), to: x.to.toString(), from_ts: x.fromTs, to_ts: x.toTs })), rollups: rollups.status, repaired_rows: ingest.status.repaired, decoder_checks: ingest.status.checks, clickhouse: ch.stats },
+  index: { live: { ...ingest.status.live, from: ingest.status.live.from?.toString() ?? null, to: ingest.status.live.to?.toString() ?? null, finalized: ingest.status.live.finalized?.toString() ?? null }, backfill: ingest.progress(), topics: ingest.topicProgress(), coverage: ingest.coverage.intervals.map(x => ({ from: x.from.toString(), to: x.to.toString(), from_ts: x.fromTs, to_ts: x.toTs })), rollups: rollups.status, repaired_rows: ingest.status.repaired, decoder_checks: ingest.status.checks, clickhouse: ch.stats },
   alerts: alerts ? { bot: alerts.stats.bot ?? null, chats: alerts.stats.chats, sent: alerts.stats.sent, failed: alerts.stats.failed } : null,
   feeds: { exec_events: feeds.execEvents?.status ?? null, heads: feeds.heads?.status ?? null, sse_clients: sse.clients }
 });
