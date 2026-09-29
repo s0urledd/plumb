@@ -21,6 +21,26 @@
 // (TransferProtocolToAccount), sweeps (TransferAccountToProtocol) and protocol
 // balance deposits and withdrawals move the balance but are never revenue.
 
+// The protocol balance (getExchangeInfo protocolBalanceCNS) from launch is
+// revenue (the protocol's shares above) plus these row kinds, each with its
+// sign; builder fees stay inside it. Reproduced with the same zero residual.
+// The last five were never observed: their effect is the one the ABI names.
+export const BALANCE_MOVES = Object.freeze({
+  protocol_deposit: 1n, protocol_withdrawal: -1n, payout: -1n, sweep: 1n,
+  insurance_to_protocol: 1n, positions_to_protocol: 1n, recycle_fee: 1n, protocol_to_market: -1n, protocol_to_recycle: -1n
+});
+export const BALANCE_KINDS = Object.keys(BALANCE_MOVES);
+// `revenue`: { opening, reducing, liquidations } (the protocol's shares);
+// `moves`: kind -> { amount } (totals of BALANCE_KINDS rows).
+export function protocolBalance({ revenue, moves }) {
+  let total = revenue.opening + revenue.reducing + revenue.liquidations;
+  for (const [kind, sign] of Object.entries(BALANCE_MOVES)) total += sign * (moves[kind]?.amount ?? 0n);
+  return total;
+}
+// The rules were checked from 25 Sep 2026 12:03 UTC on; shares derived
+// before rest on them unchecked (the protocol balance check says how much).
+export const CHECKED_FROM_TS = 1790337780;
+
 // A market's rates: set when it is added, then changed by the two updates.
 export const REVENUE_PARAM_EVENTS = ['FeeParamsUpdated', 'LiquidationParamsUpdated', 'ContractAdded', 'ContractAddedV2'];
 const PER = 100000n;

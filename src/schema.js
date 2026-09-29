@@ -15,9 +15,11 @@ export const KINDS = {
   deposit: 20, withdrawal: 21, protocol_deposit: 22, protocol_withdrawal: 23,
   account: 30,
   funding: 40,
-  btl: 50, collateral_add: 51, collateral_remove: 52, liquidation_credit: 53, insurance_payment: 54
+  btl: 50, collateral_add: 51, collateral_remove: 52, liquidation_credit: 53, insurance_payment: 54,
+  // Protocol balance transfers (added later: new values go at the end, see migrate).
+  payout: 60, sweep: 61, insurance_to_protocol: 62, positions_to_protocol: 63, protocol_to_market: 64, protocol_to_recycle: 65, recycle_fee: 66
 };
-const kindEnum = `Enum8(${Object.entries(KINDS).map(([k, v]) => `'${k}' = ${v}`).join(', ')})`;
+export const kindEnum = (kinds = KINDS) => `Enum8(${Object.entries(kinds).map(([k, v]) => `'${k}' = ${v}`).join(', ')})`;
 
 const evColumns = `
   block UInt64 CODEC(Delta, ZSTD(1)),
@@ -25,7 +27,7 @@ const evColumns = `
   tx_index UInt32 CODEC(ZSTD(1)),
   ts DateTime('UTC') CODEC(Delta, ZSTD(1)),
   tx String CODEC(ZSTD(3)),
-  kind ${kindEnum},
+  kind ${kindEnum()},
   market UInt16,
   account UInt32 CODEC(ZSTD(1)),
   side Int8 DEFAULT -1,
@@ -52,7 +54,7 @@ const evColumns = `
   oi_short Int64 CODEC(ZSTD(1))`;
 
 // Flags on ev rows.
-export const FLAG = { ON_BOOK: 1, FORCE_CLOSE: 2, UNLINKED: 4, WITHOUT_PAYMENT: 8 };
+export const FLAG = { ON_BOOK: 1, FORCE_CLOSE: 2, UNLINKED: 4, WITHOUT_PAYMENT: 8, TO_INSURANCE: 16 };
 
 // Amounts are Int64; the count of unsplit liquidations is a count like the others (a UInt64
 // count unioned with an Int64 rollup column becomes a Variant that sum() rejects).
@@ -88,6 +90,14 @@ export const DDL = [
     source LowCardinality(String),
     at DateTime64(3, 'UTC') DEFAULT now64(3)
   ) ENGINE = ReplacingMergeTree(to_block) ORDER BY from_block`,
+  // Coverage of a topic set added after history was indexed (decode.js
+  // TOPIC_SET): ranges read with those topics, by the ingest (which reads
+  // every topic) or by the topic backfill. Same merge rule as chunks.
+  `CREATE TABLE IF NOT EXISTS topic_chunks (
+    topics LowCardinality(String), from_block UInt64, to_block UInt64,
+    rows UInt64, source LowCardinality(String),
+    at DateTime64(3, 'UTC') DEFAULT now64(3)
+  ) ENGINE = ReplacingMergeTree(to_block) ORDER BY (topics, from_block)`,
 
   `CREATE TABLE IF NOT EXISTS markets (
     market UInt16, name String, symbol String,
@@ -166,8 +176,22 @@ export const DDL = [
   ) ENGINE = ReplacingMergeTree(at) ORDER BY key`
 ];
 
+// Tables created before a kind was added get it by a metadata-only ALTER
+// (an Enum8 that only gains values at the end keeps every stored byte), run
+// only while a table lacks it; the account copy first, so rows the view
+// copies never meet an older enum.
+export const kindAlter = table => `ALTER TABLE ${table} MODIFY COLUMN kind ${kindEnum()}`;
+async function extendKinds(ch) {
+  const types = await ch.query("SELECT table, type FROM system.columns WHERE database = {db:String} AND table IN ('ev', 'ev_account') AND name = 'kind'", { db: ch.database });
+  for (const table of ['ev_account', 'ev']) {
+    const type = types.find(r => r.table === table)?.type;
+    if (type && !Object.keys(KINDS).every(k => type.includes(`'${k}'`))) await ch.exec(kindAlter(table));
+  }
+}
+
 export async function migrate(ch) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(ch.database)) throw new Error('INVALID_DATABASE_NAME');
   await ch.exec(`CREATE DATABASE IF NOT EXISTS ${ch.database}`, {}, {}, { db: null });
   for (const statement of DDL) await ch.exec(statement);
+  await extendKinds(ch);
 }
