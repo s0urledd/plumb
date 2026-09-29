@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { feeSplit, liquidationSplit, liquidationMargin, rowRevenue, createRevenueParams, DEFAULT_RATES } from '../src/revenue.js';
-import { revenueSql, MARKET, REVENUE_COLUMNS, OFF_BOOK, columns } from '../src/aggregates.js';
+import { revenueSql, liqSplit, liqUnsplit, MARKET, REVENUE_COLUMNS, columns } from '../src/aggregates.js';
 import { rollupStatements, createRollups, markStale, CARRY } from '../src/rollup.js';
 import { DDL, migrate, ROLLUP_VERSION } from '../src/schema.js';
 import { rowsFromLogs } from '../src/decode.js';
@@ -39,7 +39,7 @@ function sqlEval(expr, row) {
 const sqlRevenue = (row, sql) => {
   const s = revenueSql(sql);
   if (row.kind === 'decrease' || row.kind === 'close') { const ins = sqlEval(s.reduceIns, row); return { ins, prot: BigInt(row.fee) - ins }; }
-  if (row.kind === 'liquidation') return { ins: sqlEval(s.liqIns, row), prot: sqlEval(s.liqProt, row) };
+  if (row.kind === 'liquidation') return sqlEval(liqSplit(sql), row) ? { ins: sqlEval(s.liqIns, row), prot: sqlEval(s.liqProt, row) } : { ins: 0n, prot: 0n };
   return null;
 };
 
@@ -122,22 +122,27 @@ test('a bankrupt liquidation adds no revenue', () => {
   assert.deepEqual(sqlRevenue(liq), { ins: 0n, prot: 0n });
 });
 
-test('partial and off-book liquidations are split like full ones; off-book ones are counted apart', () => {
-  // 70 USD of margin left, 80 % returned: 7 USD to the insurance fund, 7 to the protocol.
+test('book liquidations that paid the trader are split, full or partial; the others are counted apart', () => {
+  // 70 USD of margin left, 80 % paid to the trader: 7 USD to the insurance fund, 7 to the protocol.
   const margin = { posAmountCNS: -100000000n, accAmountCNS: 56000000n };
   const b = logBuilder();
   b.tx().add(...ev.takerFill(5000n, 1000n, 0n)).add(...ev.liquidation(20, 11, SHORT, 5000n, 1000n, 0n, -30000000n, { ...margin, onOrderBook: true }));
   b.tx().add(...ev.takerFill(5000n, 600n, 0n)).add(...ev.liquidation(20, 12, SHORT, 5000n, 600n, 400n, -30000000n, { ...margin, onOrderBook: true }));
+  // The trader's share added to the remaining position: nothing paid, the fee is all of X.
+  b.tx().add(...ev.takerFill(5000n, 600n, 0n)).add(...ev.liquidation(20, 14, SHORT, 5000n, 600n, 400n, -30000000n, { ...margin, accAmountCNS: 0n, onOrderBook: true }));
+  // Off the book (buy to liquidate): a buyer takes a share, another rule.
   b.tx().add(...ev.liquidation(20, 13, SHORT, 5000n, 1000n, 0n, -30000000n, margin));
-  const [full, partial, offBook] = byKind(rowsFromLogs(b.logs, { unitsOf }).ev, 'liquidation');
+  const [full, partial, toPosition, offBook] = byKind(rowsFromLogs(b.logs, { unitsOf }).ev, 'liquidation');
   assert.deepEqual(rowRevenue(full), { source: 'liquidation', ins: 7000000n, prot: 7000000n });
   assert.deepEqual(rowRevenue(partial), { source: 'liquidation', ins: 7000000n, prot: 7000000n });
-  assert.deepEqual(rowRevenue(offBook), { source: 'liquidation', ins: 7000000n, prot: 7000000n, offBook: true });
-  for (const row of [full, partial, offBook]) {
-    assert.equal(row.fee, 14000000n, 'the stored fee is the insurance and protocol shares together');
+  assert.deepEqual(rowRevenue(toPosition), { source: 'liquidation', ins: 0n, prot: 0n, unsplit: true });
+  assert.deepEqual(rowRevenue(offBook), { source: 'liquidation', ins: 0n, prot: 0n, unsplit: true });
+  assert.equal(toPosition.fee, 70000000n, 'nothing paid: the stored fee is all of the margin');
+  for (const row of [full, partial, toPosition, offBook]) {
     assert.deepEqual(sqlRevenue(row), { ins: rowRevenue(row).ins, prot: rowRevenue(row).prot });
+    assert.equal(sqlEval(liqSplit(), row), !rowRevenue(row).unsplit);
   }
-  assert.equal(MARKET.find(([c]) => c === 'liq_unsplit')[1], `countIf(${OFF_BOOK})`);
+  assert.equal(MARKET.find(([c]) => c === 'liq_unsplit')[1], `countIf(${liqUnsplit()})`);
 });
 
 test('a partial liquidation as at block 97,375,221 gives the protocol its reconciled share', () => {
@@ -175,9 +180,10 @@ test('rates follow FeeParamsUpdated and LiquidationParamsUpdated from their bloc
     { kind: 'close', market: 1, block: 499, log_index: 9, fee: 1001n, builder_fee: 0n },
     { kind: 'close', market: 1, block: 501, log_index: 0, fee: 1001n, builder_fee: 1n },
     { kind: 'decrease', market: 20, block: 900, log_index: 0, fee: 1001n, builder_fee: 0n },
-    { kind: 'liquidation', market: 50, block: 400, log_index: 0, pnl: -100n, funding: 3n, amount: -100300n },
-    { kind: 'liquidation', market: 50, block: 600, log_index: 0, pnl: -100n, funding: 3n, amount: -100300n },
-    { kind: 'liquidation', market: 1, block: 600, log_index: 0, pnl: -100n, funding: 3n, amount: -100300n }
+    // On the book, the trader paid floor(X * user) with the rate in force (X = 100203): the fee is the rest.
+    { kind: 'liquidation', market: 50, block: 400, log_index: 0, pnl: -100n, funding: 3n, amount: -100300n, flags: 1, fee: 20041n },
+    { kind: 'liquidation', market: 50, block: 600, log_index: 0, pnl: -100n, funding: 3n, amount: -100300n, flags: 1, fee: 30061n },
+    { kind: 'liquidation', market: 1, block: 600, log_index: 0, pnl: -100n, funding: 3n, amount: -100300n, flags: 1, fee: 20041n }
   ];
   for (const row of rows) {
     const want = rowRevenue(row, p.at(row.market, row.block, row.log_index));

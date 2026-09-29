@@ -26,9 +26,6 @@ export const REALIZING = "('increase','decrease','close','invert','liquidation',
 export const FILLS = "('maker_fill','taker_fill')";
 export const REDUCING = "('decrease','close')";
 export const ACCOUNT_TRADES = `(kind IN ${USER} OR (kind = 'liquidation' AND role = 'taker'))`;
-// Liquidations executed off the book (flag ON_BOOK = 0, schema.js): split
-// like the others, but no such case was seen to check the rule on.
-export const OFF_BOOK = "(kind = 'liquidation' AND bitAnd(flags, 1) = 0)";
 
 // Per-row revenue split in SQL, the same arithmetic as revenue.js. `r` holds
 // the rates in force as SQL (feeIns, liqIns, liqUser). The liquidation margin
@@ -43,6 +40,14 @@ export const revenueSql = (r = DEFAULT_RATES_SQL) => {
     liqProt: `${LIQ_MARGIN} - intDiv(${LIQ_MARGIN} * ${r.liqUser}, 100000) - ${liqIns}`
   };
 };
+// The liquidation split is verified where the book filled the liquidation and
+// the trader was paid floor(X * user), so the stored fee is the rest of X:
+// full and partial liquidations alike. Off the book (buy to liquidate, where a
+// buyer takes a share) and partial ones that add the trader's share to the
+// position (nothing paid, the fee is all of X) follow other rules: no split,
+// counted apart with their fee.
+export const liqSplit = (r = DEFAULT_RATES_SQL) => `(kind = 'liquidation' AND bitAnd(flags, 1) = 1 AND ${LIQ_MARGIN} > 0 AND fee = ${LIQ_MARGIN} - intDiv(${LIQ_MARGIN} * ${r.liqUser}, 100000))`;
+export const liqUnsplit = (r = DEFAULT_RATES_SQL) => `(kind = 'liquidation' AND fee > 0 AND NOT ${liqSplit(r)})`;
 
 // [column, raw expression over ev, merge expression over rollup rows]
 export const marketDefs = (r = DEFAULT_RATES_SQL) => { const s = revenueSql(r); return [
@@ -56,9 +61,9 @@ export const marketDefs = (r = DEFAULT_RATES_SQL) => { const s = revenueSql(r); 
   ['prot_fees', "sumIf(prot_fee, kind IN ('open','increase','invert'))", 'sum(prot_fees)'],
   ['reduce_ins_fees', `sumIf(${s.reduceIns}, kind IN ${REDUCING})`, 'sum(reduce_ins_fees)'],
   ['reduce_prot_fees', `sumIf(fee - ${s.reduceIns}, kind IN ${REDUCING})`, 'sum(reduce_prot_fees)'],
-  ['liq_ins_fees', `sumIf(${s.liqIns}, kind = 'liquidation')`, 'sum(liq_ins_fees)'],
-  ['liq_prot_fees', `sumIf(${s.liqProt}, kind = 'liquidation')`, 'sum(liq_prot_fees)'],
-  ['liq_unsplit', `countIf(${OFF_BOOK})`, 'sum(liq_unsplit)'],
+  ['liq_ins_fees', `sumIf(${s.liqIns}, ${liqSplit(r)})`, 'sum(liq_ins_fees)'],
+  ['liq_prot_fees', `sumIf(${s.liqProt}, ${liqSplit(r)})`, 'sum(liq_prot_fees)'],
+  ['liq_unsplit', `countIf(${liqUnsplit(r)})`, 'sum(liq_unsplit)'],
   ['taker_buy', `sumIf(notional, kind IN ${USER} AND role = 'taker' AND buy = 1)`, 'sum(taker_buy)'],
   ['taker_sell', `sumIf(notional, kind IN ${USER} AND role = 'taker' AND buy = 0)`, 'sum(taker_sell)'],
   ['trades', `countIf(kind IN ${USER})`, 'sum(trades)'],

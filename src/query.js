@@ -2,7 +2,7 @@
 // rolled up (read from agg_* tables) and everything else (read from raw
 // events with the same expressions), so results are exact at any window
 // edge and never wait for a rollup.
-import { MARKET, marketDefs, PROTOCOL, ACCOUNT, USER, ACCOUNT_TRADES, OFF_BOOK, merged, columns, raw, SQL_SETTINGS } from './aggregates.js';
+import { MARKET, marketDefs, PROTOCOL, ACCOUNT, USER, ACCOUNT_TRADES, liqUnsplit, merged, columns, raw, SQL_SETTINGS } from './aggregates.js';
 import { BALANCE_KINDS } from './revenue.js';
 
 const HOUR = 3600;
@@ -213,11 +213,12 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
     if (!parts.length) return Object.fromEntries(REVENUE_SUMS.map(c => [c, '0']));
     return (await q(`SELECT ${merged(defs)} FROM (${parts.join(' UNION ALL ')})`))[0];
   }
-  // Liquidations off the book (split applied, the rule inferred: none seen
-  // yet) with the fees they charged, and buy-to-liquidate settlements (no
-  // rule known, no revenue), up to one block.
+  // Liquidations without a verified split (off the book, or the trader's
+  // share added to the position) with the fees they kept, and buy-to-liquidate
+  // settlements (no rule known, no revenue), up to one block.
   async function unsplitAtBlock(block) {
-    return (await q(`SELECT countIf(${OFF_BOOK}) AS liquidations, sumIf(fee, ${OFF_BOOK}) AS fees, countIf(kind = 'btl') AS btl FROM ev WHERE kind IN ('liquidation', 'btl') AND block <= ${BigInt(block).toString()}`))[0];
+    const u = liqUnsplit(rates?.sql());
+    return (await q(`SELECT countIf(${u}) AS liquidations, sumIf(fee, ${u}) AS fees, countIf(kind = 'btl') AS btl FROM ev WHERE kind IN ('liquidation', 'btl') AND block <= ${BigInt(block).toString()}`))[0];
   }
 
 

@@ -77,7 +77,7 @@ export function liquidationSplit(x, { liqIns = DEFAULT_RATES.liqIns, liqUser = D
 // The margin a stored liquidation row leaves: decode.js keeps deltaPnl as pnl
 // and posAmount as amount, and past bankruptcy stores pnl so that this is 0.
 export const liquidationMargin = row => { const x = BigInt(row.pnl) + BigInt(row.funding) - BigInt(row.amount); return x > 0n ? x : 0n; };
-// Executed on the book (FLAG.ON_BOOK); off the book the split is inferred (aggregates.OFF_BOOK).
+// Executed on the book (FLAG.ON_BOOK).
 export const onBook = row => (Number(row.flags) & 1) === 1;
 
 // Revenue of one stored ev row: { source, ins, prot }, or null for rows that carry none.
@@ -86,8 +86,11 @@ export function rowRevenue(row, rates = DEFAULT_RATES) {
     case 'open': case 'increase': case 'invert': return { source: 'opening', ins: BigInt(row.ins_fee), prot: BigInt(row.prot_fee) };
     case 'decrease': case 'close': return { source: 'reducing', ...feeSplit(BigInt(row.fee), BigInt(row.builder_fee), rates.feeIns) };
     case 'liquidation': {
-      const { ins, prot } = liquidationSplit(liquidationMargin(row), rates);
-      return onBook(row) ? { source: 'liquidation', ins, prot } : { source: 'liquidation', ins, prot, offBook: true };
+      // Verified where the book filled it and the trader was paid floor(X * user):
+      // the stored fee is then the rest of X (aggregates.liqSplit).
+      const x = liquidationMargin(row), split = liquidationSplit(x, rates);
+      if (onBook(row) && x > 0n && BigInt(row.fee) === x - split.user) return { source: 'liquidation', ins: split.ins, prot: split.prot };
+      return { source: 'liquidation', ins: 0n, prot: 0n, ...(BigInt(row.fee) > 0n ? { unsplit: true } : {}) };
     }
     default: return null;
   }

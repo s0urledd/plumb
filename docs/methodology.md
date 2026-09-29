@@ -225,7 +225,16 @@ from 23 September 15:20 UTC; 15,000 was checked from 25 September 12:03 UTC.
 Liquidations before a market's first indexed `LiquidationParamsUpdated` use
 10,000 / 80,000, verified from 25 September only.
 
-**Partial liquidations** follow the same split. Example, block 97,375,221:
+**Which liquidations are split.** The split applies to liquidations filled
+on the book where the trader was paid ⌊X × user⌋ as `accAmountCNS` (the
+stored fee is then exactly the rest of X), full or partial. The contract's
+own notes describe two other cases with other rules, so Plumb splits neither
+and counts them apart (`unverified`, with the fee they kept): liquidations
+off the book (`buyLiquidations`, where a buyer also takes a share) and
+partial liquidations that add the trader's share to the remaining position
+instead of paying it (`accAmountCNS` = 0).
+
+**Partial liquidations** that pay the trader follow the same split. Example, block 97,375,221:
 perp 20, account 1767, 74,906 lots liquidated on the book and 9,628 left;
 X = $6,723.071842, `accAmountCNS` = ⌊0.8 X⌋ exactly, and the protocol
 balance rose by X − ⌊0.8 X⌋ − ⌊0.1 X⌋ = $672.307185 (plus the block's
@@ -251,19 +260,21 @@ inside the protocol share were $105.65
 (`docs/evidence/protocol-revenue-2026-09-28.json`; block ranges, so a window
 by block time can differ by the trades of its edge seconds).
 
-**Not verified**, because none occurred in the checks, so Plumb assumes no
-rule for them: bankrupt liquidations (X ≤ 0) count as no revenue;
-liquidations off the book (`onOrderBook` = false) get the same split but are
-counted apart as `unsplit_liquidations` ("off the book: split applied, rule
-inferred"; none was seen yet); deleverages and buy-to-liquidate settlements
-(the contract has a separate split for these) count as no revenue. What the
-payouts are for is not stated on-chain.
+**Not verified**, so Plumb assumes no rule for them: bankrupt liquidations
+(X ≤ 0) count as no revenue (on the book they cannot happen: a fill past the
+bankruptcy price reverts); liquidations off the book and partial ones that
+add the trader's share to the position get no split and are counted apart
+as `unsplit_liquidations`; deleverages and buy-to-liquidate settlements
+count as no revenue (the SDK treats liquidation, deleverage, force close and
+unwind as uncharged). What the payouts are for is not stated on-chain; the
+docs say rebates and referral shares are paid off-chain every two weeks.
 
 **History and rollups.** The split is derived per stored row whenever
 windows and hourly rollups are summed, so no event was read from the chain
 again. Rollup version 3 added the reducing-fee split and the liquidation
 shares as new columns (`ADD COLUMN IF NOT EXISTS … DEFAULT 0`); version 4
-splits partial liquidations too and counts only off-book ones as unsplit. At
+splits every book liquidation that paid the trader, partial ones included,
+and counts the others as unsplit. At
 start, the hours of each UTC day rolled at version 3 with no liquidation are
 carried over unchanged, and every other day is rolled again from the stored
 events (whole days, so the hours left to roll form few ranges); both steps
@@ -330,9 +341,10 @@ appears can be found by bisection; that is how the residue transfers and
 the partial-liquidation shares were found (before them, the rebuilt balance
 was $37,524.01 below the contract). The remaining unverified cases are
 liquidation shares before the rates were known (liquidations before a
-market's first indexed rate change use 10,000 / 80,000), off-book
-liquidations and buy-to-liquidate settlements (listed under `unverified`),
-and the three transfers never observed.
+market's first indexed rate change use 10,000 / 80,000), the liquidations
+listed under `unverified` (off the book, or the trader's share added to the
+position) and buy-to-liquidate settlements, and the three transfers never
+observed.
 
 ### Funding
 
