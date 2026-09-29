@@ -178,10 +178,10 @@ export function mount(el, { params, query, setQuery }) {
       { key: 'a', label: 'Account', render: r => addr(r.address, r.account_id) },
       { key: 's', label: 'Side', render: r => sideTag(r.side) },
       { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
-      { key: 'e', label: 'Entry', n: true, render: r => price(r.entry_price) },
-      { key: 'l', label: 'Leverage', n: true, render: r => (r.leverage ? `${Number(r.leverage).toFixed(1)}x` : '—') },
-      { key: 'u', label: 'uPnL', n: true, render: r => pnl(r.pnl) },
-      { key: 'q', label: 'Liq. price', n: true, render: r => price(r.liquidation_price) },
+      { key: 'e', label: 'Entry', phone: false, n: true, render: r => price(r.entry_price) },
+      { key: 'l', label: 'Leverage', phone: false, n: true, render: r => (r.leverage ? `${Number(r.leverage).toFixed(1)}x` : '—') },
+      { key: 'u', label: 'uPnL', phone: false, n: true, render: r => pnl(r.pnl) },
+      { key: 'q', label: 'Liq. price', phone: false, n: true, render: r => price(r.liquidation_price) },
       { key: 'd', label: 'To liq.', n: true, render: r => (r.liquidation_distance_pct === null ? '—' : `<span class="${r.liquidation_distance_pct < 5 ? 'neg' : r.liquidation_distance_pct < 15 ? 'warn-text' : 'muted'}">${pct(r.liquidation_distance_pct, { digits: 1 })}</span>`) }
     ], rows: shown, rowAttrs: r => `class="link" data-href="/wallet/${esc(r.address || r.account_id)}"` });
   }
@@ -319,9 +319,9 @@ export function mount(el, { params, query, setQuery }) {
     $('trades').innerHTML = table({ id: 't', compact: true, emptyText: closed() ? CLOSED : 'No recent trades', columns: [
       { key: 't', label: 'Time', render: r => `<span class="muted num">${timeOnly(r.ts)}</span>` },
       { key: 's', label: 'Action', render: tradeAction },
-      { key: 'p', label: 'Price', n: true, render: r => price(r.price) },
+      { key: 'p', label: 'Price', phone: false, n: true, render: r => price(r.price) },
       { key: 'v', label: 'Notional', n: true, render: r => usd(r.notional) },
-      { key: 'a', label: 'Trader', render: r => addr(r.address, r.account, { star: false }) }
+      { key: 'a', label: 'Trader', phone: false, render: r => addr(r.address, r.account, { star: false }) }
     ], rows: tape.slice(0, 60), rowAttrs: r => `class="${r.fresh ? 'flash' : ''}"` });
   }
   const off = stream.on('trades', rows => { const mine = rows.filter(r => r.market === id); if (!mine.length) return; tape = [...mine.reverse().map(r => ({ ...r, fresh: true })), ...tape].slice(0, 60); renderTrades(tape); tape.forEach(r => { r.fresh = false; }); });

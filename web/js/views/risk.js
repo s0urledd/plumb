@@ -63,16 +63,16 @@ export function mount(el, { query, setQuery }) {
     $('table').innerHTML = table({ id: 'risk', columns: [
       { key: 'm', label: 'Market', render: r => mktLink(r.id, r.symbol) },
       { key: 'oi', label: 'Notional', n: true, render: r => usd(r.open_interest.total_notional) },
-      { key: 'pos', label: 'Positions', n: true, render: r => `${int(r.positions.count)}<div class="sub">${int(r.positions.long)}L · ${int(r.positions.short)}S</div>` },
-      { key: 'a5', label: 'At risk 5%', n: true, render: r => usd(r.risk.notional_at_5pct) },
+      { key: 'pos', label: 'Positions', phone: false, n: true, render: r => `${int(r.positions.count)}<div class="sub">${int(r.positions.long)}L · ${int(r.positions.short)}S</div>` },
+      { key: 'a5', label: 'At risk 5%', phone: false, n: true, render: r => usd(r.risk.notional_at_5pct) },
       { key: 'a10', label: 'At risk 10%', n: true, render: r => usd(r.risk.notional_at_10pct) },
       { key: 'sf', label: 'Shortfall 10%', n: true, render: r => (num(r.risk.shortfall_at_10pct) > 0 ? `<span class="neg">${usd(r.risk.shortfall_at_10pct)}</span>` : '<span class="faint">$0</span>') },
-      { key: 'ins', label: 'Insurance', n: true, render: r => usd(r.insurance.balance) },
-      { key: 'cov', label: 'Insurance / shortfall', n: true, tip: 'The market’s insurance fund as a multiple of its shortfall after a 10% move', render: r => (r.risk.insurance_coverage_at_10pct === null ? '<span class="faint">no shortfall</span>' : times(r.risk.insurance_coverage_at_10pct)) },
+      { key: 'ins', label: 'Insurance', phone: false, n: true, render: r => usd(r.insurance.balance) },
+      { key: 'cov', label: 'Insurance / shortfall', phone: false, n: true, tip: 'The market’s insurance fund as a multiple of its shortfall after a 10% move', render: r => (r.risk.insurance_coverage_at_10pct === null ? '<span class="faint">no shortfall</span>' : times(r.risk.insurance_coverage_at_10pct)) },
       // The weaker side, named: the stress test above shows one side at a time.
-      { key: 'book', label: 'Book cover 10%', n: true, tip: 'Order-book depth as a share of what a 10% move would liquidate, on the weaker side', render: r => { if (r.book_stale) return '<span class="faint" title="The last order-book read is too old to use">stale</span>'; if (!r.liquidity) return '<span class="faint" title="No order-book read for this market yet">not read</span>'; const c = r.liquidity.cover_at_10pct; if (c?.min_pct === null || c?.min_pct === undefined) return '<span class="faint" title="No position would reach liquidation in a 10% move">nothing to absorb</span>'; const weak = c.short_pct === c.min_pct ? 'shorts, +10%' : 'longs, −10%'; return `${cover(c.min_pct, c.complete)}<div class="sub" title="Longs in a fall or shorts in a rise, whichever the book covers less">${weak}</div>`; } },
-      { key: 'top', label: 'Top 5 share', n: true, render: r => pct(r.concentration.top5_pct, { digits: 0 }) },
-      { key: 'mm', label: 'Maint. margin', n: true, render: r => (r.margin.maintenance_margin_pct ? pct(r.margin.maintenance_margin_pct, { digits: 2 }) : '—') }
+      { key: 'book', label: 'Book cover 10%', phone: false, n: true, tip: 'Order-book depth as a share of what a 10% move would liquidate, on the weaker side', render: r => { if (r.book_stale) return '<span class="faint" title="The last order-book read is too old to use">stale</span>'; if (!r.liquidity) return '<span class="faint" title="No order-book read for this market yet">not read</span>'; const c = r.liquidity.cover_at_10pct; if (c?.min_pct === null || c?.min_pct === undefined) return '<span class="faint" title="No position would reach liquidation in a 10% move">nothing to absorb</span>'; const weak = c.short_pct === c.min_pct ? 'shorts, +10%' : 'longs, −10%'; return `${cover(c.min_pct, c.complete)}<div class="sub" title="Longs in a fall or shorts in a rise, whichever the book covers less">${weak}</div>`; } },
+      { key: 'top', label: 'Top 5 share', phone: false, n: true, render: r => pct(r.concentration.top5_pct, { digits: 0 }) },
+      { key: 'mm', label: 'Maint. margin', phone: false, n: true, render: r => (r.margin.maintenance_margin_pct ? pct(r.margin.maintenance_margin_pct, { digits: 2 }) : '—') }
     ], rows: markets, rowAttrs: r => `class="link" data-action="pick" data-id="${r.id}"` });
     await Promise.all([ladder(), stress()]);
   }
@@ -125,10 +125,10 @@ export function mount(el, { query, setQuery }) {
       { key: 'a', label: 'Trader', render: p => addr(p.address, p.account_id) },
       { key: 's', label: 'Side', render: p => sideTag(p.side) },
       { key: 'n', label: 'Notional', n: true, render: p => usd(p.notional) },
-      { key: 'l', label: 'Leverage', n: true, render: p => (p.leverage ? `${p.leverage.toFixed(1)}x` : '—') },
-      { key: 'lp', label: 'Liq. price', n: true, render: p => price(p.liquidation_price) },
+      { key: 'l', label: 'Leverage', phone: false, n: true, render: p => (p.leverage ? `${p.leverage.toFixed(1)}x` : '—') },
+      { key: 'lp', label: 'Liq. price', phone: false, n: true, render: p => price(p.liquidation_price) },
       { key: 'd', label: 'Liq. distance', n: true, render: p => pct(p.liquidation_distance_pct, { digits: 1 }) },
-      { key: 'u', label: 'uPnL', n: true, render: p => pnl(p.pnl) }
+      { key: 'u', label: 'uPnL', phone: false, n: true, render: p => pnl(p.pnl) }
     ], rows: hits }) : empty('No position reaches its liquidation price at this move');
   }
   $('mkt').addEventListener('change', e => { marketId = Number(e.target.value); setQuery({ market: marketId }); });

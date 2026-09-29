@@ -778,3 +778,20 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .alerts-copy h2 { font-size: 24px; font-weight: 400; letter-spacing: -0.02em; }
 .alerts-f b { font-weight: 500; }
 /* ========== end page: risk ========== */
+
+/* A second line shown only on phones, where its own column hides. */
+.sub-sm { display: none; }
+
+/* Phones: tables keep the columns that carry them (the rest are marked
+   phone: false), cells pad less, and the copy and star buttons beside an
+   address give way; the wallet page has both. The year leaves long dates. */
+@media (max-width: 640px) {
+  .t .hide-sm { display: none; }
+  .t th, .t td { padding-left: 8px; padding-right: 8px; }
+  .t th:first-child, .t td:first-child { padding-left: 16px; }
+  .t th:last-child, .t td:last-child { padding-right: 16px; }
+  .t td .addr .icon-btn { display: none; }
+  .t .yr { display: none; }
+  .t .sub-sm { display: block; font-size: 11.5px; }
+}
+@media (max-width: 380px) { .t th, .t td { padding-left: 6px; padding-right: 6px; } }

@@ -44,17 +44,17 @@ export function mount(el, { query, setQuery }) {
     { key: 'rank', label: '#', render: r => `<span class="rank">${r.rank}</span>` },
     { key: 'addr', label: 'Trader', render: r => { const t = styleTags(r); return `${addr(r.address, r.account)}${t ? `<div class="sub tags">${t}</div>` : ''}`; } },
     { key: 'pnl', label: 'Net PnL', tip: 'Realized PnL, funding included, minus fees', n: true, render: r => pnl(r.pnl) },
-    { key: 'roi', label: 'PnL / volume', n: true, render: r => bpsCell(r.roi_on_volume_bps) }, // in bps, as the KPI above and the wallet page
+    { key: 'roi', label: 'PnL / volume', phone: false, n: true, render: r => bpsCell(r.roi_on_volume_bps) }, // in bps, as the KPI above and the wallet page
     { key: 'volume', label: 'Volume', n: true, render: r => usd(r.volume) },
-    { key: 'trades', label: 'Trades', n: true, render: r => int(r.trades) },
-    { key: 'maker', label: 'Maker share', n: true, render: r => pct(r.maker_share_pct, { digits: 0 }) },
-    { key: 'fees', label: 'Fees', n: true, render: r => usd(r.fees) },
-    { key: 'liq', label: 'Liquidated', n: true, render: r => (num(r.liquidated) > 0 ? `<span class="neg">${usd(r.liquidated)}</span>` : '<span class="faint">—</span>') },
+    { key: 'trades', label: 'Trades', phone: false, n: true, render: r => int(r.trades) },
+    { key: 'maker', label: 'Maker share', phone: false, n: true, render: r => pct(r.maker_share_pct, { digits: 0 }) },
+    { key: 'fees', label: 'Fees', phone: false, n: true, render: r => usd(r.fees) },
+    { key: 'liq', label: 'Liquidated', phone: false, n: true, render: r => (num(r.liquidated) > 0 ? `<span class="neg">${usd(r.liquidated)}</span>` : '<span class="faint">—</span>') },
     { key: 'dep', flow: true, label: 'Deposits', n: true, render: r => (num(r.deposits) > 0 ? usd(r.deposits) : '<span class="faint">—</span>') },
     { key: 'wd', flow: true, label: 'Withdrawals', n: true, render: r => (num(r.withdrawals) > 0 ? usd(r.withdrawals) : '<span class="faint">—</span>') },
     { key: 'net', flow: true, label: 'Net flow', n: true, render: r => { const v = (num(r.deposits) ?? 0) - (num(r.withdrawals) ?? 0); return v ? pnl(v) : '<span class="faint">—</span>'; } },
-    { key: 'open', label: 'Open now', n: true, render: r => (r.open_positions ? `${usd(r.open_notional)}<div class="sub">${r.open_positions} pos · uPnL ${usd(r.unrealized_pnl, { sign: true })}</div>` : '<span class="faint">—</span>') },
-    { key: 'markets', label: 'Markets', render: r => `<span class="muted">${esc(r.markets.slice(0, 4).join(' · '))}${r.markets.length > 4 ? ` +${r.markets.length - 4}` : ''}</span>` }
+    { key: 'open', label: 'Open now', phone: false, n: true, render: r => (r.open_positions ? `${usd(r.open_notional)}<div class="sub">${r.open_positions} pos · uPnL ${usd(r.unrealized_pnl, { sign: true })}</div>` : '<span class="faint">—</span>') },
+    { key: 'markets', label: 'Markets', phone: false, render: r => `<span class="muted">${esc(r.markets.slice(0, 4).join(' · '))}${r.markets.length > 4 ? ` +${r.markets.length - 4}` : ''}</span>` }
   ];
   let seq = 0;
   async function load() {
@@ -105,7 +105,7 @@ export function mount(el, { query, setQuery }) {
     }
     return out;
   }
-  const moveAction = r => { const side = r.side === 'long' || r.side === 'short' ? r.side : ''; const opening = ['open', 'increase'].includes(r.kind) || (r.kind === 'invert'); const cls = r.kind === 'liquidation' ? 'neg' : (side === 'long') === opening ? 'pos' : 'neg'; return `<span class="${cls}">${MOVE_VERBS[r.kind] ?? r.kind} ${esc(side)}</span>${r.count > 1 ? ` <span class="tag" title="${r.count} fills over ${Math.max(1, Math.round((r.ts - r.oldest) / 60))} min">×${r.count}</span>` : ''}`; };
+  const moveAction = r => { const side = r.side === 'long' || r.side === 'short' ? r.side : ''; const opening = ['open', 'increase'].includes(r.kind) || (r.kind === 'invert'); const cls = r.kind === 'liquidation' ? 'neg' : (side === 'long') === opening ? 'pos' : 'neg'; return `<span class="${cls}">${MOVE_VERBS[r.kind] ?? r.kind} ${esc(side)}</span>${r.count > 1 ? ` <span class="tag hide-sm" title="${r.count} fills over ${Math.max(1, Math.round((r.ts - r.oldest) / 60))} min">×${r.count}</span>` : ''}`; };
   // The API returns at most this many raw fills; a busy leader can fill them all.
   const MOVE_FILLS = 500;
   async function loadMoves() {
@@ -118,13 +118,13 @@ export function mount(el, { query, setQuery }) {
     $('sm-desc').textContent = `Latest position changes of the ${int(m.leaders)} most profitable directional traders by net PnL (${wl}), ${span}${m.excluded ? ` · ${int(m.excluded)} market-making and high-frequency accounts (by ${wl} activity) left out` : ''}`;
     $('moves').innerHTML = table({ id: 'moves', compact: true, emptyText: 'No moves by these traders in the last 7 days', columns: [
       { key: 't', label: 'When', render: r => `<span class="muted num" title="${esc(new Date(r.ts * 1000).toISOString().replace('T', ' ').slice(0, 19))} UTC">${ago(r.ts)}</span>` },
-      { key: 'a', label: 'Trader', render: r => `<span class="sm-trader"><span class="rank-pill" title="Rank by net PnL among all traders, ${esc(wl)}">#${int(r.leader.rank)}</span>${addr(r.address, r.account)}</span>` },
+      { key: 'a', label: 'Trader', phone: false, render: r => `<span class="sm-trader"><span class="rank-pill" title="Rank by net PnL among all traders, ${esc(wl)}">#${int(r.leader.rank)}</span>${addr(r.address, r.account)}</span>` },
       { key: 'x', label: 'Action', render: moveAction },
       { key: 'm', label: 'Market', render: r => mktLink(r.market, r.symbol) },
       { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
-      { key: 'p', label: 'Price', n: true, render: r => price(r.count > 1 && r.size ? r.notional / r.size : r.price) },
-      { key: 'r', label: 'Realized', n: true, render: r => (['decrease', 'close', 'invert', 'liquidation', 'deleverage'].includes(r.kind) && num(r.pnl) ? pnl(r.pnl) : '<span class="faint">—</span>') },
-      { key: 'l', label: `Net PnL · ${wl}`, n: true, render: r => pnl(r.leader.pnl) }
+      { key: 'p', label: 'Price', phone: false, n: true, render: r => price(r.count > 1 && r.size ? r.notional / r.size : r.price) },
+      { key: 'r', label: 'Realized', phone: false, n: true, render: r => (['decrease', 'close', 'invert', 'liquidation', 'deleverage'].includes(r.kind) && num(r.pnl) ? pnl(r.pnl) : '<span class="faint">—</span>') },
+      { key: 'l', label: `Net PnL · ${wl}`, phone: false, n: true, render: r => pnl(r.leader.pnl) }
     ], rows: foldMoves(m.rows).slice(0, 30), rowAttrs: r => `class="link" data-href="/wallet/${esc(r.address || r.account)}"` });
   }
 
@@ -186,8 +186,8 @@ export function mount(el, { query, setQuery }) {
       { key: 'a', label: 'Wallet', render: a => addr(a.address, a.account) },
       { key: 'n', label: 'Open notional', n: true, render: a => usd(a.notional) },
       { key: 'd', label: 'Net exposure', n: true, render: a => netSide(a.net) },
-      { key: 'u', label: 'uPnL', n: true, render: a => pnl(a.upnl) },
-      { key: 'p', label: 'Net PnL (history)', n: true, render: a => (a.pnl === null ? '<span class="faint">—</span>' : pnl(a.pnl)) }
+      { key: 'u', label: 'uPnL', phone: false, n: true, render: a => pnl(a.upnl) },
+      { key: 'p', label: 'Net PnL (history)', phone: false, n: true, render: a => (a.pnl === null ? '<span class="faint">—</span>' : pnl(a.pnl)) }
     ], rows: g.top, rowAttrs: a => `class="link" data-href="/wallet/${esc(a.address || a.account)}"` })}` : '';
   }
   const loadCohorts = () => get('cohorts', { maxAge: 5000 }).then(c => { if (!alive) return; cohorts = c; renderCohorts(); }).catch(() => { if (!cohorts) $('cohorts').innerHTML = '<div class="empty-state">Live positions unavailable</div>'; });
