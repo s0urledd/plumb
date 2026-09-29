@@ -118,6 +118,7 @@ Judging criteria:
 | Windows are exact sums, and partial windows say so | `meta.coverage` on every windowed response; `docs/methodology.md` |
 | Trade prices, sizes and fees come from the settling fills | Full history: 33,557,868 / 33,557,868 position events linked; 18,630,950 / 18,630,950 fee splits equal |
 | Event history reproduces the contract | 67 million events since launch give open interest equal to the contract for all 11 markets, and TVL equal to the micro-dollar (`docs/evidence/integrity-2026-09-23.json`, live at `/api/v1/integrity`) |
+| Protocol revenue and the protocol balance reproduce the contract | Fee and liquidation shares, payouts, deposits, withdrawals and every other transfer since launch give the contract's protocol balance to the micro-dollar (`docs/evidence/protocol-balance-2026-09-29.json`, live at `/api/v1/integrity`) |
 | Live positions match the contract | Reconciliation every poll; independent rescan hourly (`/api/v1/validation`) |
 | PnL and funding formulas match the contract | `docs/validation-gate.md` (557 / 557, 208 / 208) |
 | 24 h volume matches Perpl's own figure | Within 0.001 % on 2026-09-21, 0.035 % on 2026-09-23 and 0.049 % on 2026-09-28 (`docs/methodology.md`) |

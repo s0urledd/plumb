@@ -1,0 +1,81 @@
+{
+  "source": "https://plumb.huginn.tech/api/v1/integrity",
+  "fetched_at": "2026-09-29T13:12:04.600Z",
+  "method": "Running sums of indexed events up to the contract snapshot block compared with the contract counters read at that same block.",
+  "block": "109044810",
+  "protocol_balance": {
+    "status": "match",
+    "block": "109044810",
+    "events": "241922.233166",
+    "contract": "241922.233166",
+    "difference": "0.000000",
+    "revenue": {
+      "opening_fees": "502003.028173",
+      "reducing_fees": "8386.891446",
+      "liquidations": "43228.559460"
+    },
+    "moves": {
+      "protocol_deposit": {
+        "amount": "130250.000000",
+        "count": 4,
+        "sign": 1
+      },
+      "protocol_withdrawal": {
+        "amount": "248867.777932",
+        "count": 15,
+        "sign": -1
+      },
+      "payout": {
+        "amount": "376324.413173",
+        "count": 5034,
+        "sign": -1
+      },
+      "sweep": {
+        "amount": "152663.746710",
+        "count": 2,
+        "sign": 1
+      },
+      "insurance_to_protocol": {
+        "amount": "0.000000",
+        "count": 0,
+        "sign": 1
+      },
+      "positions_to_protocol": {
+        "amount": "0.000000",
+        "count": 0,
+        "sign": 1
+      },
+      "recycle_fee": {
+        "amount": "388.600000",
+        "count": 3886,
+        "sign": 1
+      },
+      "protocol_to_market": {
+        "amount": "3100.000000",
+        "count": 4,
+        "sign": -1
+      },
+      "protocol_to_recycle": {
+        "amount": "0.000000",
+        "count": 0,
+        "sign": -1
+      },
+      "residue_to_protocol": {
+        "amount": "33293.598482",
+        "count": 4,
+        "sign": 1
+      }
+    },
+    "unverified": {
+      "liquidations": 0,
+      "liquidation_fees": "0.000000",
+      "buy_to_liquidate": 0
+    },
+    "checked_from": 1790337780
+  },
+  "tvl": {
+    "events": "3957462.271862",
+    "contract": "3957462.271862",
+    "ok": true
+  }
+}
