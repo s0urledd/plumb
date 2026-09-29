@@ -62,10 +62,12 @@ event stream, a trade shows on the tape while its block is still being
 finalized.
 
 Plumb's indexer reads Perpl's raw events from Monad over finalized blocks:
-fills, position changes, funding, liquidations, deposits and withdrawals. It
-decodes them, links every position change to the fill
+fills, position changes, funding, liquidations, deposits, withdrawals and
+protocol transfers. It decodes them, links every position change to the fill
 that settled it and stores them in ClickHouse with hourly rollups: more than
-67 million events since launch. It follows new blocks as they finalize.
+67 million events since launch. It follows new blocks as they finalize, and
+when a new event type is added it reads that type back over the whole
+history.
 
 Next to the index:
 - contract state (`eth_call` through Multicall3, at a pinned block): every
@@ -77,9 +79,11 @@ Next to the index:
 The market share section uses DefiLlama's figures and is labeled as such.
 
 Accuracy:
-- open interest and TVL rebuilt from every event since launch are compared
-  with the contract's own counters (`/api/v1/integrity` and the
-  [status page](https://plumb.huginn.tech/#/status));
+- open interest, TVL and the protocol balance rebuilt from every event since
+  launch are compared with the contract's own figures (`/api/v1/integrity`
+  and the [status page](https://plumb.huginn.tech/#/status)); the protocol
+  balance matched to the micro-dollar on 29 September 2026
+  ([evidence](docs/evidence/protocol-balance-2026-09-29.json));
 - every trade uses the price, size and fee of the fill that settled it;
 - only finalized blocks count, and a window is marked partial until its
   history is complete;
