@@ -288,7 +288,8 @@ test('protocol and series report protocol and insurance fees with reducing fills
   const queries = {
     marketTotals: async (from, to, { bucket } = {}) => [bucket ? { ...totals, t: Math.floor(from / bucket) * bucket } : totals],
     protocolTotals: async () => [], traders: async () => [], newTraders: async () => [],
-    cumulativeBefore: async () => ({ oi: new Map(), net: 0n }), lastPricesBefore: async () => new Map(), balanceMoves: async () => []
+    cumulativeBefore: async () => ({ oi: new Map(), net: 0n }), lastPricesBefore: async () => new Map(),
+    balanceMoves: async (from, to, { bucket } = {}) => [{ ...(bucket ? { t: Math.floor(from / bucket) * bucket } : {}), kind: 'payout', total: '7000000', n: '2' }, ...(bucket ? [] : [{ kind: 'sweep', total: '500', n: '1' }])]
   };
   const api = createAnalyticsApi({ ingest, rollups: {}, queries, collector: { state: { block: null, markets: new Map(), exchangeInfo: null, stats: {} }, reader: {} }, now: () => 1790005000000 });
   const want = {
@@ -298,6 +299,8 @@ test('protocol and series report protocol and insurance fees with reducing fills
   };
   const p = await api.protocol(new URLSearchParams('window=24h'));
   const h = p.headline;
+  // Payouts and sweeps are reported on their own, never as revenue.
+  assert.deepEqual([h.protocol_payouts.value, h.payout_count, h.protocol_sweeps], ['7.000000', 2, '0.000500']);
   assert.equal(h.fees.value, '0.001000');
   assert.deepEqual([h.protocol_fees.value, h.insurance_fees.value], ['0.000865', '0.000135'], 'protocol + insurance = fees');
   assert.equal(h.protocol_revenue.value, '0.001867');
