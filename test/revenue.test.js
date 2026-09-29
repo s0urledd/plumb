@@ -192,7 +192,7 @@ test('the market rollup has every aggregate column; an existing table gains the 
   // Amounts are Int64; the unsplit count is a UInt32 like the other counts.
   for (const c of REVENUE_COLUMNS) assert.ok(alter.includes(`ADD COLUMN IF NOT EXISTS ${c} ${c === 'liq_unsplit' ? 'UInt32' : 'Int64'} DEFAULT 0`), c);
   const ran = [];
-  await migrate({ database: 'perpl', exec: async sql => { ran.push(sql); } });
+  await migrate({ database: 'perpl', exec: async sql => { ran.push(sql); }, query: async () => [] });
   assert.ok(ran.indexOf(alter) > ran.indexOf(create), 'the table exists before it is altered');
   assert.ok(ran.every(s => /^(CREATE (DATABASE|TABLE|MATERIALIZED VIEW) IF NOT EXISTS|ALTER TABLE \w+ (ADD COLUMN IF NOT EXISTS [^,]+(, )?)+$)/.test(s)), 'every statement is idempotent');
   for (const c of REVENUE_COLUMNS) assert.ok(rollupStatements().market.includes(` AS ${c}`), `rolled up: ${c}`);
@@ -288,7 +288,7 @@ test('protocol and series report protocol and insurance fees with reducing fills
   const queries = {
     marketTotals: async (from, to, { bucket } = {}) => [bucket ? { ...totals, t: Math.floor(from / bucket) * bucket } : totals],
     protocolTotals: async () => [], traders: async () => [], newTraders: async () => [],
-    cumulativeBefore: async () => ({ oi: new Map(), net: 0n }), lastPricesBefore: async () => new Map()
+    cumulativeBefore: async () => ({ oi: new Map(), net: 0n }), lastPricesBefore: async () => new Map(), balanceMoves: async () => []
   };
   const api = createAnalyticsApi({ ingest, rollups: {}, queries, collector: { state: { block: null, markets: new Map(), exchangeInfo: null, stats: {} }, reader: {} }, now: () => 1790005000000 });
   const want = {
