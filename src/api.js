@@ -369,6 +369,7 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
     ['GET', /^\/api\/v1\/wallets\/(0x[0-9a-fA-F]{40}|[1-9]\d{0,8})\/trades$/, async (match, q) => { const body = await A('walletTrades')(match[1], q); return q.get('format') === 'csv' ? { csv: toCsv(body.rows), filename: `plumb-wallet-${body.account.id}-trades.csv` } : body; }],
     ['GET', /^\/api\/v1\/compare$/, (_, q) => A('compare')(q)],
     ['GET', /^\/api\/v1\/integrity$/, () => A('integrity')()],
+    ['GET', /^\/api\/v1\/integrity\/protocol$/, (_, query) => A('protocolBalanceAt')(query.get('block'))],
     // Risk (contract snapshot).
     ['GET', /^\/api\/v1\/overview$/, () => ({ snapshot: snapshot(), ...overview() }), risk],
     ['GET', /^\/api\/v1\/markets$/, () => ({ snapshot: snapshot(), markets: computeMetrics(state).markets.map(marketSummary) }), risk],

@@ -191,6 +191,11 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
     return q(`SELECT ${bucket ? 'toUnixTimestamp(t) AS t, ' : ''}kind, sum(amount) AS total, count() AS n FROM (SELECT ${t}kind, amount, block, log_index FROM ev WHERE kind IN (${kindList(kinds)}) AND ts >= toDateTime(${int(from)}, 'UTC') AND ts < toDateTime(${int(to)}, 'UTC') ${ONCE}) GROUP BY ${bucket ? 't, kind ORDER BY t' : 'kind'}`);
   }
   // Running totals per kind up to and including one block.
+  // The time of the last indexed event at or before a block (read in key order).
+  async function tsAtBlock(block) {
+    const [r] = await q(`SELECT toUnixTimestamp(ts) AS ts FROM ev WHERE block <= ${BigInt(block).toString()} ORDER BY block DESC, log_index DESC LIMIT 1`);
+    return r ? Number(r.ts) : null;
+  }
   async function balanceMovesAtBlock(block) {
     return q(`SELECT kind, sum(amount) AS total, count() AS n FROM (SELECT kind, amount, block, log_index FROM ev WHERE kind IN (${kindList(BALANCE_KINDS)}) AND block <= ${BigInt(block).toString()} ${ONCE}) GROUP BY kind`);
   }
@@ -317,5 +322,5 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
     return new Map(rows.map(r => [Number(r.account), { address: r.address, created: Number(r.ts) }]));
   }
 
-  return { marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, accountTransfers, balanceMoves, balanceMovesAtBlock, revenueUpTo, unsplitAtBlock, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
+  return { tsAtBlock, marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, accountTransfers, balanceMoves, balanceMovesAtBlock, revenueUpTo, unsplitAtBlock, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
 }

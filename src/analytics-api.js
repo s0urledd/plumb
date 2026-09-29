@@ -647,6 +647,22 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   async function protocolBalanceCheck(block, blockTs, contract) {
     const scan = ingest.topicProgress?.();
     if (!scan?.complete) return { status: 'pending', scanned_pct: scan?.pct ?? null };
+    return balanceAgainst(block, blockTs, contract);
+  }
+  // The same comparison at any indexed block, with the contract read at that
+  // block (node or archive): finds when a difference appeared.
+  async function protocolBalanceAt(key) {
+    if (!/^\d{1,12}$/.test(String(key ?? ''))) throw bad('INVALID_BLOCK');
+    const block = BigInt(key);
+    const top = ingest.coverage.intervals.at(-1)?.to ?? null;
+    if (block < ingest.coverage.intervals[0]?.from || top === null || block > top) throw bad('BLOCK_NOT_INDEXED');
+    const scan = ingest.topicProgress?.();
+    if (!scan?.complete) return { status: 'pending', scanned_pct: scan?.pct ?? null };
+    const [ts, contract] = await Promise.all([queries.tsAtBlock(block), ingest.protocolBalanceAt(block)]);
+    if (ts === null) throw bad('BLOCK_NOT_INDEXED');
+    return balanceAgainst(block, ts, contract);
+  }
+  async function balanceAgainst(block, blockTs, contract) {
     const c = cd();
     const [rev, moveRows, unsplit] = await Promise.all([queries.revenueUpTo(blockTs, block), queries.balanceMovesAtBlock(block), queries.unsplitAtBlock(block)]);
     const revenue = { opening: B(rev.prot_fees), reducing: B(rev.reduce_prot_fees), liquidations: B(rev.liq_prot_fees) };
@@ -701,5 +717,5 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       return { meta: metaOf({ window: 'all', from, to, coverage: coverageOf(from, to) }), block: state.block.number.toString(), ...t };
     });
   }
-  return { addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
+  return { protocolBalanceAt, addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
 }

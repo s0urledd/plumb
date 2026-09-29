@@ -490,6 +490,15 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   }
 
   // Share of the ranges the ingest covered that were read with the added topics.
+  // The contract's protocol balance at a past block: the node while it keeps
+  // that state, then the archives.
+  async function protocolBalanceAt(block) {
+    let last = null;
+    for (const source of [live, ...archives]) {
+      try { return (await source.reader.call('getExchangeInfo', [], BigInt(block)))[1]; } catch (error) { last = error; }
+    }
+    throw last ?? new Error('NO_SOURCE');
+  }
   function topicProgress() {
     const t = status.topics;
     let total = 0n, done = 0n;
@@ -533,5 +542,5 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   }
   function stop() { running = false; stopRequested = true; if (wake) wake(); }
 
-  return { init, start, stop, liveStep, backfill, topicBackfill, readRange, commit, repair, notifyFinalized, on: fn => { listeners.add(fn); return () => listeners.delete(fn); }, coverage, topicCoverage, markets, revenueParams, unitsOf, progress, topicProgress, topicCoveredFrom, status, get collateralDecimals() { return collateralDecimals; }, sources: { live, archives } };
+  return { init, start, stop, liveStep, backfill, topicBackfill, protocolBalanceAt, readRange, commit, repair, notifyFinalized, on: fn => { listeners.add(fn); return () => listeners.delete(fn); }, coverage, topicCoverage, markets, revenueParams, unitsOf, progress, topicProgress, topicCoveredFrom, status, get collateralDecimals() { return collateralDecimals; }, sources: { live, archives } };
 }
