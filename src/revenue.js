@@ -9,25 +9,33 @@
 //     Opening events (open, increase, invert) carry this split themselves;
 //     decrease and close carry none and get it from their linked fill.
 //     Reducing fills are charged only from contract v1.7.5 (block 107,355,313).
-//   * full liquidation on the book: X = deltaPnl + funding - posAmount (the
+//   * liquidation, full or partial: X = deltaPnl + funding - posAmount (the
 //     margin left); user = floor(X * user / 100000) (the event's accAmountCNS),
 //     insurance = floor(X * ins / 100000), protocol = X - user - insurance (it
-//     keeps the rounding dust, so liqAmtPer100K is not read).
+//     keeps the rounding dust, so liqAmtPer100K is not read). Partial ones were
+//     checked on the 98 in the history (e.g. block 97,375,221: X = 6,723.07,
+//     protocol +672.31); off-book ones (onOrderBook = false) get the same
+//     split, not yet seen onchain, and are counted apart.
 //
 // Not verified (none observed), so no rule is assumed: a bankrupt liquidation
-// (X <= 0) counts 0; partial and off-book liquidations count 0 and are
-// reported as unsplit (the contract has a separate buy-to-liquidate split);
-// deleverages and buy-to-liquidate settlements count nothing. Payouts
-// (TransferProtocolToAccount), sweeps (TransferAccountToProtocol) and protocol
-// balance deposits and withdrawals move the balance but are never revenue.
+// (X <= 0) counts 0; deleverages and buy-to-liquidate settlements (the
+// contract has a separate split for these) count nothing. Payouts
+// (TransferProtocolToAccount), sweeps (TransferAccountToProtocol), residue
+// transfers (ResidueTransferred) and protocol balance deposits and
+// withdrawals move the balance but are never revenue.
 
 // The protocol balance (getExchangeInfo protocolBalanceCNS) from launch is
 // revenue (the protocol's shares above) plus these row kinds, each with its
 // sign; builder fees stay inside it. Reproduced with the same zero residual.
-// The last five were never observed: their effect is the one the ABI names.
+// A residue transfer moves a market's position-balance residue in: at the
+// 1 June 2026 upgrade (block 78,474,467) four of them added exactly the
+// protocol balance's rise of 33,293.598482 while the exchange balance stayed.
+// insurance_to_protocol, positions_to_protocol and protocol_to_recycle were
+// never observed: their effect is the one the ABI names.
 export const BALANCE_MOVES = Object.freeze({
   protocol_deposit: 1n, protocol_withdrawal: -1n, payout: -1n, sweep: 1n,
-  insurance_to_protocol: 1n, positions_to_protocol: 1n, recycle_fee: 1n, protocol_to_market: -1n, protocol_to_recycle: -1n
+  insurance_to_protocol: 1n, positions_to_protocol: 1n, recycle_fee: 1n, protocol_to_market: -1n, protocol_to_recycle: -1n,
+  residue_to_protocol: 1n
 });
 export const BALANCE_KINDS = Object.keys(BALANCE_MOVES);
 // `revenue`: { opening, reducing, liquidations } (the protocol's shares);
@@ -69,8 +77,8 @@ export function liquidationSplit(x, { liqIns = DEFAULT_RATES.liqIns, liqUser = D
 // The margin a stored liquidation row leaves: decode.js keeps deltaPnl as pnl
 // and posAmount as amount, and past bankruptcy stores pnl so that this is 0.
 export const liquidationMargin = row => { const x = BigInt(row.pnl) + BigInt(row.funding) - BigInt(row.amount); return x > 0n ? x : 0n; };
-// On the book (FLAG.ON_BOOK) with nothing left: the verified case (aggregates.FULL_ON_BOOK).
-export const fullOnBook = row => (Number(row.flags) & 1) === 1 && BigInt(row.end_lot) === 0n;
+// Executed on the book (FLAG.ON_BOOK); off the book the split is inferred (aggregates.OFF_BOOK).
+export const onBook = row => (Number(row.flags) & 1) === 1;
 
 // Revenue of one stored ev row: { source, ins, prot }, or null for rows that carry none.
 export function rowRevenue(row, rates = DEFAULT_RATES) {
@@ -78,9 +86,8 @@ export function rowRevenue(row, rates = DEFAULT_RATES) {
     case 'open': case 'increase': case 'invert': return { source: 'opening', ins: BigInt(row.ins_fee), prot: BigInt(row.prot_fee) };
     case 'decrease': case 'close': return { source: 'reducing', ...feeSplit(BigInt(row.fee), BigInt(row.builder_fee), rates.feeIns) };
     case 'liquidation': {
-      if (!fullOnBook(row)) return { source: 'liquidation', ins: 0n, prot: 0n, unsplit: true };
       const { ins, prot } = liquidationSplit(liquidationMargin(row), rates);
-      return { source: 'liquidation', ins, prot };
+      return onBook(row) ? { source: 'liquidation', ins, prot } : { source: 'liquidation', ins, prot, offBook: true };
     }
     default: return null;
   }

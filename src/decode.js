@@ -21,7 +21,8 @@
 //     ContractAdded, all kept as parameter rows;
 //   * the protocol balance also moves by transfers that are not revenue:
 //     payouts to accounts, sweeps from accounts, and transfers with a
-//     market's insurance fund or positions and with the recycle balance
+//     market's insurance fund or positions and with the recycle balance, and
+//     a market's position-balance residue moved to it at an upgrade
 //     (BALANCE_EVENTS, one row kind each).
 import { toEventSelector } from 'viem';
 import { eventsAbi, decodeLog, topicsFor } from './abi.js';
@@ -39,14 +40,16 @@ export const PARAM_EVENTS = [
   'LiquidationParamsUpdated', 'FundingClampPctUpdated', 'FundingSumScalingExpUpdated', 'ExchangeHalted', 'UnwindPrepared', 'UnwindInitialized',
   'UnwindContractTrigger', 'UnwindIterationCompleted', 'UnwindCompleted', 'UnwindPreparationCleared', 'UnwindInitializationCleared', 'ContractVersionSet',
   'FeeParamsUpdated'];
-export const BALANCE_EVENTS = ['TransferProtocolToAccount', 'TransferAccountToProtocol', 'TransferPerpInsToProtocol', 'TransferPerpPosToProtocol', 'TransferProtocolToPerp', 'TransferProtocolToRecycleBal', 'RecycleFeeToProtocol'];
-export const TRANSFER_KINDS = ['payout', 'sweep', 'insurance_to_protocol', 'positions_to_protocol', 'protocol_to_market', 'protocol_to_recycle', 'recycle_fee']; // their row kinds
+export const BALANCE_EVENTS = ['TransferProtocolToAccount', 'TransferAccountToProtocol', 'TransferPerpInsToProtocol', 'TransferPerpPosToProtocol', 'TransferProtocolToPerp', 'TransferProtocolToRecycleBal', 'RecycleFeeToProtocol', 'ResidueTransferred'];
+export const TRANSFER_KINDS = ['payout', 'sweep', 'insurance_to_protocol', 'positions_to_protocol', 'protocol_to_market', 'protocol_to_recycle', 'recycle_fee', 'residue_to_protocol']; // their row kinds
 export const INGEST_EVENTS = [...TRADE_EVENTS, ...FORCED_EVENTS, ...FILL_EVENTS, ...FLOW_EVENTS, ...OTHER_EVENTS, ...MARKET_EVENTS, ...PARAM_EVENTS, ...BALANCE_EVENTS];
 // Events added after history was indexed: the topic backfill (ingest.js)
 // reads them alone over the blocks indexed before. The balance transfers,
 // and the rates of FeeParamsUpdated and ContractAdded, whose parameter rows
-// were not stored before either.
-export const TOPIC_SET = { name: 'protocol', events: [...BALANCE_EVENTS, 'FeeParamsUpdated', 'ContractAdded', 'ContractAddedV2'] };
+// were not stored before either. A new name starts the set's coverage empty,
+// so adding an event (ResidueTransferred, in 'protocol-v2') reads the whole
+// history again; rows already stored are skipped.
+export const TOPIC_SET = { name: 'protocol-v2', events: [...BALANCE_EVENTS, 'FeeParamsUpdated', 'ContractAdded', 'ContractAddedV2'] };
 export const topicSetTopics = topicsFor(TOPIC_SET.events);
 
 const STATIC = /^(u?int\d*|bool|address)$/;
@@ -221,6 +224,8 @@ export function rowsFromLogs(logs, { unitsOf, collateralDecimals = 6 } = {}) {
       case 'TransferProtocolToPerp': row = blank(b, 'protocol_to_market'); Object.assign(row, { market: n(a.perpId), amount: a.amountCNS, flags: a.toInsuranceFund ? FLAG.TO_INSURANCE : 0 }); break;
       case 'TransferProtocolToRecycleBal': row = blank(b, 'protocol_to_recycle'); row.amount = a.amountCNS; break;
       case 'RecycleFeeToProtocol': row = blank(b, 'recycle_fee'); Object.assign(row, { market: n(a.perpId), amount: a.recycleFeeCNS, balance: a.recycleBalanceCNS }); break;
+      // A market's position-balance residue moved to the protocol (seen at contract upgrades); balance is the market's position balance after.
+      case 'ResidueTransferred': row = blank(b, 'residue_to_protocol'); Object.assign(row, { market: n(a.perpId), amount: a.residueAmountCNS, balance: a.positionBalanceCNS }); break;
       case 'AccountCreated':
         row = blank(b, 'account'); row.account = n(a.id);
         out.accounts.push({ account: n(a.id), address: String(a.account).toLowerCase(), block: b.block, ts: b.ts, tx: b.tx });

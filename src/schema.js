@@ -17,7 +17,8 @@ export const KINDS = {
   funding: 40,
   btl: 50, collateral_add: 51, collateral_remove: 52, liquidation_credit: 53, insurance_payment: 54,
   // Protocol balance transfers (added later: new values go at the end, see migrate).
-  payout: 60, sweep: 61, insurance_to_protocol: 62, positions_to_protocol: 63, protocol_to_market: 64, protocol_to_recycle: 65, recycle_fee: 66
+  payout: 60, sweep: 61, insurance_to_protocol: 62, positions_to_protocol: 63, protocol_to_market: 64, protocol_to_recycle: 65, recycle_fee: 66,
+  residue_to_protocol: 67
 };
 export const kindEnum = (kinds = KINDS) => `Enum8(${Object.entries(kinds).map(([k, v]) => `'${k}' = ${v}`).join(', ')})`;
 
@@ -56,14 +57,14 @@ const evColumns = `
 // Flags on ev rows.
 export const FLAG = { ON_BOOK: 1, FORCE_CLOSE: 2, UNLINKED: 4, WITHOUT_PAYMENT: 8, TO_INSURANCE: 16 };
 
-// Amounts are Int64; the count of unsplit liquidations is a count like the others (a UInt64
+// Amounts are Int64; the count of off-book liquidations is a count like the others (a UInt64
 // count unioned with an Int64 rollup column becomes a Variant that sum() rejects).
 const revenueType = c => (c === 'liq_unsplit' ? 'UInt32' : 'Int64');
 const revenueColumns = REVENUE_COLUMNS.map(c => `${c} ${revenueType(c)} DEFAULT 0`).join(', ');
 
 // Version 3 adds the reducing-fee split and the liquidation shares
 // (rollup.js carries over the hours they do not change).
-export const ROLLUP_VERSION = 3;
+export const ROLLUP_VERSION = 4;
 
 export const DDL = [
   `CREATE TABLE IF NOT EXISTS ev (${evColumns}

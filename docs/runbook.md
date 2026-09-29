@@ -75,6 +75,11 @@ requests of 1,000 blocks, roughly two hours. Progress is in
 it stopped after a restart, and the protocol balance check shows `pending`
 until it is complete.
 
+The set of topics has a name (`protocol-v2` since `ResidueTransferred` was
+added). Adding an event gives the set a new name, which starts its coverage
+empty: the whole history is read again (about 2.5 hours with two public
+archives at the default pace) and rows already stored are skipped.
+
 ## Execution events (optional, fastest)
 
 With the node's execution event ring enabled, Perpl trades from proposed

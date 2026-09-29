@@ -204,7 +204,7 @@ both shares by source (`src/revenue.js`, `src/aggregates.js`):
 | --- | --- |
 | Opening fees (open, increase, invert) | The split on the position event: `protFeeCNS` to the protocol, `insFeeCNS` to the insurance fund. |
 | Reducing fees (decrease, close) | Charged from contract version 1.7.5; before, their fee was 0. The events carry no split, so the linked fill gives it: insurance = ⌈(`feeCNS` − `builderFeeCNS`) × `insAmtPer100K` ÷ 100,000⌉, protocol = `feeCNS` − insurance. Opening events follow the same rule. |
-| Full liquidations on the book | X = `deltaPnlCNS` + `fundingCNS` − `posAmountCNS`, the margin left (`posAmountCNS` is minus the deposit released). If X > 0, the trader gets ⌊X × `liqUserAmtPer100K` ÷ 100,000⌋ (the event's `accAmountCNS`), the insurance fund ⌊X × `liqInsAmtPer100K` ÷ 100,000⌋ and the protocol the rest, rounding dust included. If X ≤ 0, Plumb counts nothing for either (not verified). The liquidated position's own fill carries no fee. |
+| Liquidations, full or partial | X = `deltaPnlCNS` + `fundingCNS` − `posAmountCNS`, the margin left (`posAmountCNS` is minus the deposit released). If X > 0, the trader gets ⌊X × `liqUserAmtPer100K` ÷ 100,000⌋ (the event's `accAmountCNS`), the insurance fund ⌊X × `liqInsAmtPer100K` ÷ 100,000⌋ and the protocol the rest, rounding dust included. If X ≤ 0, Plumb counts nothing for either (not verified). The liquidated position's own fill carries no fee. |
 
 A builder's fee stays inside the protocol's share of the fee: it is owed to
 the builder and reported on its own as `builder_fees`. Protocol revenue is
@@ -225,9 +225,18 @@ from 23 September 15:20 UTC; 15,000 was checked from 25 September 12:03 UTC.
 Liquidations before a market's first indexed `LiquidationParamsUpdated` use
 10,000 / 80,000, verified from 25 September only.
 
+**Partial liquidations** follow the same split. Example, block 97,375,221:
+perp 20, account 1767, 74,906 lots liquidated on the book and 9,628 left;
+X = $6,723.071842, `accAmountCNS` = ⌊0.8 X⌋ exactly, and the protocol
+balance rose by X − ⌊0.8 X⌋ − ⌊0.1 X⌋ = $672.307185 (plus the block's
+opening fees). The 98 partial liquidations in the history each moved the
+protocol balance by their protocol share this way (found by comparing the
+rebuilt balance with the contract block by block, see Protocol balance).
+
 **Not revenue.** `TransferProtocolToAccount` (payouts to accounts, such as
 $7,259.74 to 272 accounts on 28 September), `TransferAccountToProtocol`
-(such as $152,663.75 from account 777 on 25 September),
+(such as $152,663.75 from account 777 on 25 September), `ResidueTransferred`
+(a market's position-balance residue, see Protocol balance),
 `ProtocolBalanceWithdraw` and `ProtocolBalanceDeposit` move the protocol
 balance but are never counted as revenue.
 
@@ -243,21 +252,22 @@ inside the protocol share were $105.65
 by block time can differ by the trades of its edge seconds).
 
 **Not verified**, because none occurred in the checks, so Plumb assumes no
-rule for them: bankrupt liquidations (X ≤ 0) count as no revenue; partial
-liquidations and liquidations off the book count as no revenue and are
-reported as `unsplit_liquidations` (the contract has a separate
-buy-to-liquidate split, so the rule above may not hold for them);
-deleverages and buy-to-liquidate settlements count as no revenue. What the
+rule for them: bankrupt liquidations (X ≤ 0) count as no revenue;
+liquidations off the book (`onOrderBook` = false) get the same split but are
+counted apart as `unsplit_liquidations` ("off the book: split applied, rule
+inferred"; none was seen yet); deleverages and buy-to-liquidate settlements
+(the contract has a separate split for these) count as no revenue. What the
 payouts are for is not stated on-chain.
 
 **History and rollups.** The split is derived per stored row whenever
 windows and hourly rollups are summed, so no event was read from the chain
-again. Rollup version 3 adds the reducing-fee split and the liquidation
-shares as new columns (`ADD COLUMN IF NOT EXISTS … DEFAULT 0`). At start,
-the hours of each UTC day rolled at version 2 with no charged decrease or
-close and no liquidation are carried over unchanged, and every other day is
-rolled again from the stored events (whole days, so the hours left to roll
-form few ranges); both steps are safe to repeat. A rate change indexed
+again. Rollup version 3 added the reducing-fee split and the liquidation
+shares as new columns (`ADD COLUMN IF NOT EXISTS … DEFAULT 0`); version 4
+splits partial liquidations too and counts only off-book ones as unsplit. At
+start, the hours of each UTC day rolled at version 3 with no liquidation are
+carried over unchanged, and every other day is rolled again from the stored
+events (whole days, so the hours left to roll form few ranges); both steps
+are safe to repeat. A database at an older version rolls everything again. A rate change indexed
 after hours it applies to (the backfill runs newest first) marks those
 hours to roll again before the change is stored.
 
@@ -281,16 +291,29 @@ page).
 | To a market (insurance fund or positions) | `TransferProtocolToPerp` (`protocol_to_market`) | − | no |
 | To the recycle balance | `TransferProtocolToRecycleBal` (`protocol_to_recycle`) | − | no |
 | Recycle fee | `RecycleFeeToProtocol` (`recycle_fee`) | + | no |
+| Residue from a market's position balance | `ResidueTransferred` (`residue_to_protocol`) | + | no |
 
 Builder fees stay inside the balance. Funding, collateral deposits and
 withdrawals and position collateral changes never touch it. The first four
 rows and the revenue shares were checked with zero residual (Protocol
-revenue, Verification); the last five never occurred in the checks, so their
-effect is the one their names and arguments state, not verified.
+revenue, Verification); the recycle fee and the residue were found and
+checked by the block-by-block comparison below. `TransferPerpInsToProtocol`,
+`TransferPerpPosToProtocol` and `TransferProtocolToRecycleBal` never
+occurred, so their effect is the one their names and arguments state, not
+verified.
+
+**Residue transfers.** At a contract upgrade the exchange can move what is
+left in a market's position balance to the protocol. At the upgrade of
+1 June 2026 18:22 UTC (block 78,474,467) four `ResidueTransferred` events
+(markets 1, 10, 20 and 30: $1,774.906687, $19,850.782420, $955.880703 and
+$10,712.028672) added exactly the protocol balance's rise of $33,293.598482,
+while the exchange balance did not change.
 
 **Topic backfill.** The transfers (and `FeeParamsUpdated` and
 `ContractAdded`) were not read for the history indexed before 29 September
-2026. A separate backfill reads only these topics over every block range
+2026. The set is named (`protocol-v2` since `ResidueTransferred` was added):
+a new name starts its coverage empty, so the whole history is read again
+and rows already stored are skipped. A separate backfill reads only these topics over every block range
 indexed before, newest first: the node while it still has the range, then
 the archive endpoints, paced (`TOPIC_BACKFILL_RPS`). It records its own
 coverage (`topic_chunks`); every range the ingest reads from now on counts
@@ -300,12 +323,16 @@ never inserted twice. Until the scan is complete the check reports
 
 **Reading the check.** `match` means every movement above, summed from
 launch, equals the contract to the micro-dollar. `differs` shows the
-difference with the full breakdown. The likely causes are the unverified
-cases: liquidation shares before the rates were known (liquidations before a
-market's first indexed rate change use 10,000 / 80,000), partial or
-off-book liquidations and buy-to-liquidate settlements (counted as no
-revenue, and listed under `unverified`), and the five transfers never
-observed.
+difference with the full breakdown. `/api/v1/integrity/protocol?block=N`
+gives the same comparison at any indexed block (the contract read at that
+block from the node or an archive), so the block where a difference
+appears can be found by bisection; that is how the residue transfers and
+the partial-liquidation shares were found (before them, the rebuilt balance
+was $37,524.01 below the contract). The remaining unverified cases are
+liquidation shares before the rates were known (liquidations before a
+market's first indexed rate change use 10,000 / 80,000), off-book
+liquidations and buy-to-liquidate settlements (listed under `unverified`),
+and the three transfers never observed.
 
 ### Funding
 

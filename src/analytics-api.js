@@ -674,7 +674,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       events: dec(events, c), contract: dec(contract, c), difference: dec(diff, c),
       revenue: { opening_fees: dec(revenue.opening, c), reducing_fees: dec(revenue.reducing, c), liquidations: dec(revenue.liquidations, c) },
       moves: Object.fromEntries(Object.entries(BALANCE_MOVES).map(([kind, sign]) => [kind, { amount: dec(moves[kind].amount, c), count: moves[kind].count, sign: Number(sign) }])),
-      // Shares no rule was checked for: counted as no revenue.
+      // Off-book liquidations (split applied, rule inferred) and buy-to-liquidate settlements (no rule known).
       unverified: { liquidations: Number(unsplit?.liquidations ?? 0), liquidation_fees: dec(unsplit?.fees ?? 0, c), buy_to_liquidate: Number(unsplit?.btl ?? 0) },
       checked_from: CHECKED_FROM_TS
     };
