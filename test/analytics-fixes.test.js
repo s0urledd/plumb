@@ -25,7 +25,7 @@ function analyticsWith(queries, { state = { block: null, markets: new Map(), exc
     progress: () => ({ complete: true })
   };
   const findAccounts = async text => [{ account: Number(text), address: '0x' + Number(text).toString(16).padStart(40, '0'), ts: 1789000000 }];
-  return createAnalyticsApi({ ingest, rollups: {}, queries: { findAccounts, ...queries }, collector: { state, reader: {} }, now: () => clock.t });
+  return createAnalyticsApi({ ingest, rollups: {}, queries: { findAccounts, balanceMoves: async () => [], accountTransfers: async () => null, ...queries }, collector: { state, reader: {} }, now: () => clock.t });
 }
 
 test('funding settled when a position is increased is realized on its trip', () => {

@@ -9,6 +9,16 @@ const dot = s => `<span class="status-dot ${s}"></span>`;
 // like every other count on the page, their digits untouched.
 const grouped = v => (v === null || v === undefined ? '—' : esc(v).replace(/^-?\d+/, d => d.replace(/\B(?=(\d{3})+$)/g, ',')));
 
+// The added topics (protocol balance transfers) scanned over the history.
+const topicsLine = t => (!t || t.complete ? '' : `<div class="d">protocol transfers ${t.pct === null ? '—' : pct(t.pct, { digits: 1 })} scanned${t.running && t.rate_blocks_per_s ? ` · ${int(t.rate_blocks_per_s)} blocks/s` : ''}</div>`);
+// The protocol balance rebuilt from events against the contract.
+function protocolLine(p) {
+  if (!p) return '';
+  if (p.status === 'pending') return `<div class="panel-foot st-tvl"><span>Protocol balance from events: waiting for the transfer scan (${p.scanned_pct === null ? '—' : pct(p.scanned_pct, { digits: 1 })})</span><span class="tag">pending</span></div>`;
+  const why = p.status === 'match' ? '' : ` · difference ${usd(p.difference, { sign: true })}`;
+  return `<div class="panel-foot st-tvl" title="Protocol fee and liquidation shares plus payouts, sweeps, deposits and withdrawals since launch"><span>Protocol balance from events ${usd(p.events)} · contract ${usd(p.contract)}${why}</span>${p.status === 'match' ? '<span class="tag good">match</span>' : '<span class="tag warn">differs</span>'}</div>`;
+}
+
 export function mount(el) {
   let alive = true;
   // The two short check lists share a row; the per-market table gets the full width.
@@ -42,7 +52,7 @@ export function mount(el) {
     $('gen').textContent = `Updated ${new Date().toISOString().slice(11, 19)} UTC`;
     $('pipeline').innerHTML = [
       `<div class="stage"><h3>${dot(lag !== null && lag < 10 ? 'ok' : 'warn')}Live ingest</h3><div class="v">#${int(live?.to)}</div><div class="d">${lag === null ? '—' : `${lag} blocks behind finalized`} · woken by ${trigger}</div><div class="d">${int(live?.commits)} commits · ${int(live?.rows)} rows</div></div>`,
-      `<div class="stage"><h3>${dot(b?.running ? 'warn' : b?.failed?.length ? 'bad' : 'ok')}History</h3><div class="v">${b?.pct === null || b?.pct === undefined ? '100%' : pct(b.pct, { digits: 1 })}</div><div class="d">${b?.running ? `indexing · ${int(b.rate_blocks_per_s)} blocks/s` : 'complete'} · ${int(h.index?.coverage?.length)} coverage range(s)</div><div class="d">since block ${grouped(h.index?.coverage?.[0]?.from)}</div></div>`,
+      `<div class="stage"><h3>${dot(b?.running ? 'warn' : b?.failed?.length ? 'bad' : 'ok')}History</h3><div class="v">${b?.pct === null || b?.pct === undefined ? '100%' : pct(b.pct, { digits: 1 })}</div><div class="d">${b?.running ? `indexing · ${int(b.rate_blocks_per_s)} blocks/s` : 'complete'} · ${int(h.index?.coverage?.length)} coverage range(s)</div><div class="d">since block ${grouped(h.index?.coverage?.[0]?.from)}</div>${topicsLine(h.index?.topics)}</div>`,
       `<div class="stage"><h3>${dot(r?.lastError ? 'bad' : 'ok')}Hourly rollups</h3><div class="v">${int(r?.hours)} h</div><div class="d">${int(r?.pending)} pending · last run ${r?.lastRunMs ?? '—'}\u00a0ms</div></div>`,
       `<div class="stage"><h3>${dot(h.snapshot?.status === 'fresh' ? 'ok' : 'warn')}Contract state</h3><div class="v">#${int(h.snapshot?.block)}</div><div class="d">${esc(h.snapshot?.status ?? '')}${h.snapshot?.status_reason ? ` (${esc(h.snapshot.status_reason)})` : ''} · contract ${esc(h.snapshot?.contract_version ?? '—')} · ${int(h.collector?.polls)} polls · ${int(h.collector?.rpc_requests)} RPC requests</div><div class="d">${int(feed?.sse_clients)} live viewers</div></div>`
     ].join('');
@@ -57,7 +67,7 @@ export function mount(el) {
       { key: 'ok', label: 'Result', render: x => (x.ok ? '<span class="tag good">match</span>' : '<span class="tag bad">mismatch</span>') },
       { key: 'l', label: 'Long lots (events / contract)', n: true, render: x => `${grouped(x.events_long)} / ${grouped(x.contract_long)}` },
       { key: 's', label: 'Short lots (events / contract)', n: true, render: x => `${grouped(x.events_short)} / ${grouped(x.contract_short)}` }
-    ], rows: integ.open_interest }) + (integ.tvl ? `<div class="panel-foot st-tvl"><span>TVL from events ${usd(integ.tvl.events)} · contract ${usd(integ.tvl.contract)}</span>${integ.tvl.ok ? '<span class="tag good">match</span>' : '<span class="tag warn">differs</span>'}</div>` : '');
+    ], rows: integ.open_interest }) + (integ.tvl ? `<div class="panel-foot st-tvl"><span>TVL from events ${usd(integ.tvl.events)} · contract ${usd(integ.tvl.contract)}</span>${integ.tvl.ok ? '<span class="tag good">match</span>' : '<span class="tag warn">differs</span>'}</div>` : '') + protocolLine(integ.protocol_balance);
     const rec = v?.reconciliation, ver = v?.verification;
     $('checks').innerHTML = `<div class="stat-grid one">
       <div class="stat"><span>${dot(rec?.ok ? 'ok' : 'bad')} Stored positions sum to the contract's open-interest counters</span><span>${rec ? `${rec.ok ? 'OK' : 'mismatch'} · block ${grouped(rec.block)}` : '—'}</span></div>

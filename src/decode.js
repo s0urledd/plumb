@@ -18,9 +18,14 @@
 //     and close carry no split: the linked fill's fee and builder fee stored
 //     on the row give it when windows and rollups are summed (revenue.js),
 //     with the rates of FeeParamsUpdated, LiquidationParamsUpdated and
-//     ContractAdded, all kept as parameter rows.
+//     ContractAdded, all kept as parameter rows;
+//   * the protocol balance also moves by transfers that are not revenue:
+//     payouts to accounts, sweeps from accounts, and transfers with a
+//     market's insurance fund or positions and with the recycle balance, and
+//     a market's position-balance residue moved to it at an upgrade
+//     (BALANCE_EVENTS, one row kind each).
 import { toEventSelector } from 'viem';
-import { eventsAbi, decodeLog } from './abi.js';
+import { eventsAbi, decodeLog, topicsFor } from './abi.js';
 import * as m from './math.js';
 import { FLAG } from './schema.js';
 
@@ -34,8 +39,18 @@ export const PARAM_EVENTS = [
   'ContractRemoved', 'ContractPaused', 'MaintenanceMarginFractionUpdated', 'InitialMarginFractionUpdated', 'MaxOpenInterestUpdated',
   'LiquidationParamsUpdated', 'FundingClampPctUpdated', 'FundingSumScalingExpUpdated', 'ExchangeHalted', 'UnwindPrepared', 'UnwindInitialized',
   'UnwindContractTrigger', 'UnwindIterationCompleted', 'UnwindCompleted', 'UnwindPreparationCleared', 'UnwindInitializationCleared', 'ContractVersionSet',
-  'FeeParamsUpdated'];
-export const INGEST_EVENTS = [...TRADE_EVENTS, ...FORCED_EVENTS, ...FILL_EVENTS, ...FLOW_EVENTS, ...OTHER_EVENTS, ...MARKET_EVENTS, ...PARAM_EVENTS];
+  'FeeParamsUpdated', 'BuyToLiquidateParamsUpdated'];
+export const BALANCE_EVENTS = ['TransferProtocolToAccount', 'TransferAccountToProtocol', 'TransferPerpInsToProtocol', 'TransferPerpPosToProtocol', 'TransferProtocolToPerp', 'TransferProtocolToRecycleBal', 'RecycleFeeToProtocol', 'ResidueTransferred'];
+export const TRANSFER_KINDS = ['payout', 'sweep', 'insurance_to_protocol', 'positions_to_protocol', 'protocol_to_market', 'protocol_to_recycle', 'recycle_fee', 'residue_to_protocol']; // their row kinds
+export const INGEST_EVENTS = [...TRADE_EVENTS, ...FORCED_EVENTS, ...FILL_EVENTS, ...FLOW_EVENTS, ...OTHER_EVENTS, ...MARKET_EVENTS, ...PARAM_EVENTS, ...BALANCE_EVENTS];
+// Events added after history was indexed: the topic backfill (ingest.js)
+// reads them alone over the blocks indexed before. The balance transfers,
+// and the rates of FeeParamsUpdated and ContractAdded, whose parameter rows
+// were not stored before either. A new name starts the set's coverage empty,
+// so adding an event (ResidueTransferred, in 'protocol-v2') reads the whole
+// history again; rows already stored are skipped.
+export const TOPIC_SET = { name: 'protocol-v3', events: [...BALANCE_EVENTS, 'FeeParamsUpdated', 'BuyToLiquidateParamsUpdated', 'ContractAdded', 'ContractAddedV2'] };
+export const topicSetTopics = topicsFor(TOPIC_SET.events);
 
 const STATIC = /^(u?int\d*|bool|address)$/;
 const specs = new Map(); // topic0 -> { name, inputs, fast }
@@ -201,6 +216,16 @@ export function rowsFromLogs(logs, { unitsOf, collateralDecimals = 6 } = {}) {
       case 'CollateralWithdrawal': row = blank(b, 'withdrawal'); Object.assign(row, { account: n(a.accountId), amount: a.amountCNS, balance: a.balanceCNS }); break;
       case 'ProtocolBalanceDeposit': row = blank(b, 'protocol_deposit'); row.amount = a.amountCNS; break;
       case 'ProtocolBalanceWithdraw': row = blank(b, 'protocol_withdrawal'); row.amount = a.amountCNS; break;
+      // Protocol balance transfers; balance is the account's (or the recycle balance) after.
+      case 'TransferProtocolToAccount': row = blank(b, 'payout'); Object.assign(row, { account: n(a.accountId), amount: a.amountCNS, balance: a.balanceCNS }); break;
+      case 'TransferAccountToProtocol': row = blank(b, 'sweep'); Object.assign(row, { account: n(a.accountId), amount: a.amountCNS, balance: a.balanceCNS }); break;
+      case 'TransferPerpInsToProtocol': row = blank(b, 'insurance_to_protocol'); Object.assign(row, { market: n(a.perpId), amount: a.amountCNS }); break;
+      case 'TransferPerpPosToProtocol': row = blank(b, 'positions_to_protocol'); Object.assign(row, { market: n(a.perpId), amount: a.amountCNS }); break;
+      case 'TransferProtocolToPerp': row = blank(b, 'protocol_to_market'); Object.assign(row, { market: n(a.perpId), amount: a.amountCNS, flags: a.toInsuranceFund ? FLAG.TO_INSURANCE : 0 }); break;
+      case 'TransferProtocolToRecycleBal': row = blank(b, 'protocol_to_recycle'); row.amount = a.amountCNS; break;
+      case 'RecycleFeeToProtocol': row = blank(b, 'recycle_fee'); Object.assign(row, { market: n(a.perpId), amount: a.recycleFeeCNS, balance: a.recycleBalanceCNS }); break;
+      // A market's position-balance residue moved to the protocol (seen at contract upgrades); balance is the market's position balance after.
+      case 'ResidueTransferred': row = blank(b, 'residue_to_protocol'); Object.assign(row, { market: n(a.perpId), amount: a.residueAmountCNS, balance: a.positionBalanceCNS }); break;
       case 'AccountCreated':
         row = blank(b, 'account'); row.account = n(a.id);
         out.accounts.push({ account: n(a.id), address: String(a.account).toLowerCase(), block: b.block, ts: b.ts, tx: b.tx });

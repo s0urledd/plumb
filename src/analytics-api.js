@@ -2,6 +2,7 @@
 // with the live contract state held by the risk collector (open interest,
 // TVL, positions, funding). Responses are cached briefly per window and
 // recomputed in the background, so requests are served from memory.
+import { BALANCE_MOVES, BALANCE_KINDS, protocolBalance, CHECKED_FROM_TS } from './revenue.js';
 import * as m from './math.js';
 import { WINDOWS, BUCKETS, DEFAULT_BUCKET } from './query.js';
 import { roundTrips, performance, insights, activityGrid } from './analytics.js';
@@ -130,6 +131,8 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   const feesOf = t => t.maker_fees + t.taker_fees;
   const protFeesOf = t => B(t.prot_fees) + B(t.reduce_prot_fees), insFeesOf = t => B(t.ins_fees) + B(t.reduce_ins_fees);
   const protRevenueOf = t => protFeesOf(t) + B(t.liq_prot_fees);
+  // Balance transfer rows (query balanceMoves) by kind, every kind present.
+  const movesOf = rows => { const out = Object.fromEntries(BALANCE_KINDS.map(k => [k, { amount: 0n, count: 0 }])); for (const r of rows ?? []) if (out[r.kind]) { out[r.kind].amount += B(r.total); out[r.kind].count += Number(r.n); } return out; };
   // Revenue by source (revenue.js); builder fees are inside the protocol's fee share, owed to builders.
   // Liquidations whose split is not verified (partial, off the book) count 0 and are counted apart.
   const revenueOf = (t, c = cd()) => {
@@ -173,10 +176,12 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     return cache.get(`protocol:${w}`, w === '24h' ? 2000 : 8000, async () => {
       const { from, to } = rangeOf(w);
       const len = to - from;
-      const [cur, prev, windows] = await Promise.all([
+      const [cur, prev, windows, moves, prevMoves] = await Promise.all([
         windowTotals(from, to),
         WINDOWS[w] === null ? null : windowTotals(from - len, from).catch(() => null),
-        Promise.all(['24h', '7d', '30d', 'all'].map(async x => { if (x === w) return null; const r = rangeOf(x); const [mk, tr] = await Promise.all([queries.marketTotals(r.from, r.to), queries.traders(r.from, r.to)]); return [x, sumMarkets(mk), Number(tr[0]?.traders ?? 0)]; }))
+        Promise.all(['24h', '7d', '30d', 'all'].map(async x => { if (x === w) return null; const r = rangeOf(x); const [mk, tr] = await Promise.all([queries.marketTotals(r.from, r.to), queries.traders(r.from, r.to)]); return [x, sumMarkets(mk), Number(tr[0]?.traders ?? 0)]; })),
+        queries.balanceMoves(from, to).then(movesOf),
+        WINDOWS[w] === null ? null : queries.balanceMoves(from - len, from).then(movesOf).catch(() => null)
       ]);
       const c = cd();
       const hl = (a, b) => ({ value: dec(a, c), prev: b === null ? null : dec(b, c), change_pct: b === null ? null : pctChange(a, b) });
@@ -222,7 +227,10 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
           liquidations: hn(T.liquidations, P?.liquidations ?? null), liquidated: hl(T.liquidated, P?.liquidated ?? null), deleverages: T.deleverages,
           deposits: hl(cur.p.deposits, pp?.deposits ?? null), withdrawals: hl(cur.p.withdrawals, pp?.withdrawals ?? null), net_flow: hl(cur.p.deposits - cur.p.withdrawals, pp ? pp.deposits - pp.withdrawals : null),
           taker_buy_share_pct: share(T.taker_buy, T.taker_buy + T.taker_sell), realized_pnl: dec(T.realized, c),
-          take_rate_bps: T.volume > 0n ? Number(feesOf(T) * 1000000n / T.volume) / 100 : null
+          take_rate_bps: T.volume > 0n ? Number(feesOf(T) * 1000000n / T.volume) / 100 : null,
+          // Paid out of the protocol balance to traders, and swept into it from accounts: not revenue.
+          protocol_payouts: hl(moves.payout.amount, prevMoves ? prevMoves.payout.amount : null), payout_count: moves.payout.count,
+          protocol_sweeps: dec(moves.sweep.amount, c)
         },
         windows: multi,
         current: live ? { block: live.block.toString(), open_interest: dec(live.oi, c), tvl: dec(live.tvl, c), insurance: dec(live.insurance, c), protocol_balance: dec(live.protocol, c), accounts: live.accounts.toString(), positions: live.positions, long_positions: live.longs, short_positions: live.shorts, long_position_share_pct: live.positions ? Math.round(live.longs / live.positions * 10000) / 100 : null } : null,
@@ -273,13 +281,14 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       // Buckets are labelled on the bucket grid, but the data starts at the window's
       // own start: the first bucket is partial, so chart sums equal the headline.
       const start = Math.floor(range.from / bucket.seconds) * bucket.seconds, from = range.from, to = range.to;
-      const [rows, flows, traderRows, base, lastPrices, newRows] = await Promise.all([
+      const [rows, flows, traderRows, base, lastPrices, newRows, moveRows] = await Promise.all([
         queries.marketTotals(from, to, { bucket: bucket.seconds }),
         queries.protocolTotals(from, to, { bucket: bucket.seconds }),
         queries.traders(from, to, { bucket: bucket.seconds }),
         queries.cumulativeBefore(from),
         queries.lastPricesBefore(from),
-        marketFilter === null ? queries.newTraders(from, to, { bucket: bucket.seconds, since: firstTs() }) : []
+        marketFilter === null ? queries.newTraders(from, to, { bucket: bucket.seconds, since: firstTs() }) : [],
+        marketFilter === null ? queries.balanceMoves(from, to, { bucket: bucket.seconds, kinds: ['payout'] }) : []
       ]);
       const c = cd();
       const baseComplete = ingest.coverage.contiguousTs() !== null && ingest.coverage.contiguousTs() >= from;
@@ -290,6 +299,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       const flowT = new Map(flows.map(r => [Number(r.t), r]));
       const tradersT = new Map(traderRows.map(r => [Number(r.t), Number(r.traders)]));
       const newT = new Map(newRows.map(r => [Number(r.t), Number(r.n)]));
+      const payoutT = new Map(moveRows.map(r => [Number(r.t), B(r.total)]));
       const lots = new Map([...base.oi].map(([id, v]) => [id, v.long]));
       const prices = new Map(lastPrices);
       let tvl = base.net;
@@ -310,7 +320,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
         const netFlow = f ? B(f.deposits) - B(f.withdrawals) : 0n;
         tvl += f ? netFlow + B(f.protocol_in) - B(f.protocol_out) : 0n;
         const point = { t, volume: dec(s.volume, c), trades: s.trades, fees: dec(feesOf(s), c), protocol_fees: dec(protFeesOf(s), c), insurance_fees: dec(insFeesOf(s), c), revenue: revenueOf(s, c), taker_buy: dec(s.taker_buy, c), taker_sell: dec(s.taker_sell, c), liquidations: s.liquidations, liquidated: dec(s.liquidated, c), realized_pnl: dec(s.realized, c), open_interest: baseComplete ? dec(oi, c) : null };
-        if (marketFilter === null) Object.assign(point, { traders: tradersT.get(t) ?? 0, new_traders: newT.get(t) ?? 0, deposits: dec(f?.deposits ?? 0, c), withdrawals: dec(f?.withdrawals ?? 0, c), net_flow: dec(netFlow, c), new_accounts: Number(f?.new_accounts ?? 0), tvl: baseComplete ? dec(tvl, c) : null });
+        if (marketFilter === null) Object.assign(point, { traders: tradersT.get(t) ?? 0, new_traders: newT.get(t) ?? 0, deposits: dec(f?.deposits ?? 0, c), withdrawals: dec(f?.withdrawals ?? 0, c), net_flow: dec(netFlow, c), new_accounts: Number(f?.new_accounts ?? 0), tvl: baseComplete ? dec(tvl, c) : null, protocol_payouts: dec(payoutT.get(t) ?? 0n, c) });
         else { const r = pick[0]; Object.assign(point, { open: r && B(r.open_price) > 0n ? price(r.open_price, marketFilter) : null, high: r && B(r.high_price) > 0n ? price(r.high_price, marketFilter) : null, low: r && B(r.low_price) > 0n ? price(r.low_price, marketFilter) : null, close: prices.get(marketFilter) ? price(prices.get(marketFilter), marketFilter) : null }); }
         return point;
       });
@@ -497,7 +507,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     const c = cd();
     const view = await cache.get(`wallet:${acct.id}`, 4000, async () => {
       const all = rangeOf('all');
-      const [marketRows, daily, recentRows, flowRows, firstTrade] = await Promise.all([queries.accountMarkets(acct.id, all.from, all.to), queries.accountSeries(acct.id, all.from, all.to, DAY), queries.accountTrades(acct.id, { limit: 100 }), queries.accountFlows(acct.id, { limit: 100 }), queries.accountFirstTrade(acct.id)]);
+      const [marketRows, daily, recentRows, flowRows, firstTrade, transfers] = await Promise.all([queries.accountMarkets(acct.id, all.from, all.to), queries.accountSeries(acct.id, all.from, all.to, DAY), queries.accountTrades(acct.id, { limit: 100 }), queries.accountFlows(acct.id, { limit: 100 }), queries.accountFirstTrade(acct.id), queries.accountTransfers(acct.id)]);
       const sums = { volume: 0n, maker: 0n, trades: 0, fees: 0n, realized: 0n, funding: 0n, liquidations: 0, deposits: 0n, withdrawals: 0n };
       for (const r of marketRows) { sums.volume += B(r.volume); sums.maker += B(r.maker_volume); sums.trades += Number(r.trades); sums.fees += B(r.fees); sums.realized += B(r.realized); sums.funding += B(r.funding_paid); sums.liquidations += Number(r.liquidations); sums.deposits += B(r.deposits); sums.withdrawals += B(r.withdrawals); }
       const active = daily.filter(r => Number(r.trades) > 0);
@@ -506,7 +516,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       return {
         meta: metaOf({ coverage: { complete: ingest.coverage.contiguousTs() !== null, backfill: ingest.progress() } }),
         account: { id: acct.id, address: acct.address, created: acct.created },
-        summary: { volume: dec(sums.volume, c), trades: sums.trades, realized: dec(sums.realized, c), fees: dec(sums.fees, c), net_pnl: dec(sums.realized - sums.fees, c), funding: dec(sums.funding, c), liquidations: sums.liquidations, deposits: dec(sums.deposits, c), withdrawals: dec(sums.withdrawals, c), net_flow: dec(sums.deposits - sums.withdrawals, c), first_trade: firstTrade, last_trade: recentRows.length ? Number(recentRows[0].ts) : null, active_days: active.length, maker_share_pct: share(sums.maker, sums.volume) },
+        summary: { volume: dec(sums.volume, c), trades: sums.trades, realized: dec(sums.realized, c), fees: dec(sums.fees, c), net_pnl: dec(sums.realized - sums.fees, c), funding: dec(sums.funding, c), liquidations: sums.liquidations, deposits: dec(sums.deposits, c), withdrawals: dec(sums.withdrawals, c), net_flow: dec(sums.deposits - sums.withdrawals, c), first_trade: firstTrade, last_trade: recentRows.length ? Number(recentRows[0].ts) : null, active_days: active.length, maker_share_pct: share(sums.maker, sums.volume), payouts_received: dec(transfers?.payouts ?? 0, c), payout_count: Number(transfers?.payout_count ?? 0), swept_to_protocol: dec(transfers?.sweeps ?? 0, c) },
         markets: marketRows.filter(r => Number(r.market) !== 0 && Number(r.trades) > 0).map(r => ({ market: Number(r.market), symbol: symbol(Number(r.market)), volume: dec(r.volume, c), trades: Number(r.trades), realized: dec(r.realized, c), fees: dec(r.fees, c), net_pnl: dec(B(r.realized) - B(r.fees), c), liquidations: Number(r.liquidations) })).sort((a, b) => Number(b.volume) - Number(a.volume)),
         pnl_daily: daily.map(r => { const net = B(r.realized) - B(r.fees); cum += net; return { t: Number(r.t), net_pnl: dec(net, c), realized: dec(r.realized, c), fees: dec(r.fees, c), volume: dec(r.volume, c), trades: Number(r.trades), cumulative: dec(cum, c) }; }),
         recent_trades: recentRows.map(r => tradeView(r, addr)),
@@ -625,8 +635,49 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
         const ev = cum.oi.get(market.id) ?? { long: 0n, short: 0n };
         return { market: market.id, symbol: market.symbol, events_long: size(ev.long, market.id), contract_long: size(market.long, market.id), events_short: size(ev.short, market.id), contract_short: size(market.short, market.id), ok: ev.long === market.long && ev.short === market.short };
       });
-      return { complete, block: block.toString(), method: 'Running sums of indexed events up to the contract snapshot block compared with the contract counters read at that same block.', open_interest: checks, tvl: { events: dec(cum.net, cd()), contract: dec(balance, cd()), ok: cum.net === balance } };
+      const protocolBalance = await protocolBalanceCheck(block, blockTs, state.exchangeInfo.protocolBalanceCNS);
+      return { complete, block: block.toString(), method: 'Running sums of indexed events up to the contract snapshot block compared with the contract counters read at that same block.', protocol_balance: protocolBalance, open_interest: checks, tvl: { events: dec(cum.net, cd()), contract: dec(balance, cd()), ok: cum.net === balance } };
     });
+  }
+
+  // The protocol balance rebuilt from launch: the protocol's revenue shares
+  // plus every transfer that moves the balance (revenue.js BALANCE_MOVES),
+  // against the contract's own figure at the same block. Pending until the
+  // topic backfill has read the transfers over the whole history.
+  async function protocolBalanceCheck(block, blockTs, contract) {
+    const scan = ingest.topicProgress?.();
+    if (!scan?.complete) return { status: 'pending', scanned_pct: scan?.pct ?? null };
+    return balanceAgainst(block, blockTs, contract);
+  }
+  // The same comparison at any indexed block, with the contract read at that
+  // block (node or archive): finds when a difference appeared.
+  async function protocolBalanceAt(key) {
+    if (!/^\d{1,12}$/.test(String(key ?? ''))) throw bad('INVALID_BLOCK');
+    const block = BigInt(key);
+    const top = ingest.coverage.intervals.at(-1)?.to ?? null;
+    if (block < ingest.coverage.intervals[0]?.from || top === null || block > top) throw bad('BLOCK_NOT_INDEXED');
+    const scan = ingest.topicProgress?.();
+    if (!scan?.complete) return { status: 'pending', scanned_pct: scan?.pct ?? null };
+    const [ts, contract] = await Promise.all([queries.tsAtBlock(block), ingest.protocolBalanceAt(block)]);
+    if (ts === null) throw bad('BLOCK_NOT_INDEXED');
+    return balanceAgainst(block, ts, contract);
+  }
+  async function balanceAgainst(block, blockTs, contract) {
+    const c = cd();
+    const [rev, moveRows, unsplit] = await Promise.all([queries.revenueUpTo(blockTs, block), queries.balanceMovesAtBlock(block), queries.unsplitAtBlock(block)]);
+    const revenue = { opening: B(rev.prot_fees), reducing: B(rev.reduce_prot_fees), liquidations: B(rev.liq_prot_fees) };
+    const moves = movesOf(moveRows);
+    const events = protocolBalance({ revenue, moves });
+    const diff = events - B(contract);
+    return {
+      status: diff === 0n ? 'match' : 'differs', block: block.toString(),
+      events: dec(events, c), contract: dec(contract, c), difference: dec(diff, c),
+      revenue: { opening_fees: dec(revenue.opening, c), reducing_fees: dec(revenue.reducing, c), liquidations: dec(revenue.liquidations, c) },
+      moves: Object.fromEntries(Object.entries(BALANCE_MOVES).map(([kind, sign]) => [kind, { amount: dec(moves[kind].amount, c), count: moves[kind].count, sign: Number(sign) }])),
+      // Off-book liquidations (split applied, rule inferred) and buy-to-liquidate settlements (no rule known).
+      unverified: { liquidations: Number(unsplit?.liquidations ?? 0), liquidation_fees: dec(unsplit?.fees ?? 0, c), buy_to_liquidate: Number(unsplit?.btl ?? 0) },
+      checked_from: CHECKED_FROM_TS
+    };
   }
 
   // Traders in a window at a glance: how many traded, how many are up after
@@ -666,5 +717,5 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       return { meta: metaOf({ window: 'all', from, to, coverage: coverageOf(from, to) }), block: state.block.number.toString(), ...t };
     });
   }
-  return { addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
+  return { protocolBalanceAt, addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
 }

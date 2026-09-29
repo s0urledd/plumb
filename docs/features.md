@@ -9,7 +9,7 @@ from the [API](api.md).
   period; flows over a window are compared with the previous window.
   - volume, open interest and TVL (open interest and TVL are "now");
   - fees, with the protocol's revenue (its share of fees and of
-    liquidations);
+    liquidations) and what it paid out to traders;
   - active traders and new accounts;
   - liquidations.
 - **Time series** per hour, four hours, day or week (all time):
@@ -78,7 +78,8 @@ trader anywhere.
 - **PnL** as a cumulative curve, daily bars or a calendar of days.
 - **Trade history** with the price, size and fee of the fill behind each
   position change, maker or taker role and realized PnL; CSV export. Round
-  trips, deposits and withdrawals have their own tabs.
+  trips, deposits and withdrawals have their own tabs; the flows tab also
+  lists what the protocol paid to the account.
 - **Behaviour**: rule-based notes (trading style, holding losers longer than
   winners, typical leverage, active hours) and a weekday × hour activity map.
 - **Watchlist** (on the Alerts page, next to the Telegram bot, with a link
@@ -140,5 +141,5 @@ command list and profile text on start.
 ## Status
 
 The data pipeline (live ingest, backfill, rollups), the integrity check
-against the contract, the decoder's counters and which feed woke the last
-update.
+against the contract (open interest, TVL and the protocol balance rebuilt
+from launch), the decoder's counters and which feed woke the last update.

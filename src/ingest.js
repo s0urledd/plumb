@@ -14,8 +14,13 @@
 // two inserts) is deleted the same way. Rows are keyed by (block, log_index)
 // in a ReplacingMergeTree, so even an insert that completed after its
 // client gave up collapses on merge.
+//
+// Topics added after history was indexed (decode.js TOPIC_SET) have their
+// own coverage (`topic_chunks`): every range the ingest reads counts for them
+// too, and a topic backfill reads them alone over the ranges indexed before
+// (see below).
 import { createReader } from './exchange.js';
-import { rowsFromLogs, ingestTopics } from './decode.js';
+import { rowsFromLogs, ingestTopics, TOPIC_SET, topicSetTopics, TRANSFER_KINDS } from './decode.js';
 import { createCoverage } from './coverage.js';
 import { normalizeMarket } from './state.js';
 import { createRevenueParams, REVENUE_PARAM_EVENTS } from './revenue.js';
@@ -40,7 +45,9 @@ export function ingestOptions(env = {}) {
     batchMs: integer(env.INGEST_BATCH_MS, 3000),
     backfill: env.BACKFILL !== '0',
     backfillFrom: env.BACKFILL_FROM_BLOCK ? BigInt(integer(env.BACKFILL_FROM_BLOCK, 0)) : null, // partial history (development)
-    retries: integer(env.INGEST_RETRIES, 6)
+    retries: integer(env.INGEST_RETRIES, 6),
+    topicBackfill: env.TOPIC_BACKFILL !== '0',
+    topicArchiveRps: integer(env.TOPIC_BACKFILL_RPS, 4) // eth_getLogs per second to each archive (0: unpaced)
   };
 }
 
@@ -51,6 +58,9 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   const coverage = createCoverage({ floor });
   const live = { name: 'node', reader: createReader({ rpc: liveRpc, exchange: config.exchange }), range: options.liveRange, concurrency: options.liveConcurrency };
   const archives = archiveRpcs.map((rpc, i) => ({ name: `archive${i + 1}`, reader: createReader({ rpc, exchange: config.exchange }), range: options.archiveRange, concurrency: options.archiveConcurrency }));
+  const topicCoverage = createCoverage({ floor }); // ranges read with the added topics (block numbers only)
+  // The topic backfill paces its own requests to each archive (public endpoints are rate-limited).
+  const topicSources = { live: { ...live, gap: 0, nextAt: 0, pausedUntil: 0 }, archives: archives.map(a => ({ ...a, gap: options.topicArchiveRps > 0 ? 1000 / options.topicArchiveRps : 0, nextAt: 0, pausedUntil: 0 })) };
   const markets = new Map(); // id -> { symbol, name, priceDecimals, lotDecimals }
   const revenueParams = createRevenueParams(); // fee and liquidation rates over time (revenue split)
   let staleSince = null; // a rate change whose rolled hours are not yet marked stale in the database
@@ -60,6 +70,7 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   const status = {
     live: { from: null, to: null, toTs: null, finalized: null, finalizedTs: null, commits: 0, rows: 0, lastCommitAt: null, lastError: null, errors: 0, trigger: 'poll' },
     backfill: { running: false, targetFrom: floor, targetTo: null, totalBlocks: 0n, doneBlocks: 0n, startedAt: null, finishedAt: null, chunks: 0, rows: 0, failed: [], rate: null, lastError: null },
+    topics: { running: false, startedAt: null, finishedAt: null, chunks: 0, rows: 0, skipped: 0, requests: 0, failed: [], rate: null, lastError: null },
     repaired: 0,
     // Decoder consistency counters over everything ingested since start.
     checks: { logs: 0, userEvents: 0, linked: 0, unlinked: 0, lotMismatch: 0, feeChecked: 0, feeMismatch: 0, forcedLinked: 0, forcedLotMismatch: 0, takerFillsUnlinked: 0 }
@@ -86,6 +97,7 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   }
   async function loadCoverage() {
     for (const r of await ch.query('SELECT from_block, to_block, toUnixTimestamp(from_ts) AS from_ts, toUnixTimestamp(to_ts) AS to_ts FROM chunks FINAL ORDER BY from_block')) coverage.add(BigInt(r.from_block), BigInt(r.to_block), Number(r.from_ts), Number(r.to_ts));
+    for (const r of await ch.query('SELECT from_block, to_block FROM topic_chunks FINAL WHERE topics = {t:String} ORDER BY from_block', { t: TOPIC_SET.name })) topicCoverage.add(BigInt(r.from_block), BigInt(r.to_block), 0, 0);
   }
   // Rows outside recorded coverage can only come from an interrupted commit.
   async function repair() {
@@ -124,9 +136,7 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
     catch (error) {
       if (await chunksStored(opts.chunkRows).catch(() => false)) {
         log('warn', `commit reported ${error.message} but its coverage is stored; keeping it`);
-        const all = { ev: [], markets: [], accounts: [], funding: [], params: [] };
-        for (const r of results) for (const k of Object.keys(all)) all[k].push(...r.out[k]);
-        return all;
+        return gather(results);
       }
       dirty.push(...results.map(r => ({ from: r.from, to: r.to })));
       await clearDirty().catch(e => log('warn', `range cleanup deferred: ${e.message}`));
@@ -148,27 +158,30 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   }
 
   // --- one range -----------------------------------------------------------
-  async function fetchLogs(source, from, to) {
-    try { return await source.reader.getLogs({ fromBlock: from, toBlock: to, topics: ingestTopics }); }
+  async function fetchLogs(source, from, to, topics = ingestTopics) {
+    if (source.gap !== undefined) await pace(source);
+    try { return await source.reader.getLogs({ fromBlock: from, toBlock: to, topics }); }
     catch (error) {
       if (error.kind === 'limit' && to > from) {
         const mid = from + (to - from) / 2n;
-        return [...await fetchLogs(source, from, mid), ...await fetchLogs(source, mid + 1n, to)];
+        return [...await fetchLogs(source, from, mid, topics), ...await fetchLogs(source, mid + 1n, to, topics)];
       }
       throw error;
     }
+  }
+  // Providers without blockTimestamp on logs: take it from the headers.
+  async function stampTimes(source, logs) {
+    const missing = [...new Set(logs.filter(l => l.blockTimestamp === undefined).map(l => l.blockNumber))];
+    if (!missing.length) return;
+    const stamps = new Map();
+    for (const number of missing) stamps.set(number, (await source.reader.getBlock(BigInt(number))).timestamp);
+    for (const l of logs) if (l.blockTimestamp === undefined) l.blockTimestamp = stamps.get(l.blockNumber);
   }
 
   // Logs, end-block timestamps and decoded rows for [from, to].
   async function readRange(source, from, to, { toBlock = null } = {}) {
     const [logs, first, last] = await Promise.all([fetchLogs(source, from, to), source.reader.getBlock(from), toBlock ?? source.reader.getBlock(to)]);
-    // Providers without blockTimestamp on logs: take it from the headers.
-    const missing = [...new Set(logs.filter(l => l.blockTimestamp === undefined).map(l => l.blockNumber))];
-    if (missing.length) {
-      const stamps = new Map();
-      for (const number of missing) stamps.set(number, (await source.reader.getBlock(BigInt(number))).timestamp);
-      for (const l of logs) if (l.blockTimestamp === undefined) l.blockTimestamp = stamps.get(l.blockNumber);
-    }
+    await stampTimes(source, logs);
     let out = rowsFromLogs(logs, { unitsOf, collateralDecimals });
     if (out.missingMarkets.size) {
       await refreshMarketsFromContract(live.reader, 'finalized').catch(() => 0);
@@ -180,10 +193,17 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
     return { from, to, fromTs: first.timestamp, toTs: last.timestamp, logs: logs.length, out, source: source.name };
   }
 
-  // Inserts several ranges' rows; coverage rows go last.
-  async function commit(results, { chunkRows }) {
-    const all = { ev: [], markets: [], accounts: [], funding: [], params: [] };
-    for (const r of results) for (const k of Object.keys(all)) all[k].push(...r.out[k]);
+  const gather = results => { const all = { ev: [], markets: [], accounts: [], funding: [], params: [] }; for (const r of results) for (const k of Object.keys(all)) all[k].push(...r.out[k]); return all; };
+  // Inserts several ranges' rows; coverage rows go last. Every topic was
+  // read, the added ones too, so the ranges count for them as well.
+  async function commit(results, { chunkRows, topicRows = chunkRows }) {
+    const all = gather(results);
+    await store(all);
+    await ch.insert('chunks', chunkRows);
+    await ch.insert('topic_chunks', topicRows.map(r => ({ topics: TOPIC_SET.name, from_block: r.from_block, to_block: r.to_block, rows: 0, source: r.source })));
+    return all;
+  }
+  async function store(all) {
     if (all.markets.length) { await ch.insert('markets', all.markets); for (const x of all.markets) markets.set(x.market, { symbol: x.symbol, name: x.name, priceDecimals: x.price_decimals, lotDecimals: x.lot_decimals }); }
     await ch.insert('accounts', all.accounts);
     await ch.insert('funding', all.funding);
@@ -196,8 +216,6 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
     if (staleSince !== null) { const t = staleSince; await markStale(ch, t); if (staleSince === t) staleSince = null; }
     await ch.insert('params', all.params);
     await ch.insert('ev', all.ev);
-    await ch.insert('chunks', chunkRows);
-    return all;
   }
 
   // --- live ---------------------------------------------------------------
@@ -230,8 +248,12 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
     const last = results.at(-1);
     for (const r of results) { session.logs += r.logs; session.rows += r.out.ev.length; }
     const row = { from_block: session.from, to_block: last.to, from_ts: session.fromTs, to_ts: last.toTs, logs: session.logs, rows: session.rows, source: 'live' };
-    const all = await guardedCommit(results, { chunkRows: [row] });
+    // The added topics' coverage row of this session starts where this
+    // process first read them (or extends the range that ends just before).
+    if (session.topicFrom === undefined) { const t = topicCoverage.intervals.at(-1); session.topicFrom = t && t.to + 1n === results[0].from ? t.from : results[0].from; }
+    const all = await guardedCommit(results, { chunkRows: [row], topicRows: [{ ...row, from_block: session.topicFrom }] });
     coverage.add(results[0].from, last.to, results[0].fromTs, last.toTs);
+    topicCoverage.add(results[0].from, last.to, 0, 0);
     status.live.to = last.to; status.live.toTs = last.toTs; status.live.commits++; status.live.rows += all.ev.length; status.live.lastCommitAt = Date.now();
     emit({ type: 'commit', source: 'live', from: results[0].from, to: last.to, ts: last.toTs, finalized: fin.number, ev: all.ev, funding: all.funding, accounts: all.accounts, markets: all.markets });
     return last.to < fin.number ? 'more' : true;
@@ -263,11 +285,12 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
 
   // --- backfill ------------------------------------------------------------
   const backfillFloor = () => (options.backfillFrom !== null && options.backfillFrom > floor ? options.backfillFrom : floor);
-  function planBackfill(to) {
-    const gaps = coverage.gaps(backfillFloor(), to);
+  const planBackfill = to => chunkTasks(coverage.gaps(backfillFloor(), to));
+  // Ascending gaps to chunks, newest first.
+  function chunkTasks(gaps) {
     const horizon = status.live.finalized !== null ? status.live.finalized - options.liveHorizon + 1000n : null;
     const tasks = [];
-    for (const gap of gaps.reverse()) {
+    for (const gap of [...gaps].reverse()) {
       // Grid-aligned chunks keep boundaries (and dedup tokens) stable across restarts.
       for (let hi = gap.to; hi >= gap.from;) {
         const nodeServes = horizon !== null && hi >= horizon;
@@ -283,10 +306,10 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
   }
 
   // The node first while it has the range, then archives round-robin.
-  function pickSource(task) {
-    if (!archives.length) return live;
-    if (task.nodeServes && task.attempt === 0) return live;
-    return archives[(task.index + task.attempt) % archives.length];
+  function pickSource(task, sources = { live, archives }) {
+    if (!sources.archives.length) return sources.live;
+    if (task.nodeServes && task.attempt === 0) return sources.live;
+    return sources.archives[(task.index + task.attempt) % sources.archives.length];
   }
 
   async function backfill() {
@@ -309,10 +332,8 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
       results.sort((x, y) => (x.from < y.from ? -1 : 1));
       const chunkRows = results.map(r => ({ from_block: r.from, to_block: r.to, from_ts: r.fromTs, to_ts: r.toTs, logs: r.logs, rows: r.out.ev.length, source: r.source }));
       await guardedCommit(results, { chunkRows });
-      for (const r of results) { coverage.add(r.from, r.to, r.fromTs, r.toTs); b.doneBlocks += r.to - r.from + 1n; b.chunks++; b.rows += r.out.ev.length; }
-      rateWindow.push({ at: Date.now(), blocks: results.reduce((a, r) => a + Number(r.to - r.from + 1n), 0) });
-      while (rateWindow.length > 20) rateWindow.shift();
-      if (rateWindow.length > 1) b.rate = Math.round(rateWindow.slice(1).reduce((a, x) => a + x.blocks, 0) / ((rateWindow.at(-1).at - rateWindow[0].at) / 1000));
+      for (const r of results) { coverage.add(r.from, r.to, r.fromTs, r.toTs); topicCoverage.add(r.from, r.to, 0, 0); b.doneBlocks += r.to - r.from + 1n; b.chunks++; b.rows += r.out.ev.length; }
+      b.rate = rateOf(rateWindow, results) ?? b.rate;
       emit({ type: 'backfill', progress: progress() });
     }
     // A failed flush leaves its ranges uncovered (and cleared); the next
@@ -361,6 +382,136 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
     const missing = total - done;
     return { running: b.running, complete: missing === 0n, from_block: lo.toString(), to_block: hi.toString(), total_blocks: total.toString(), done_blocks: done.toString(), missing_blocks: missing.toString(), pct: total > 0n ? Number(done * 10000n / total) / 100 : null, rate_blocks_per_s: b.rate, eta_s: b.rate && missing > 0n ? Math.round(Number(missing) / b.rate) : null, chunks: b.chunks, rows: b.rows, failed: b.failed.slice(0, 20), last_error: b.lastError };
   }
+  // Blocks per second over the last 20 flushes (null until two).
+  function rateOf(window, results) {
+    window.push({ at: Date.now(), blocks: results.reduce((a, r) => a + Number(r.to - r.from + 1n), 0) });
+    while (window.length > 20) window.shift();
+    const seconds = (window.at(-1).at - window[0].at) / 1000;
+    return window.length > 1 && seconds > 0 ? Math.round(window.slice(1).reduce((a, x) => a + x.blocks, 0) / seconds) : null;
+  }
+
+  // --- topic backfill ------------------------------------------------------
+  // The added topics (decode.js TOPIC_SET) alone, over every range the ingest
+  // covered before it read them: newest first, the node while it has the
+  // range, then the archives, each paced. Exactly-once like the ingest: tasks
+  // never overlap, a range is recorded in topic_chunks after its rows, and a
+  // row already stored (a range the ingest read but did not record here, or
+  // a commit retried after its rows landed) is not inserted again. Only
+  // ranges the ingest has covered are read, so its own repair and range
+  // cleanup never meet these rows.
+  const topicTarget = () => {
+    const lo = backfillFloor(), hi = status.live.to;
+    return hi === null ? [] : coverage.intervals.map(x => ({ from: max(x.from, lo), to: min(x.to, hi) })).filter(x => x.to >= x.from);
+  };
+  const planTopics = () => chunkTasks(topicTarget().flatMap(x => topicCoverage.gaps(x.from, x.to)));
+
+  // One eth_getLogs slot per `gap` ms for each archive; a rate-limit or
+  // timeout answer pauses that source for everyone (pausedUntil).
+  async function pace(source) {
+    status.topics.requests++;
+    const now = Date.now(), at = Math.max(now, source.nextAt, source.pausedUntil);
+    source.nextAt = at + source.gap;
+    if (at > now) await sleep(at - now);
+  }
+
+  async function readTopicRange(source, from, to) {
+    const logs = await fetchLogs(source, from, to, topicSetTopics);
+    await stampTimes(source, logs);
+    return { from, to, logs: logs.length, out: rowsFromLogs(logs, { unitsOf, collateralDecimals }), source: source.name };
+  }
+
+  // Rows, then coverage (contiguous ranges as one row each).
+  async function commitTopics(results) {
+    results.sort((x, y) => (x.from < y.from ? -1 : 1));
+    const all = gather(results);
+    const blocks = [...new Set(all.ev.map(r => r.block))];
+    if (blocks.length) {
+      const stored = new Set((await ch.query(`SELECT block, log_index FROM ev WHERE block IN (${blocks.map(digits).join(',')}) AND kind IN (${TRANSFER_KINDS.map(k => `'${k}'`).join(',')})`)).map(r => `${r.block}:${r.log_index}`));
+      const fresh = all.ev.filter(r => !stored.has(`${r.block}:${r.log_index}`));
+      status.topics.skipped += all.ev.length - fresh.length;
+      all.ev = fresh;
+    }
+    await store(all);
+    const runs = [];
+    for (const r of results) { const last = runs.at(-1); if (last && last.to_block + 1n === r.from) { last.to_block = r.to; last.rows += r.out.ev.length; } else runs.push({ topics: TOPIC_SET.name, from_block: r.from, to_block: r.to, rows: r.out.ev.length, source: r.source }); }
+    await ch.insert('topic_chunks', runs);
+    return all;
+  }
+
+  async function topicBackfill() {
+    const t = status.topics;
+    if (t.running) return null;
+    const tasks = planTopics();
+    Object.assign(t, { running: true, startedAt: Date.now(), finishedAt: null, chunks: 0, rows: 0, skipped: 0, failed: [], lastError: null });
+    if (!tasks.length) { Object.assign(t, { running: false, finishedAt: Date.now() }); return t; }
+    log('info', `topic backfill (${TOPIC_SET.name}): ${tasks.length} chunks, ${topicProgress().missing_blocks} blocks`);
+    let next = 0, batch = [], batchStarted = Date.now(), flushing = Promise.resolve();
+    const rateWindow = [];
+    async function flush() {
+      if (!batch.length) return;
+      const results = batch; batch = []; batchStarted = Date.now();
+      const all = await commitTopics(results);
+      for (const r of results) { topicCoverage.add(r.from, r.to, 0, 0); t.chunks++; }
+      t.rows += all.ev.length;
+      t.rate = rateOf(rateWindow, results) ?? t.rate;
+    }
+    // A failed flush leaves its ranges unrecorded; the next round reads them again.
+    const scheduleFlush = () => { flushing = flushing.then(flush).catch(error => { t.lastError = { message: error.message, at: Date.now() }; log('warn', `topic backfill flush failed: ${error.message}`); }); return flushing; };
+    async function worker() {
+      while (!stopRequested) {
+        const task = tasks[next++];
+        if (!task) return;
+        for (;;) {
+          const source = pickSource(task, topicSources);
+          try {
+            batch.push(await readTopicRange(source, task.from, task.to));
+            if (Date.now() - batchStarted >= options.batchMs) await scheduleFlush();
+            break;
+          } catch (error) {
+            task.attempt++;
+            if (error.kind === 'rate' || error.kind === 'timeout') source.pausedUntil = Math.max(source.pausedUntil, Date.now() + Math.min(2000 * 2 ** task.attempt, 60000));
+            if (task.attempt > options.retries) { t.failed.push({ from: task.from.toString(), to: task.to.toString(), message: error.message, kind: error.kind ?? null }); log('warn', `topic backfill chunk ${task.from}-${task.to} failed: ${error.message}`); break; }
+            await sleep(Math.min(500 * 2 ** task.attempt, 20000));
+          }
+        }
+      }
+    }
+    const concurrency = Math.max(options.liveConcurrency, archives.length ? options.archiveConcurrency : 0);
+    try {
+      await Promise.all(Array.from({ length: concurrency }, worker));
+      await scheduleFlush();
+    } catch (error) {
+      t.lastError = { message: error.message, at: Date.now() };
+    } finally {
+      t.running = false; t.finishedAt = Date.now();
+      log('info', `topic backfill ${t.failed.length ? `stopped with ${t.failed.length} failed chunks` : 'round done'}: ${t.chunks} chunks, ${t.rows} rows`);
+    }
+    return t;
+  }
+
+  // Share of the ranges the ingest covered that were read with the added topics.
+  // The contract's protocol balance at a past block: the node while it keeps
+  // that state, then the archives.
+  async function protocolBalanceAt(block) {
+    let last = null;
+    for (const source of [live, ...archives]) {
+      try { return (await source.reader.call('getExchangeInfo', [], BigInt(block)))[1]; } catch (error) { last = error; }
+    }
+    throw last ?? new Error('NO_SOURCE');
+  }
+  function topicProgress() {
+    const t = status.topics;
+    let total = 0n, done = 0n;
+    for (const x of topicTarget()) { total += x.to - x.from + 1n; done += topicCoverage.blocks(x.from, x.to); }
+    const missing = total - done;
+    return { topics: TOPIC_SET.name, events: TOPIC_SET.events, running: t.running, complete: missing === 0n, total_blocks: total.toString(), done_blocks: done.toString(), missing_blocks: missing.toString(), pct: total > 0n ? Number(done * 10000n / total) / 100 : null, covered_from: topicCoveredFrom()?.toString() ?? null, rate_blocks_per_s: t.rate, eta_s: t.rate && missing > 0n ? Math.round(Number(missing) / t.rate) : null, chunks: t.chunks, rows: t.rows, skipped: t.skipped, requests: t.requests, failed: t.failed.slice(0, 20), last_error: t.lastError };
+  }
+  // Lowest block from which the added topics are read without a gap up to
+  // the ingested head (null before the first live commit).
+  function topicCoveredFrom() {
+    const last = topicCoverage.intervals.at(-1);
+    return last && status.live.to !== null && last.to >= status.live.to ? last.from : null;
+  }
 
   async function start() {
     running = true; stopRequested = false;
@@ -375,9 +526,21 @@ export function createIngest({ ch, config, liveRpc, archiveRpcs = [], options = 
         await sleep(result?.failed?.length ? 60000 : 5000);
       }
     })();
+    // The topic backfill takes turns with it (they share the archives) and
+    // stops once every covered range was read with the added topics; later
+    // ranges are read with every topic by the ingest itself.
+    (async () => {
+      while (running && status.live.to === null) await sleep(200);
+      while (running && options.topicBackfill) {
+        if (status.backfill.running) { await sleep(5000); continue; }
+        const result = await topicBackfill().catch(error => { log('warn', `topic backfill failed: ${error.message}`); return null; });
+        if (topicProgress().complete) break;
+        await sleep(result?.failed?.length ? 60000 : 5000);
+      }
+    })();
     return loop;
   }
   function stop() { running = false; stopRequested = true; if (wake) wake(); }
 
-  return { init, start, stop, liveStep, backfill, readRange, commit, repair, notifyFinalized, on: fn => { listeners.add(fn); return () => listeners.delete(fn); }, coverage, markets, revenueParams, unitsOf, progress, status, get collateralDecimals() { return collateralDecimals; }, sources: { live, archives } };
+  return { init, start, stop, liveStep, backfill, topicBackfill, protocolBalanceAt, readRange, commit, repair, notifyFinalized, on: fn => { listeners.add(fn); return () => listeners.delete(fn); }, coverage, topicCoverage, markets, revenueParams, unitsOf, progress, topicProgress, topicCoveredFrom, status, get collateralDecimals() { return collateralDecimals; }, sources: { live, archives } };
 }

@@ -10,15 +10,15 @@ import { ROLLUP_VERSION } from './schema.js';
 const HOUR = 3600, DAY = 86400;
 const hourOf = ts => Math.floor(ts / HOUR) * HOUR;
 
-// Version 3 only added the reducing-fee split and the liquidation shares
-// (columns that read 0 on rows rolled before). A UTC day rolled at version 2
-// with no charged decrease or close and no liquidation has the same figures
-// at version 3, so its hours are carried over as they are; every other day
-// is rolled again from the stored events. Whole days, not hours: scattered
-// single hours left to roll would each become a raw range in every window
-// query (one OR term each) until rolled. Only a bump from 2 to 3 carries;
-// rerunning it carries nothing twice.
-export const CARRY = { from: 2, to: 3, touched: "SELECT DISTINCT toUnixTimestamp(toStartOfDay(ts)) AS d FROM ev WHERE kind = 'liquidation' OR (kind IN ('decrease','close') AND fee != 0)" };
+// Version 4 only changed the liquidation columns (partial liquidations are
+// split too, liq_unsplit counts the off-book ones). A UTC day rolled at
+// version 3 with no liquidation has the same figures at version 4, so its
+// hours are carried over as they are; every other day is rolled again from
+// the stored events. Whole days, not hours: scattered single hours left to
+// roll would each become a raw range in every window query (one OR term
+// each) until rolled. Only a bump from 3 to 4 carries (an older database
+// rolls everything again); rerunning it carries nothing twice.
+export const CARRY = { from: 4, to: 5, touched: "SELECT DISTINCT toUnixTimestamp(toStartOfDay(ts)) AS d FROM ev WHERE kind = 'liquidation'" };
 
 // Marks every hour rolled at the current version from `fromTs` on to be
 // rolled again, in the database, whether or not a rollups object has loaded

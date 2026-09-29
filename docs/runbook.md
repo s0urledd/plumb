@@ -64,6 +64,22 @@ location / { proxy_pass http://127.0.0.1:8787; }
   reaches them. Open interest and TVL over time appear once history is
   contiguous from launch.
 
+**Topic backfill.** An index built before 29 September 2026 lacks the
+protocol balance transfers (payouts, sweeps and the other `Transfer*`
+events) and the fee rates. After the main backfill, a second pass reads only
+those topics over the ranges indexed before, newest first: the node for the
+blocks it keeps, then the archives, at `TOPIC_BACKFILL_RPS` requests per
+second each. With two archives at the default pace it makes about 54,000
+requests of 1,000 blocks, roughly two hours. Progress is in
+`/api/v1/health` (`index.topics`) and on the status page; it resumes where
+it stopped after a restart, and the protocol balance check shows `pending`
+until it is complete.
+
+The set of topics has a name (`protocol-v3` since `ResidueTransferred` and
+`BuyToLiquidateParamsUpdated` were added). Adding an event gives the set a new name, which starts its coverage
+empty: the whole history is read again (about 2.5 hours with two public
+archives at the default pace) and rows already stored are skipped.
+
 ## Execution events (optional, fastest)
 
 With the node's execution event ring enabled, Perpl trades from proposed
@@ -131,6 +147,8 @@ step.
 | `INGEST_BATCH_ROWS`, `INGEST_BATCH_MS` | `150000`, `3000` | Backfill commit batch |
 | `BACKFILL` | `1` | `0` disables the history backfill |
 | `BACKFILL_FROM_BLOCK` | deploy block | Partial history (development) |
+| `TOPIC_BACKFILL` | `1` | `0` disables the topic backfill of the protocol balance transfers |
+| `TOPIC_BACKFILL_RPS` | `4` | `eth_getLogs` per second to each archive during the topic backfill (`0`: unpaced) |
 | `CLICKHOUSE_URL`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB` | `http://127.0.0.1:8123`, `default`, empty, `perpl` | Storage (set by compose) |
 | `ROLLUP_MS` | `60000` | Rollup interval |
 | `PORT`, `HOST` | `8787`, `0.0.0.0` | Listen address (use `127.0.0.1` behind a proxy outside Docker) |
@@ -152,6 +170,7 @@ step.
     reason);
   - `index.live`: the last committed block and its age;
   - `index.backfill`: progress;
+  - `index.topics`: the topic backfill;
   - `index.decoder_checks`: decoder counters;
   - `feeds`: which wake-up source is connected.
 

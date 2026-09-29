@@ -2,7 +2,8 @@
 // rolled up (read from agg_* tables) and everything else (read from raw
 // events with the same expressions), so results are exact at any window
 // edge and never wait for a rollup.
-import { MARKET, marketDefs, PROTOCOL, ACCOUNT, USER, ACCOUNT_TRADES, merged, columns, raw, SQL_SETTINGS } from './aggregates.js';
+import { MARKET, marketDefs, PROTOCOL, ACCOUNT, USER, ACCOUNT_TRADES, liqInferred, merged, columns, raw, SQL_SETTINGS } from './aggregates.js';
+import { BALANCE_KINDS } from './revenue.js';
 
 const HOUR = 3600;
 const int = v => { const n = Number(v); if (!Number.isSafeInteger(n)) throw new Error('INVALID_INTEGER'); return n; };
@@ -178,6 +179,48 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
     return { oi: new Map(o.map(r => [Number(r.market), { long: BigInt(r.l), short: BigInt(r.s) }])), net: BigInt(n[0]?.net ?? 0) };
   }
 
+  // Protocol balance moves (revenue.js BALANCE_KINDS) are rare rows, read
+  // from raw events (a scan of the kind column), each once: the topic
+  // backfill may meet a row the ingest stored too, and merges collapse such
+  // a pair only eventually.
+  const kindList = kinds => kinds.map(x => `'${x.replace(/[^a-z_]/g, '')}'`).join(',');
+  const ONCE = 'LIMIT 1 BY block, log_index';
+  // Amount and count per kind (and bucket) in [from, to).
+  async function balanceMoves(from, to, { bucket = null, kinds = BALANCE_KINDS } = {}) {
+    const t = bucket ? `toStartOfInterval(ts, INTERVAL ${int(bucket)} SECOND) AS t, ` : '';
+    return q(`SELECT ${bucket ? 'toUnixTimestamp(t) AS t, ' : ''}kind, sum(amount) AS total, count() AS n FROM (SELECT ${t}kind, amount, block, log_index FROM ev WHERE kind IN (${kindList(kinds)}) AND ts >= toDateTime(${int(from)}, 'UTC') AND ts < toDateTime(${int(to)}, 'UTC') ${ONCE}) GROUP BY ${bucket ? 't, kind ORDER BY t' : 'kind'}`);
+  }
+  // Running totals per kind up to and including one block.
+  // The time of the last indexed event at or before a block (read in key order).
+  async function tsAtBlock(block) {
+    const [r] = await q(`SELECT toUnixTimestamp(ts) AS ts FROM ev WHERE block <= ${BigInt(block).toString()} ORDER BY block DESC, log_index DESC LIMIT 1`);
+    return r ? Number(r.ts) : null;
+  }
+  async function balanceMovesAtBlock(block) {
+    return q(`SELECT kind, sum(amount) AS total, count() AS n FROM (SELECT kind, amount, block, log_index FROM ev WHERE kind IN (${kindList(BALANCE_KINDS)}) AND block <= ${BigInt(block).toString()} ${ONCE}) GROUP BY kind`);
+  }
+  // The protocol's revenue shares summed before `ts`, or with `block` up to
+  // and including that block (its hour read raw), as cumulativeAtBlock does.
+  const REVENUE_SUMS = ['prot_fees', 'reduce_prot_fees', 'liq_prot_fees', 'liq_unsplit'];
+  async function revenueUpTo(ts, block = null) {
+    const cut = block === null ? int(ts) : Math.floor(int(ts) / HOUR) * HOUR;
+    const s = split(0, cut);
+    const defs = marketDefs(rates?.sql()).filter(([c]) => REVENUE_SUMS.includes(c));
+    const parts = [];
+    if (s.rolled.length) parts.push(`SELECT ${columns(defs)} FROM agg_market_hour FINAL WHERE ${cond('hour', s.rolled)}`);
+    const tail = block === null ? '' : ` OR ts >= toDateTime(${cut}, 'UTC')`;
+    if (s.raw.length || block !== null) parts.push(`SELECT ${raw(defs)} FROM ev WHERE market != 0 AND (${cond('ts', s.raw)}${tail})${block === null ? '' : ` AND block <= ${BigInt(block).toString()}`}`);
+    if (!parts.length) return Object.fromEntries(REVENUE_SUMS.map(c => [c, '0']));
+    return (await q(`SELECT ${merged(defs)} FROM (${parts.join(' UNION ALL ')})`))[0];
+  }
+  // Liquidations under a rule not yet seen on chain (counted like the others)
+  // with the fees they kept, and buy-to-liquidate settlements, up to one block.
+  async function unsplitAtBlock(block) {
+    const u = liqInferred;
+    return (await q(`SELECT countIf(${u}) AS liquidations, sumIf(fee, ${u}) AS fees, countIf(kind = 'btl') AS btl FROM ev WHERE kind IN ('liquidation', 'btl') AND block <= ${BigInt(block).toString()}`))[0];
+  }
+
+
   // Last trade price per market strictly before ts: closed hours from the
   // rollups, the rest from raw fills.
   async function lastPricesBefore(ts) {
@@ -213,8 +256,12 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
     const m = market !== null ? ` AND market = ${int(market)}` : '';
     return q(`SELECT ${EV_COLUMNS} FROM ev_account WHERE account = {a:UInt32} AND (kind IN ${USER} OR kind IN ('liquidation','deleverage','unwind'))${m}${cursor} ORDER BY block DESC, log_index DESC LIMIT ${int(limit)}`, { a: accountId });
   }
+  // Deposits, withdrawals and the protocol's payouts to and sweeps from the account.
   async function accountFlows(accountId, { limit = 200 } = {}) {
-    return q(`SELECT ${EV_COLUMNS} FROM ev_account WHERE account = {a:UInt32} AND kind IN ('deposit','withdrawal') ORDER BY block DESC, log_index DESC LIMIT ${int(limit)}`, { a: accountId });
+    return q(`SELECT ${EV_COLUMNS} FROM ev_account WHERE account = {a:UInt32} AND kind IN ('deposit','withdrawal','payout','sweep') ORDER BY block DESC, log_index DESC ${ONCE} LIMIT ${int(limit)}`, { a: accountId });
+  }
+  async function accountTransfers(accountId) {
+    return (await q(`SELECT sumIf(amount, kind = 'payout') AS payouts, countIf(kind = 'payout') AS payout_count, sumIf(amount, kind = 'sweep') AS sweeps, countIf(kind = 'sweep') AS sweep_count FROM (SELECT kind, amount, block, log_index FROM ev_account WHERE account = {a:UInt32} AND kind IN ('payout','sweep') ${ONCE})`, { a: accountId }))[0];
   }
 
   // Latest rows of given kinds across the exchange (feeds).
@@ -275,5 +322,5 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
     return new Map(rows.map(r => [Number(r.account), { address: r.address, created: Number(r.ts) }]));
   }
 
-  return { marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
+  return { tsAtBlock, marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, accountTransfers, balanceMoves, balanceMovesAtBlock, revenueUpTo, unsplitAtBlock, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
 }
