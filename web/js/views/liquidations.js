@@ -9,7 +9,7 @@ const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
 const BUCKETS = { 3600: 'Per hour', 14400: 'Per 4 hours', 86400: 'Per day', 604800: 'Per week' };
 
 export function mount(el, { query, setQuery }) {
-  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '24h';
+  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '30d';
   let market = query.get('market') ?? '';
   let alive = true, markets = [], adl = null; // { key: filters counted under, n }
   el.innerHTML = `
@@ -98,8 +98,8 @@ export function mount(el, { query, setQuery }) {
   load().catch(error => { $('feed').innerHTML = empty(error.message); });
   return {
     onAction(a) { if (a === 'prev' && page > 0) goTo(page - 1).catch(() => {}); if (a === 'next') goTo(page + 1).catch(() => {}); },
-    onSeg(name, v) { if (name === 'window') setQuery({ window: v === '24h' ? null : v }); },
-    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; market = q.get('market') ?? ''; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); },
+    onSeg(name, v) { if (name === 'window') setQuery({ window: v === '30d' ? null : v }); },
+    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '30d'; market = q.get('market') ?? ''; $('win').innerHTML = seg('window', WINDOWS, w); load().catch(() => {}); },
     destroy() { alive = false; off(); }
   };
 }
