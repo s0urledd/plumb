@@ -67,7 +67,7 @@ button, input, select { font: inherit; color: inherit; }
 .top-inner { max-width: var(--page); margin: 0 auto; padding: 0 var(--gutter); height: 56px; display: flex; align-items: center; gap: 28px; }
 .brand { display: flex; align-items: center; gap: 9px; color: var(--text); flex: none; }
 .brand:hover { color: var(--text); }
-.brand-mark { width: 22px; height: 22px; color: var(--accent); }
+.brand-mark { width: 24px; height: 24px; flex: none; }
 .brand-name { font-weight: 600; font-size: 15px; letter-spacing: -0.02em; }
 .nav { display: flex; gap: 2px; }
 .nav a { padding: 7px 11px; border-radius: var(--radius-sm); color: var(--text-2); font-weight: 500; font-size: 13.5px; }
