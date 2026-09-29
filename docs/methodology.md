@@ -217,12 +217,11 @@ each applies from its own block. The protocol gets the rest of X, so
 `liqAmtPer100K` is not read: it equals the protocol's share only while the
 three rates add up to 100,000. On 2026-09-28 all 11 markets used 15,000
 (15 %) and 10,000 / 80,000 / 10,000 (insurance / trader / protocol).
-`FeeParamsUpdated` and the rates a market is added with are indexed only for
-blocks read since 2026-09-28: new blocks, a market added later, or a full
-re-index. Elsewhere the fee split uses 15,000 until a change is indexed.
-Reducing fills were free before 1.7.5, so this matters from 23 September
-15:20 UTC; 15,000 was checked from 25 September 12:03 UTC, so the
-reducing-fee split of the 45 hours in between rests on it unchecked.
+`FeeParamsUpdated` and the rates a market is added with were not stored for
+the history indexed before 2026-09-29; the topic backfill (below) reads them
+over the whole history, and until it has, the fee split uses 15,000 where no
+change is indexed. Reducing fills were free before 1.7.5, so this matters
+from 23 September 15:20 UTC; 15,000 was checked from 25 September 12:03 UTC.
 Liquidations before a market's first indexed `LiquidationParamsUpdated` use
 10,000 / 80,000, verified from 25 September only.
 
@@ -261,6 +260,52 @@ rolled again from the stored events (whole days, so the hours left to roll
 form few ranges); both steps are safe to repeat. A rate change indexed
 after hours it applies to (the backfill runs newest first) marks those
 hours to roll again before the change is stored.
+
+### Protocol balance
+
+The contract keeps one protocol balance (`getExchangeInfo` →
+`protocolBalanceCNS`). Plumb rebuilds it from launch, event by event, and
+compares it with the contract at the snapshot block, as it does for open
+interest and TVL (`/api/v1/integrity` → `protocol_balance`, and the status
+page).
+
+| Movement | Event | Sign | Revenue |
+| --- | --- | --- | --- |
+| Protocol share of fees and liquidations | see Protocol revenue | + | yes |
+| Protocol deposit | `ProtocolBalanceDeposit` | + | no |
+| Protocol withdrawal | `ProtocolBalanceWithdraw` | − | no |
+| Payout to an account | `TransferProtocolToAccount` (kind `payout`) | − | no |
+| Transfer from an account | `TransferAccountToProtocol` (kind `sweep`) | + | no |
+| From a market's insurance fund | `TransferPerpInsToProtocol` (`insurance_to_protocol`) | + | no |
+| From a market's position balance | `TransferPerpPosToProtocol` (`positions_to_protocol`) | + | no |
+| To a market (insurance fund or positions) | `TransferProtocolToPerp` (`protocol_to_market`) | − | no |
+| To the recycle balance | `TransferProtocolToRecycleBal` (`protocol_to_recycle`) | − | no |
+| Recycle fee | `RecycleFeeToProtocol` (`recycle_fee`) | + | no |
+
+Builder fees stay inside the balance. Funding, collateral deposits and
+withdrawals and position collateral changes never touch it. The first four
+rows and the revenue shares were checked with zero residual (Protocol
+revenue, Verification); the last five never occurred in the checks, so their
+effect is the one their names and arguments state, not verified.
+
+**Topic backfill.** The transfers (and `FeeParamsUpdated` and
+`ContractAdded`) were not read for the history indexed before 29 September
+2026. A separate backfill reads only these topics over every block range
+indexed before, newest first: the node while it still has the range, then
+the archive endpoints, paced (`TOPIC_BACKFILL_RPS`). It records its own
+coverage (`topic_chunks`); every range the ingest reads from now on counts
+too, since the ingest reads these topics as well. A row already stored is
+never inserted twice. Until the scan is complete the check reports
+`pending` with the share scanned.
+
+**Reading the check.** `match` means every movement above, summed from
+launch, equals the contract to the micro-dollar. `differs` shows the
+difference with the full breakdown. The likely causes are the unverified
+cases: liquidation shares before the rates were known (liquidations before a
+market's first indexed rate change use 10,000 / 80,000), partial or
+off-book liquidations and buy-to-liquidate settlements (counted as no
+revenue, and listed under `unverified`), and the five transfers never
+observed.
 
 ### Funding
 
