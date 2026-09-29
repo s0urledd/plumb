@@ -81,7 +81,7 @@ The market share section uses DefiLlama's figures and is labeled as such.
 Accuracy:
 - open interest, TVL and the protocol balance rebuilt from every event since
   launch are compared with the contract's own figures (`/api/v1/integrity`
-  and the [status page](https://plumb.huginn.tech/#/status)); the protocol
+  and the [status page](https://plumb.huginn.tech/status)); the protocol
   balance matched to the micro-dollar on 29 September 2026
   ([evidence](docs/evidence/protocol-balance-2026-09-29.json));
 - every trade uses the price, size and fee of the fill that settled it;

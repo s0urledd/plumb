@@ -28,7 +28,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
     const a = d.account, starred = watch.has(a.address);
     const since = d.summary.first_trade ? `first trade ${date(d.summary.first_trade)} · ${int(d.summary.active_days)} active days · last ${ago(d.summary.last_trade)}` : 'no trades indexed yet';
     return `<div class="page-head"><div class="wallet-head">
-        <div class="wallet-id"><div class="sub"><a href="#/traders">Traders</a> / Wallet</div><div class="big"><span class="addr-full">${esc(a.address)}</span><span class="addr-short">${esc(short(a.address))}</span></div>
+        <div class="wallet-id"><div class="sub"><a href="/traders">Traders</a> / Wallet</div><div class="big"><span class="addr-full">${esc(a.address)}</span><span class="addr-short">${esc(short(a.address))}</span></div>
           <div class="sub">Account #${esc(a.id)} · ${esc(since)}</div></div></div>
         <div class="wallet-actions">
           <button class="btn ghost" data-copy="${esc(a.address)}">${ICON.copy} Copy</button>
@@ -333,7 +333,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
   }
   const loadAnalytics = () => get(`wallets/${encodeURIComponent(key)}/analytics`, { maxAge: 20000 }).then(a => { if (!alive) return; an = a; applyAnalytics(); }).catch(() => {});
   get(`wallets/${encodeURIComponent(key)}`, { maxAge: 3000 }).then(d => { if (!alive) return; data = d; render(); loadAnalytics(); loadPeriods(); }).catch(error => {
-    el.innerHTML = `<div class="page-head"><div><div class="sub"><a href="#/traders">Traders</a> / Wallet</div><h1 class="mono">${esc(short(key))}</h1></div></div><section class="panel">${empty(error.status === 404 ? 'No Perpl account for this address (checked in the index and on the contract).' : `Could not load wallet (${error.message})`)}</section>`;
+    el.innerHTML = `<div class="page-head"><div><div class="sub"><a href="/traders">Traders</a> / Wallet</div><h1 class="mono">${esc(short(key))}</h1></div></div><section class="panel">${empty(error.status === 404 ? 'No Perpl account for this address (checked in the index and on the contract).' : `Could not load wallet (${error.message})`)}</section>`;
   });
   function refresh() { if (!data || tab === 'trades') return; get(`wallets/${encodeURIComponent(key)}`, { maxAge: 0 }).then(d => { if (!alive) return; data = d; const scroll = window.scrollY; render(); window.scrollTo({ top: scroll }); loadAnalytics(); loadPeriods(); }).catch(() => {}); }
   // Marks move uPnL continuously: poll. A trade or liquidation of this account refreshes at once.

@@ -37,7 +37,7 @@ export function mount(el, { query, navigate }) {
     if (!keys.length) {
       const suggested = watch.list().slice(0, 5).map(w => w.key);
       $('table').innerHTML = empty(suggested.length ? 'No wallets selected. Your watchlist is below.' : 'No wallets selected. Add an address above or use Compare on a wallet page.');
-      if (suggested.length) $('table').innerHTML += `<div class="panel-foot"><span>Watchlist: ${suggested.map(k => `<a href="#/compare?w=${esc(k)}">${esc(short(k))}</a>`).join(' · ')}</span><button class="btn" data-action="all-watch">Compare watchlist</button></div>`;
+      if (suggested.length) $('table').innerHTML += `<div class="panel-foot"><span>Watchlist: ${suggested.map(k => `<a href="/compare?w=${esc(k)}">${esc(short(k))}</a>`).join(' · ')}</span><button class="btn" data-action="all-watch">Compare watchlist</button></div>`;
       $('chart').innerHTML = ''; $('chart').closest('.panel').hidden = true;
       return;
     }
@@ -47,7 +47,7 @@ export function mount(el, { query, navigate }) {
     $('chart').closest('.panel').hidden = false;
     // Each wallet keeps its colour: a dot in its header, on each of its values on phones, and its chart line.
     const remove = w => `<button class="icon-btn" data-action="remove" data-key="${esc(w.key)}" title="Remove">${ICON.x}</button>`;
-    const col = w => w.error ? `<th class="n"><span class="cmp-w"><span class="neg">${esc(short(w.key))}</span>${remove(w)}</span><div class="sub">${esc(ERRORS[w.error] ?? 'not found')}</div></th>` : `<th class="n" style="--c:${colour(w.key)}"><span class="cmp-w"><i></i><a class="mono" href="#/wallet/${esc(w.account.address)}">${esc(short(w.account.address))}</a>${remove(w)}</span><div class="sub">#${esc(w.account.id)}</div></th>`;
+    const col = w => w.error ? `<th class="n"><span class="cmp-w"><span class="neg">${esc(short(w.key))}</span>${remove(w)}</span><div class="sub">${esc(ERRORS[w.error] ?? 'not found')}</div></th>` : `<th class="n" style="--c:${colour(w.key)}"><span class="cmp-w"><i></i><a class="mono" href="/wallet/${esc(w.account.address)}">${esc(short(w.account.address))}</a>${remove(w)}</span><div class="sub">#${esc(w.account.id)}</div></th>`;
     const rows = [
       ['Account value', w => usd(w.portfolio?.account_value)],
       ['Open positions', w => int(w.positions?.length ?? 0)],

@@ -37,7 +37,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'max_leverage', label: 'Max lev.', n: true, sort: r => r.max_leverage ?? 0, render: r => (r.max_leverage ? `${r.max_leverage}x` : '—') },
     { key: 'insurance', label: 'Insurance', n: true, sort: r => num(r.insurance) ?? 0, render: r => usd(r.insurance) }
   ];
-  function render() { if (data) el.querySelector('#list').innerHTML = table({ id: 'm', columns: COLS, rows: data.markets, sortKey: sort.key, sortDir: sort.dir, rowAttrs: r => `class="link${idle(r) ? ' inactive' : ''}" data-href="#/markets/${r.id}"` }); }
+  function render() { if (data) el.querySelector('#list').innerHTML = table({ id: 'm', columns: COLS, rows: data.markets, sortKey: sort.key, sortDir: sort.dir, rowAttrs: r => `class="link${idle(r) ? ' inactive' : ''}" data-href="/markets/${r.id}"` }); }
   async function load() { data = await get(`protocol?window=${w}`); if (!alive) return; assignColors([...data.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol }))); render(); }
   // Funding across markets and time: APR per bucket, green when longs pay.
   async function loadFunding() {

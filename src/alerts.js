@@ -146,7 +146,7 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
   }
 
   // --- screens ---------------------------------------------------------------------
-  const walletLink = (address, id) => `<a href="${site}/#/wallet/${escHtml(address || id)}">${escHtml(address ? short(address) : `#${id}`)}</a>`;
+  const walletLink = (address, id) => `<a href="${site}/wallet/${escHtml(address || id)}">${escHtml(address ? short(address) : `#${id}`)}</a>`;
   const onMarket = market => (market !== null && market !== undefined ? ` on ${escHtml(symbolOf(market))}` : '');
   const btn = (text, data) => ({ text, callback_data: data });
   const back = [btn('‹ Menu', 'menu')];
@@ -237,7 +237,7 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
     const s = chatOf(chat);
     if (!s.wallets[id] && Object.keys(s.wallets).length >= MAX_WALLETS) return `You can watch up to ${MAX_WALLETS} wallets.`;
     s.wallets[id] = acct.address ?? null; touch();
-    return { text: `👛 <b>Watching</b> ${walletLink(acct.address, id)}\nPosition changes, and a warning at ${levelsOf(chat).join('%, ')}% from liquidation.`, keyboard: [[btn('📍 Positions now', 'pos'), { text: '📊 On Plumb', url: `${site}/#/wallet/${acct.address || id}` }], back] };
+    return { text: `👛 <b>Watching</b> ${walletLink(acct.address, id)}\nPosition changes, and a warning at ${levelsOf(chat).join('%, ')}% from liquidation.`, keyboard: [[btn('📍 Positions now', 'pos'), { text: '📊 On Plumb', url: `${site}/wallet/${acct.address || id}` }], back] };
   }
   function unwatch(chat, id) {
     if (subs[chat]) { delete subs[chat].wallets[id]; touch(); }

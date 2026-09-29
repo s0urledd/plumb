@@ -83,7 +83,7 @@ export function mount(el, { query, setQuery }) {
       { key: 'n', label: 'Notional', n: true, render: r => usd(r.notional) },
       { key: 'pnl', label: 'Realized', n: true, render: r => pnl(r.pnl) },
       { key: 'rem', label: 'Remaining', n: true, render: r => (num(r.remaining) ? size(r.remaining) : '<span class="faint">closed</span>') }
-    ], rows, rowAttrs: r => `class="link ${r.fresh ? 'flash' : ''}" data-href="#/wallet/${esc(r.address || r.account)}"`, emptyText: 'No liquidations indexed in this range' }) + pager;
+    ], rows, rowAttrs: r => `class="link ${r.fresh ? 'flash' : ''}" data-href="/wallet/${esc(r.address || r.account)}"`, emptyText: 'No liquidations indexed in this range' }) + pager;
   }
   async function goTo(n) {
     const asked = filters();

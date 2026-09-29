@@ -2,7 +2,7 @@
 // liquidation ladder from live positions, top traders and recent trades.
 import { get, stream } from '../api.js';
 import { usd, int, price, pct, num, esc, size, share, signClass, timeOnly, dateTime, duration } from '../format.js';
-import { kpi, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, skeleton, skChart, empty, colorOf, chartTools, logo } from '../ui.js';
+import { kpi, seg, table, mkt, sideTag, addr, ratio, pnl, pctCell, fundingCell, fundingTip, tradeAction, skeleton, skChart, empty, colorOf, chartTools, logo, go } from '../ui.js';
 import { candles, signedBars, mirrored, flowBars, entryProfile, COLORS } from '../charts.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -21,7 +21,7 @@ export function mount(el, { params, query, setQuery }) {
   const panel = (key, title, desc, { csv = true, ctl = '', cls = '' } = {}) => `<section class="panel trend ${cls}"><div class="panel-head"><div class="trend-id"><h2>${title} <span class="info-tip" title="${esc(desc)}">i</span></h2><div class="head-value" id="${key}-v"></div></div><div class="trend-side"><div class="trend-ctl">${chartTools(key, `market-${id}-${key}`, { csv })}${ctl}</div><div class="legend dots" id="${key}-lg"></div></div></div><div class="panel-body"><div class="chart sm" id="${key}">${skChart()}</div></div></section>`;
   el.innerHTML = `
     <div class="page-head">
-      <div><div class="sub"><a href="#/markets">Markets</a> /</div><h1 id="title">Market #${id}</h1><div class="sub" id="subtitle"></div></div>
+      <div><div class="sub"><a href="/markets">Markets</a> /</div><h1 id="title">Market #${id}</h1><div class="sub" id="subtitle"></div></div>
       <div id="win">${seg('window', WINDOWS, w)}</div>
     </div>
     <div class="stack">
@@ -117,7 +117,7 @@ export function mount(el, { params, query, setQuery }) {
       let prev = null;
       const ohlc = span.map(x => { const c = num(x.close), o = num(x.open) ?? prev ?? c, h = num(x.high) ?? Math.max(o, c), l = num(x.low) ?? Math.min(o, c); prev = c; return c === null ? '-' : [o, c, l, h]; });
       candles(node, { times: s.times.slice(first, last + 1), ohlc, volume: span.map(x => num(x.volume)), bucketSeconds: s.meta.bucket_seconds, priceFmt: v => price(v).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''), volColor: colorOf(id) + '99', zoom: true,
-        levels: showLevels ? levels?.levels ?? null : null, mark: num(levels?.mark), levelSpan: LEVEL_SPAN, onLevel: l => { const t = l.top; if (t) location.hash = `#/wallet/${t.address || t.account_id}`; } });
+        levels: showLevels ? levels?.levels ?? null : null, mark: num(levels?.mark), levelSpan: LEVEL_SPAN, onLevel: l => { const t = l.top; if (t) go(`/wallet/${t.address || t.account_id}`); } });
     }
   }
   // Exact flows from position events: what other dashboards infer from price and open interest.
@@ -183,7 +183,7 @@ export function mount(el, { params, query, setQuery }) {
       { key: 'u', label: 'uPnL', n: true, render: r => pnl(r.pnl) },
       { key: 'q', label: 'Liq. price', n: true, render: r => price(r.liquidation_price) },
       { key: 'd', label: 'To liq.', n: true, render: r => (r.liquidation_distance_pct === null ? '—' : `<span class="${r.liquidation_distance_pct < 5 ? 'neg' : r.liquidation_distance_pct < 15 ? 'warn-text' : 'muted'}">${pct(r.liquidation_distance_pct, { digits: 1 })}</span>`) }
-    ], rows: shown, rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account_id)}"` });
+    ], rows: shown, rowAttrs: r => `class="link" data-href="/wallet/${esc(r.address || r.account_id)}"` });
   }
   // Order book: asks above, bids below, each level with its cumulative depth
   // from the touch; the bar width is that depth against the deeper side.
@@ -311,7 +311,7 @@ export function mount(el, { params, query, setQuery }) {
       { key: 'a', label: 'Trader', render: r => addr(r.address, r.account) },
       { key: 'p', label: 'Net PnL', n: true, render: r => pnl(r.pnl) },
       { key: 'v', label: 'Volume', n: true, render: r => usd(r.volume) }
-    ], rows: lb.rows, rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"` });
+    ], rows: lb.rows, rowAttrs: r => `class="link" data-href="/wallet/${esc(r.address || r.account)}"` });
   }
   let tape = [];
   function renderTrades(rows) {

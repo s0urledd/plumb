@@ -30,7 +30,7 @@ export function mount(el, { query, setQuery }) {
   el.innerHTML = `
     <div class="page-head hero">
       <div class="hero-id">
-        <div><h1><img class="hero-logo" src="img/venues/perpl.png" alt="" width="26" height="26">Perpl <span class="hero-muted">Analytics</span></h1>
+        <div><h1><img class="hero-logo" src="/img/venues/perpl.png" alt="" width="26" height="26">Perpl <span class="hero-muted">Analytics</span></h1>
           <div class="sub">Live analytics for Perpl on Monad: markets, traders, liquidation risk and alerts, from every onchain trade.</div></div>
       </div>
       <div class="hero-actions"><a class="btn primary" href="https://app.perpl.xyz" target="_blank" rel="noopener noreferrer">Trade on Perpl ${ICON.ext}</a><div id="win">${seg('window', WINDOWS, w)}</div></div>
@@ -39,7 +39,7 @@ export function mount(el, { query, setQuery }) {
       <div class="kpis" id="kpis">${Array.from({ length: 6 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:70%;margin-top:10px"></div><div class="skeleton" style="height:28px;margin-top:10px"></div></div>').join('')}</div>
       <div class="grid g-main">
         <section class="panel">
-          <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right"><a class="meta" href="#/markets">All markets →</a>${chartTools('main-chart', 'volume')}</div></div>
+          <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right"><a class="meta" href="/markets">All markets →</a>${chartTools('main-chart', 'volume')}</div></div>
           <div class="panel-head vol-keys"><div class="legend toggles" id="legend"></div><span class="head-right"><span id="bucket"></span><span class="meta" id="chart-meta"></span></span></div>
           <div class="panel-body"><div class="chart" id="main-chart">${skChart()}</div></div>
         </section>
@@ -62,7 +62,7 @@ export function mount(el, { query, setQuery }) {
       </div>
       <div class="section-label">Activity</div>
       <div class="grid g-3 aligned">
-        <section class="panel"><div class="panel-head"><h2>Latest liquidations</h2><a class="meta" href="#/liquidations">View all →</a></div><div class="panel-body flush" id="liqs">${skeleton(5)}</div></section>
+        <section class="panel"><div class="panel-head"><h2>Latest liquidations</h2><a class="meta" href="/liquidations">View all →</a></div><div class="panel-body flush" id="liqs">${skeleton(5)}</div></section>
         <section class="panel"><div class="panel-head"><h2>Deposits and withdrawals</h2><div id="flowview">${segSm('flowv', FLOW_VIEWS, flowView)}</div></div><div class="panel-body flush" id="flowlist">${skeleton(5)}</div></section>
         <section class="panel fill"><div class="panel-head"><h2>Across windows</h2><span class="meta">Exchange totals</span></div><div class="panel-body flush fill-table" id="windows">${skeleton(5)}</div></section>
       </div>
@@ -274,7 +274,7 @@ export function mount(el, { query, setQuery }) {
       { key: 's', label: 'Action', render: tradeAction },
       { key: 'p', label: 'Price', n: true, render: r => price(r.price) },
       { key: 'v', label: 'Value', n: true, render: r => usd(r.notional) }
-    ], rows: rows.slice(0, 60), rowAttrs: r => `class="link ${r.fresh ? 'flash' : ''} ${r.proposed ? 'proposed' : ''}" data-href="#/wallet/${esc(r.address || r.account)}" ${r.proposed ? `title="${stageTitle(r)}"` : ''}` });
+    ], rows: rows.slice(0, 60), rowAttrs: r => `class="link ${r.fresh ? 'flash' : ''} ${r.proposed ? 'proposed' : ''}" data-href="/wallet/${esc(r.address || r.account)}" ${r.proposed ? `title="${stageTitle(r)}"` : ''}` });
     for (const r of tape) r.fresh = false;
   }
   function renderLiqs(l) {
@@ -283,13 +283,13 @@ export function mount(el, { query, setQuery }) {
       { key: 's', label: 'Position', render: r => sideTag(r.side) },
       { key: 'v', label: 'Value', n: true, render: r => usd(r.notional) },
       { key: 't', label: 'When', n: true, render: r => `<span class="muted">${ago(r.ts)}</span>` }
-    ], rows: l.rows.slice(0, 7), rowAttrs: r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"` }) : empty('No liquidations yet');
+    ], rows: l.rows.slice(0, 7), rowAttrs: r => `class="link" data-href="/wallet/${esc(r.address || r.account)}"` }) : empty('No liquidations yet');
   }
   // Latest movements, or the window's largest depositors / withdrawers with their net.
   function renderFlows(f = flows) {
     if (!f) return;
     flows = f;
-    const link = r => `class="link" data-href="#/wallet/${esc(r.address || r.account)}"`;
+    const link = r => `class="link" data-href="/wallet/${esc(r.address || r.account)}"`;
     if (flowView === 'recent') {
       const rows = (f.recent ?? []).slice(0, 7);
       $('flowlist').innerHTML = rows.length ? table({ id: 'flowlist', compact: true, columns: [
@@ -315,7 +315,7 @@ export function mount(el, { query, setQuery }) {
       { key: 'volume', label: 'Volume', n: true, render: r => usd(r.volume) },
       { key: 'fees', label: 'Fees', n: true, render: r => usd(r.fees) },
       { key: 'traders', label: 'Traders', n: true, render: r => int(r.traders) }
-    ], rows, rowAttrs: r => `class="link" data-href="#/?window=${r.k}"` });
+    ], rows, rowAttrs: r => `class="link" data-href="/?window=${r.k}"` });
   }
 
   // Market-share context from DefiLlama's open-interest overview (external, labelled as such).
@@ -325,7 +325,7 @@ export function mount(el, { query, setQuery }) {
     if (!alive) return;
     const src = `<a href="${esc(l.source.url)}" target="_blank" rel="noopener noreferrer">${esc(l.source.name)}</a>, ${ago(Math.round(l.fetched_at / 1000))}`;
     const bar = (v, share) => `${usd(v)}<span class="track"><i style="width:${Math.max(2, Math.min(100, share ?? 0))}%"></i></span>`;
-    const name = r => (r.self || r.name === 'Perpl' ? `<span class="mkt"><img class="tk" src="img/venues/perpl.png" alt="" width="16" height="16"><b>${esc(r.name)}</b></span>` : esc(r.name));
+    const name = r => (r.self || r.name === 'Perpl' ? `<span class="mkt"><img class="tk" src="/img/venues/perpl.png" alt="" width="16" height="16"><b>${esc(r.name)}</b></span>` : esc(r.name));
     // The five largest venues give the scale; Perpl's own row follows them.
     const top = l.top.slice(0, 5);
     if (l.perpl && l.perpl.rank > top.length) top.push({ rank: l.perpl.rank, name: 'Perpl', oi: l.perpl.oi, share_pct: l.perpl.share_pct });
