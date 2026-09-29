@@ -11,11 +11,11 @@
 ![Plumb overview](docs/images/overview.png)
 
 Perpl, the onchain perpetuals exchange on Monad, keeps every trade, position
-and order onchain, but only as raw events and contract state. Plumb turns
-them into protocol totals, wallet histories and liquidation risk. It tracks
-every trade, position change, liquidation and deposit since launch, plus the
-contract's live state, and runs about a second behind the chain. Its data is
-also available through a public API.
+and order onchain, but only as raw events and contract state. Plumb has its
+own indexer that turns them into protocol totals, wallet histories and
+liquidation risk. It has indexed every trade, position change, liquidation and
+deposit since launch, reads the contract's live state, and runs about a second
+behind the chain. Its data is also available through a public API.
 
 It is for Perpl traders, and for builders who want the same data in their own
 tools.
@@ -61,9 +61,13 @@ state instead of estimated. And with fast blocks and the node's execution
 event stream, a trade shows on the tape while its block is still being
 finalized.
 
-All Perpl data comes from a Monad node:
-- exchange events (`eth_getLogs`) over finalized blocks: fills, position
-  changes, funding, liquidations, deposits and withdrawals;
+Plumb's indexer reads Perpl's raw events from Monad over finalized blocks:
+fills, position changes, funding, liquidations, deposits and withdrawals. It
+decodes them, links every position change to the fill
+that settled it and stores them in ClickHouse with hourly rollups: more than
+67 million events since launch. It follows new blocks as they finalize.
+
+Next to the index:
 - contract state (`eth_call` through Multicall3, at a pinned block): every
   open position, the order book, insurance funds and market parameters;
 - the node's execution event stream, through a
@@ -107,11 +111,11 @@ Reference: [docs/api.md](docs/api.md).
   Monad node                                        Plumb (docker compose)
   ------------------------------                    ----------------------------------
   monad-rpc
-    eth_getLogs (finalized blocks) ---------------> ingest     events -> ClickHouse
+    eth_getLogs (finalized blocks) ---------------> indexer    events -> ClickHouse
     eth_call (pinned block) ----------------------> collector  positions, book, risk
-    WebSocket newHeads ---------------------------> wakes the ingest
+    WebSocket newHeads ---------------------------> wakes the indexer
   monad-execution
-    execution event ring --> Monode sidecar ------> wakes the ingest; trades in
+    execution event ring --> Monode sidecar ------> wakes the indexer; trades in
                                                     blocks not final yet (tape only)
 
                                                     ClickHouse events, hourly rollups
@@ -119,8 +123,8 @@ Reference: [docs/api.md](docs/api.md).
                                                     web/       dashboard
 ```
 
-- **Ingest** follows the finalized head, links every position change to its
-  fill and backfills history from launch.
+- **Indexer** follows the finalized head, decodes the exchange's events,
+  links every position change to its fill and indexes the history from launch.
 - **Collector** reads all open positions and the order book at a pinned block
   and works out margin, liquidation prices and stress figures in exact integer
   arithmetic.
@@ -158,9 +162,9 @@ npm ci && npm run check && npm test   # unit tests, no network needed
 
 ## Where to look in the code
 
-- [`src/decode.js`](src/decode.js), [`src/ingest.js`](src/ingest.js):
-  decoding exchange events, linking each position change to its fill, live
-  ingest and backfill.
+- [`src/decode.js`](src/decode.js), [`src/ingest.js`](src/ingest.js): the
+  indexer: decoding exchange events, linking each position change to its
+  fill, following the chain and indexing the history.
 - [`src/math.js`](src/math.js), [`src/metrics.js`](src/metrics.js): margin,
   liquidation prices and stress in the contract's own integer units.
 - [`src/collector.js`](src/collector.js): contract state at a pinned block,
@@ -169,7 +173,7 @@ npm ci && npm run check && npm test   # unit tests, no network needed
   stream to the browser.
 - [`src/alerts.js`](src/alerts.js): the Telegram bot.
 - [`test/`](test): unit tests for the above, plus a ClickHouse integration
-  test for the ingest (`npm run test:integration`, run in CI).
+  test for the indexer (`npm run test:integration`, run in CI).
 
 ## After the hackathon
 
