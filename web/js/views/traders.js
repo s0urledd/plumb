@@ -6,8 +6,10 @@ import { seg, table, addr, pnl, bpsCell, kpi, skeleton, mkt, mktLink, tradeActio
 import { SEA_ICONS } from '../cohort-icons.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
-const SORTS = [['pnl', 'Top PnL'], ['loss', 'Top losses'], ['volume', 'Volume'], ['liquidated', 'Liquidated'], ['fees', 'Fees paid'], ['net_flow', 'Net inflow'], ['deposits', 'Deposits'], ['withdrawals', 'Withdrawals']];
+const SORTS = [['pnl', 'Top PnL'], ['loss', 'Top losses'], ['volume', 'Volume'], ['fees', 'Fees paid'], ['liquidated', 'Liquidated'], ['net_flow', 'Net inflow'], ['deposits', 'Deposits'], ['withdrawals', 'Withdrawals']];
 const FLOW_SORTS = new Set(['net_flow', 'deposits', 'withdrawals']);
+// The ranking switches, trading rankings and flows apart, each with its label.
+const rankBy = by => `<span class="lb-label">Rank by</span>${seg('by', SORTS.filter(([v]) => !FLOW_SORTS.has(v)), by)}<span class="lb-label flows">Flows</span>${seg('by', SORTS.filter(([v]) => FLOW_SORTS.has(v)), by)}`;
 const CO_TABS = [['size', 'By size'], ['pnl', 'By track record']];
 const SM_WINDOWS = [['7d', '7D'], ['30d', '30D'], ['all', 'All']];
 const SM_SIZES = [['100', '≥$100'], ['1000', '≥$1K'], ['10000', '≥$10K']];
@@ -21,8 +23,7 @@ export function mount(el, { query, setQuery }) {
     <div class="page-head"><div><h1>Traders</h1><div class="sub">Rankings of every account that traded, how traders are positioned now, and the latest moves of the most profitable ones.</div></div><div id="win">${seg('window', WINDOWS, w)}</div></div>
     <div class="stack traders-page">
     <div class="kpis k4" id="tkpis">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:60%;margin-top:10px"></div></div>').join('')}</div>
-    <section class="panel" id="board"><div class="panel-head"><div><h2 id="title">Leaderboard</h2><div class="desc" id="meta"></div></div><div class="lb-tools"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><a class="btn ghost" id="csv">${ICON.download} CSV</a></div></div>
-      <div class="panel-head lb-ctl"><div id="by">${seg('by', SORTS, by)}</div></div>
+    <section class="panel" id="board"><div class="panel-head lb-head"><div><h2 id="title">Leaderboard</h2><div class="desc" id="meta"></div></div><div class="lb-tools"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><a class="btn ghost" id="csv">${ICON.download} CSV</a></div><div class="lb-rank" id="by" role="group" aria-label="Rank traders by">${rankBy(by)}</div></div>
       <div class="panel-body flush" id="list">${skeleton(12)}</div>
       <div class="panel-foot pager"><span id="count"></span><span class="pager-ctl" id="pager"></span></div></section>
     <section class="panel"><div class="panel-head"><div><h2>Positioning by cohort</h2><div class="desc" id="co-desc">Open positions now, grouped by account · click a cohort for its largest wallets</div></div><div id="co-tabs">${seg('co', CO_TABS, coTab)}</div></div>
@@ -201,7 +202,7 @@ export function mount(el, { query, setQuery }) {
   return {
     onSeg(name, v) { if (name === 'smm') { smMin = v; $('sm-min').innerHTML = seg('smm', SM_SIZES, smMin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'smw') { smWin = v; $('sm-win').innerHTML = seg('smw', SM_WINDOWS, smWin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'co') { coTab = v; coSel = null; $('co-tabs').innerHTML = seg('co', CO_TABS, coTab); renderCohorts(); return; } if (name === 'window') setQuery({ window: v === '24h' ? null : v }); if (name === 'by') setQuery({ by: v === 'pnl' ? null : v }); },
     onAction(a, t) { if (a === 'co-pick') { coSel = coSel === t.dataset.key ? null : t.dataset.key; renderCohorts(); return; } if (a === 'co-close') { coSel = null; renderCohorts(); return; } if (a === 'next' && data && page + 1 < pages()) goTo(page + 1); if (a === 'prev' && page > 0) goTo(page - 1); },
-    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; by = SORTS.some(([v]) => v === q.get('by')) ? q.get('by') : 'pnl'; page = 0; $('win').innerHTML = seg('window', WINDOWS, w); $('by').innerHTML = seg('by', SORTS, by); load().catch(() => {}); loadSummary().catch(() => {}); },
+    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; by = SORTS.some(([v]) => v === q.get('by')) ? q.get('by') : 'pnl'; page = 0; $('win').innerHTML = seg('window', WINDOWS, w); $('by').innerHTML = rankBy(by); load().catch(() => {}); loadSummary().catch(() => {}); },
     destroy() { alive = false; clearInterval(coTimer); clearInterval(smTimer); }
   };
 }
