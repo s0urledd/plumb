@@ -754,21 +754,23 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       return { meta: metaOf({ window: 'all', from, to, coverage: coverageOf(from, to) }), block: state.block.number.toString(), ...t };
     });
   }
-  // The requests each page opens with, re-read every WARM_MS so the first
-  // visitor after a quiet spell is not the one who waits for them (one at a
-  // time, and each only recomputed once its TTL has passed).
-  const OPENING = [
-    [protocol, 'window=24h'], [protocol, 'window=7d'], [protocol, 'window=30d'], [protocol, 'window=all'],
-    [series, 'window=24h'], [series, 'window=30d'], [series, 'window=all'],
-    [liquidations, 'limit=8'], [liquidations, 'limit=50&offset=0&window=30d'],
-    [flows, 'window=24h'],
-    [leaderboard, 'window=24h&by=pnl&limit=20&offset=0'],
-    [traderSummary, 'window=24h'], [traderSummary, 'window=30d'], [traderSummary, 'window=all'], [traderSummary, 'window=this_epoch'], [traderSummary, 'window=last_epoch'],
-    [smartMoves, 'window=30d&min=1000&limit=500'],
-    [fundingOverview, 'window=24h']
-  ];
-  async function warm() {
-    for (const [fn, q] of OPENING) { try { await fn(new URLSearchParams(q)); } catch { /* the next round tries again */ } }
+  // The requests each page opens with, re-read so the first visitor after a
+  // quiet spell is not the one who waits for them, one at a time, each only
+  // recomputed once its TTL has passed. The last day's (kept seconds, cheap)
+  // are read often; the longer windows are served up to ten minutes stale
+  // (createCache), so reading them every few minutes is enough.
+  const OPENING = {
+    fast: [[series, 'window=24h'], [flows, 'window=24h'], [leaderboard, 'window=24h&by=pnl&limit=20&offset=0'], [traderSummary, 'window=24h'], [fundingOverview, 'window=24h']],
+    slow: [
+      [protocol, 'window=7d'], [protocol, 'window=30d'], [protocol, 'window=all'],
+      [series, 'window=30d'], [series, 'window=all'],
+      [liquidations, 'limit=8'], [liquidations, 'limit=50&offset=0&window=30d'],
+      [traderSummary, 'window=30d'], [traderSummary, 'window=all'], [traderSummary, 'window=this_epoch'], [traderSummary, 'window=last_epoch'],
+      [smartMoves, 'window=30d&min=1000&limit=500']
+    ]
+  };
+  async function warm(tier = 'fast') {
+    for (const [fn, q] of OPENING[tier] ?? []) { try { await fn(new URLSearchParams(q)); } catch { /* the next round tries again */ } }
   }
   // New liquidations: the cached feeds are recomputed on their next request.
   const liquidationsChanged = () => cache.drop('liq:');
