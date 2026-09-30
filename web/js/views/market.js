@@ -53,6 +53,7 @@ export function mount(el, { params, query, setQuery }) {
   const $ = s => el.querySelector(`#${s}`);
   const wl = () => (w === 'all' ? 'All-time' : w);
   const closed = () => row?.active === false;
+  let everTraded = null; // whether this market has a trade in all of history (a listing may never have opened)
   const none = text => empty(closed() ? CLOSED : text);
   // Open on the contract, but nothing traded in the window and nothing open: tagged like the list does.
   const idle = () => Boolean(row) && !closed() && !num(row.volume) && !num(row.open_interest);
@@ -63,7 +64,7 @@ export function mount(el, { params, query, setQuery }) {
   function renderSubtitle() {
     if (!row) return;
     const lev = row.max_leverage ?? risk?.margin?.max_leverage;
-    const tag = closed() ? ' · <span class="tag warn" title="Not open for trading; the mark is the last one the contract holds">inactive · last mark</span>'
+    const tag = closed() ? (everTraded === false ? ' · <span class="tag" title="Listed on the exchange, not open for trading yet">upcoming</span>' : ' · <span class="tag warn" title="Not open for trading; the mark is the last one the contract holds">closed · last mark</span>')
       : idle() ? ` · <span class="tag" title="Open for trading, but no trades ${w === 'all' ? 'yet' : `in ${w}`} and no open positions">inactive</span>` : '';
     $('subtitle').innerHTML = `Mark <b class="num" style="color:var(--text)">${price(row.mark ?? row.close)}</b> · ${num(row.change_pct) === null ? '' : `${pctCell(row.change_pct)} ${wl()} · `}max leverage ${lev ? `${lev}x` : '—'}${tag}`;
   }
@@ -78,7 +79,9 @@ export function mount(el, { params, query, setQuery }) {
     return new Set(near.filter(([a, b]) => a + b >= peak * 0.05).map(([a, b]) => (a >= b ? 'long' : 'short')));
   };
   async function load() {
-    const [p, s, lv] = await Promise.all([get(`protocol?window=${w}`), get(`protocol/series?window=${w}&market=${id}`), get(`markets/${id}/liq-levels`, { maxAge: 10000 }).catch(() => null)]);
+    const [p, s, lv, all] = await Promise.all([get(`protocol?window=${w}`), get(`protocol/series?window=${w}&market=${id}`), get(`markets/${id}/liq-levels`, { maxAge: 10000 }).catch(() => null), get('protocol?window=all', { maxAge: 60000 }).catch(() => null)]);
+    const ever = all?.markets.find(m => m.id === id);
+    everTraded = ever ? num(ever.fills) > 0 : null;
     levels = lv;
     if (!alive) return;
     row = p.markets.find(m => m.id === id) ?? null;

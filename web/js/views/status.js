@@ -75,13 +75,15 @@ export function mount(el) {
       <div class="stat"><span>${dot((v?.pnl_agreement ?? []).every(x => (x.agree ?? 0) === (x.checked ?? 0)) ? 'ok' : 'bad')} Position PnL recomputed and compared with getPositionsV2</span><span>${(v?.pnl_agreement ?? []).reduce((a, x) => a + (x.agree ?? 0), 0)} / ${(v?.pnl_agreement ?? []).reduce((a, x) => a + (x.checked ?? 0), 0)} agree</span></div>
     </div>`;
     const c = h.index?.decoder_checks;
-    $('decoder-meta').textContent = c ? `Since the ingest started · ${int(c.logs)} logs` : 'Since the ingest started';
+    // The counts start with the process (the collector's uptime), not with the history.
+    const since = h.collector?.uptime_ms ? `Since the last restart, ${dateTime(Date.now() / 1000 - h.collector.uptime_ms / 1000)} UTC` : 'Since the last restart';
+    $('decoder-meta').textContent = c ? `${since} · ${int(c.logs)} logs` : since;
     if (!c) $('decoder').innerHTML = empty('Counted once the ingest has decoded new logs.');
     else $('decoder').innerHTML = `<div class="stat-grid one">
       <div class="stat"><span>${dot(c.unlinked ? 'warn' : 'ok')} Position events linked to their fill</span><span>${int(c.linked)} / ${int(c.userEvents)}</span></div>
       <div class="stat"><span>${dot(c.lotMismatch ? 'bad' : 'ok')} Fill size equals the position change</span><span>${int(c.lotMismatch)} mismatches</span></div>
       <div class="stat"><span>${dot(c.feeMismatch ? 'bad' : 'ok')} Fill fee equals insurance + protocol fee</span><span>${int(c.feeChecked - c.feeMismatch)} / ${int(c.feeChecked)}</span></div>
-      <div class="stat"><span>${dot(c.takerFillsUnlinked ? 'warn' : 'ok')} Liquidations linked to their book fill</span><span>${int(c.forcedLinked)} linked · ${int(c.takerFillsUnlinked)} unlinked fills</span></div>
+      <div class="stat"><span>${dot(c.takerFillsUnlinked ? 'warn' : 'ok')} Liquidations linked to their book fill</span><span>${c.forcedLinked || c.takerFillsUnlinked ? `${int(c.forcedLinked)} linked · ${int(c.takerFillsUnlinked)} unlinked fills` : '<span class="faint">none since the restart</span>'}</span></div>
     </div>`;
   }
   load().catch(error => { $('pipeline').innerHTML = empty(error.message); });

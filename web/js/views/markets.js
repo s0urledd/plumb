@@ -17,12 +17,16 @@ export function mount(el, { query, setQuery }) {
     <section class="panel"><div class="panel-head"><div><h2>Funding</h2><div class="desc" id="f-desc">Annualised funding rate per market</div></div><div class="head-right">${chartTools('funding-map', 'funding')}</div></div>
       <div class="panel-body"><div class="chart" id="funding-map">${skChart()}</div></div></section>
     </div>`;
-  // Not trading: closed on the contract, or open with no trades in the window and
-  // no open positions (a listing nobody trades yet). Both are tagged and dimmed alike.
+  // Not trading: closed on the contract after trading ("closed"), listed but
+  // never opened ("upcoming", no trade in all of history), or open with no
+  // trades in the window and no open positions ("inactive"). All are dimmed.
+  let traded = null; // ids of the markets with a trade in all of history
   const idle = r => r.active === false || (!num(r.volume) && !num(r.open_interest));
-  const idleTitle = r => (r.active === false ? 'Not open for trading' : `Open for trading, but no trades ${w === 'all' ? 'yet' : `in ${w}`} and no open positions`);
+  const neverOpened = r => r.active === false && traded !== null && !traded.has(r.id);
+  const idleTag = r => (r.active !== false ? 'inactive' : neverOpened(r) ? 'upcoming' : 'closed');
+  const idleTitle = r => (neverOpened(r) ? 'Listed on the exchange, not open for trading yet' : r.active === false ? 'Not open for trading' : `Open for trading, but no trades ${w === 'all' ? 'yet' : `in ${w}`} and no open positions`);
   const COLS = [
-    { key: 'symbol', label: 'Market', sort: r => r.symbol, render: r => `${mkt(r.id, r.symbol, r.name && r.name !== r.symbol && r.name !== `${r.symbol} Perp` ? r.name : null)}${idle(r) ? ` <span class="tag" title="${idleTitle(r)}">inactive</span>` : ''}` },
+    { key: 'symbol', label: 'Market', sort: r => r.symbol, render: r => `${mkt(r.id, r.symbol, r.name && r.name !== r.symbol && r.name !== `${r.symbol} Perp` ? r.name : null)}${idle(r) ? ` <span class="tag" title="${idleTitle(r)}">${idleTag(r)}</span>` : ''}` },
     { key: 'mark', label: 'Mark', n: true, sort: r => num(r.mark ?? r.close), render: r => `${price(r.mark ?? r.close)}<div class="sub-sm">${pctCell(r.change_pct)}</div>` },
     { key: 'change_pct', label: 'Change', phone: false, n: true, sort: r => num(r.change_pct) ?? -1e9, render: r => pctCell(r.change_pct) },
     { key: 'range', label: 'Low – High', phone: false, n: true, render: r => r.low ? `<span class="muted">${price(r.low)} – ${price(r.high)}</span>` : '—' },
@@ -38,7 +42,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'insurance', label: 'Insurance', phone: false, n: true, sort: r => num(r.insurance) ?? 0, render: r => usd(r.insurance) }
   ];
   function render() { if (data) el.querySelector('#list').innerHTML = table({ id: 'm', columns: COLS, rows: data.markets, sortKey: sort.key, sortDir: sort.dir, rowAttrs: r => `class="link${idle(r) ? ' inactive' : ''}" data-href="/markets/${r.id}"` }); }
-  async function load() { data = await get(`protocol?window=${w}`); if (!alive) return; assignColors([...data.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol }))); render(); }
+  async function load() { const [d, all] = await Promise.all([get(`protocol?window=${w}`), w === 'all' ? null : get('protocol?window=all', { maxAge: 60000 }).catch(() => null)]); data = d; if (!alive) return; traded = (w === 'all' ? d : all) ? new Set((w === 'all' ? d : all).markets.filter(m => num(m.fills) > 0).map(m => m.id)) : null; assignColors([...data.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol }))); render(); }
   // Funding across markets and time: APR per bucket, green when longs pay.
   async function loadFunding() {
     const [f, p] = await Promise.all([get(`funding?window=${w}`, { maxAge: 30000 }), get(`protocol?window=${w}`).catch(() => null)]);
@@ -48,7 +52,7 @@ export function mount(el, { query, setQuery }) {
     const twins = f.series.map(s => s.symbol).filter((x, i, all) => all.indexOf(x) !== i);
     const rowName = s => {
       if (!twins.includes(s.symbol)) return s.symbol;
-      if (closed.has(s.id)) return `${s.symbol} (inactive)`;
+      if (closed.has(s.id)) return `${s.symbol} (closed)`;
       return f.series.some(o => o.symbol === s.symbol && closed.has(o.id)) ? s.symbol : `${s.symbol} #${s.id}`; // no closed one known: the ids tell them apart
     };
     const node = el.querySelector('#funding-map'); node.innerHTML = '';
