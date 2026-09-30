@@ -49,6 +49,12 @@ export function pct(v, { digits = 2, sign = false } = {}) {
 // A share of a total: none reads 0%, and one too small for a decimal <0.1%, never 0.0%.
 export const share = v => { const n = num(v); return n === 0 ? '0%' : n !== null && n > 0 && n < 0.05 ? '<0.1%' : pct(v, { digits: 1 }); };
 // Basis points, as pct: a value that rounds to zero reads 0.0 bps, with no minus or plus.
+// An epoch's span, e.g. "Sep 16 → Sep 23, 16:00 UTC", or "since Sep 23, 16:00 UTC" while it runs.
+export function epochSpan(from, to, running = false) {
+  const day = ts => new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return running ? `since ${day(from)}, 16:00 UTC` : `${day(from)} → ${day(to)}, 16:00 UTC`;
+}
+
 export function bps(v, { digits = 1, sign = false } = {}) {
   const n = num(v);
   if (n === null) return '—';

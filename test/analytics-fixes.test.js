@@ -198,7 +198,13 @@ test('wallet period ranks use the value in the same rank table and never exceed 
     accountScores: async () => [{ account: 1, pnl: 5e6, volume: 1e7 }, { account: 7, pnl: 1e6, volume: 5e6 }, { account: 8, pnl: 1e6, volume: 1e6 }, { account: 9, pnl: -1, volume: 1 }]
   });
   const p = await api.walletPeriods('8');
-  assert.deepEqual(p.periods.map(x => x.rank), Array(4).fill({ pnl: 2, volume: 3, of: 4 }), 'ties share a rank');
+  assert.deepEqual(p.periods.map(x => x.window), ['24h', '7d', '30d', 'all', 'this_epoch', 'last_epoch']);
+  assert.deepEqual(p.periods.map(x => x.rank), Array(6).fill({ pnl: 2, volume: 3, of: 4 }), 'ties share a rank');
+  // Epochs are the week from a Wednesday 16:00 UTC snapshot (query.js).
+  const last = p.periods.find(x => x.window === 'last_epoch');
+  assert.equal(last.to - last.from, 7 * 86400);
+  assert.equal(new Date(last.to * 1000).getUTCDay(), 3);
+  assert.equal(new Date(last.to * 1000).getUTCHours(), 16);
   assert.ok(p.periods.every(x => x.traders === 4 && x.net_pnl === '9.000000'));
   const missing = await api.walletPeriods('10');
   assert.ok(missing.periods.every(x => x.rank === null && x.trades === 4), 'not in the table yet: unranked');

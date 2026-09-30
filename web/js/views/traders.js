@@ -1,11 +1,13 @@
 // Trader leaderboard over a window: net PnL, volume, losses, liquidations,
 // with open positions from the live contract state.
 import { get } from '../api.js';
-import { usd, int, pct, num, esc, price, ago, duration } from '../format.js';
+import { usd, int, pct, num, esc, price, ago, duration, epochSpan } from '../format.js';
 import { seg, table, addr, pnl, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON, go, ratioCell } from '../ui.js';
 import { SEA_ICONS } from '../cohort-icons.js';
 
-const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
+const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All'], ['this_epoch', 'This epoch'], ['last_epoch', 'Last epoch']];
+// Card labels per window; epochs are Perpl's weekly snapshot periods (Wednesday 16:00 UTC).
+const WINDOW_LABEL = { all: 'All-time', this_epoch: 'this epoch', last_epoch: 'last epoch' };
 const SORTS = [['pnl', 'Top PnL'], ['loss', 'Top losses'], ['volume', 'Volume'], ['fees', 'Fees paid'], ['liquidated', 'Liquidated'], ['net_flow', 'Net inflow'], ['deposits', 'Deposits'], ['withdrawals', 'Withdrawals']];
 const FLOW_SORTS = new Set(['net_flow', 'deposits', 'withdrawals']);
 // The ranking switches, trading rankings and flows apart, each with its label.
@@ -65,7 +67,7 @@ export function mount(el, { query, setQuery }) {
     if (!alive || asked !== seq) return; // a newer page or window was asked for meanwhile
     data = d;
     $('title').textContent = SORTS.find(([v]) => v === by)[1];
-    $('meta').textContent = `${w === 'all' ? 'All-time' : `Last ${w}`}${data.meta.coverage && !data.meta.coverage.complete ? ' · history still indexing' : ''}`;
+    $('meta').textContent = `${w.endsWith('_epoch') ? `${w === 'this_epoch' ? 'This' : 'Last'} epoch · ${epochSpan(data.meta.from, data.meta.to, w === 'this_epoch')}` : w === 'all' ? 'All-time' : `Last ${w}`}${data.meta.coverage && !data.meta.coverage.complete ? ' · history still indexing' : ''}`;
     // Flow rankings swap the fee and liquidation columns for the flows themselves.
     const flow = FLOW_SORTS.has(by), columns = COLS.filter(c => (flow ? !['fees', 'liq', 'maker'].includes(c.key) : !c.flow));
     lbColumns = columns; renderList();
@@ -133,7 +135,7 @@ export function mount(el, { query, setQuery }) {
   async function loadSummary() {
     const t = await get(`traders/summary?window=${w}`, { maxAge: 20000 });
     if (!alive) return;
-    const wl = w === 'all' ? 'All-time' : w, partial = t.meta?.coverage && !t.meta.coverage.complete ? ' <span class="tag warn" title="History for this window is still being indexed">partial</span>' : '';
+    const wl = WINDOW_LABEL[w] ?? w, partial = t.meta?.coverage && !t.meta.coverage.complete ? ' <span class="tag warn" title="History for this window is still being indexed">partial</span>' : '';
     $('tkpis').innerHTML = [
       kpi({ label: `Traders · ${wl}`, value: int(t.traders), note: `${usd(t.volume)} volume${partial}` }),
       kpi({ label: `Profitable · ${wl}`, value: int(t.profitable), note: `${pct(t.profitable_pct, { digits: 1 })} of traders, after fees` }),

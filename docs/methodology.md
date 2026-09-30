@@ -369,6 +369,17 @@ per 8 hours of clock time; they are about 40 % higher than a nominal
 length of its own time. History comes from `FundingEventCompleted`: rate,
 funding price, payment per unit and cumulative sum per market.
 
+### Epochs
+
+Perpl snapshots trading activity every Wednesday (its Points and mPoints
+docs), at 16:00 UTC (confirmed by the Perpl team on 30 September 2026). An
+epoch runs from one snapshot to the next: `last_epoch` is the latest complete
+week, `this_epoch` the one under way. The leaderboard, the traders summary
+and a wallet's periods take either as a window; each sums the same account
+rows as any other window, and a 16:00 boundary falls on a whole hour, so an
+epoch is read from the hourly rollups alone. Plumb shows the activity, not
+points: the per-account points formula is not published.
+
 ### Wallet analytics
 
 - **Round trips.** Perpl margins each market in isolation, so an account has
