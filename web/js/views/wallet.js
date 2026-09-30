@@ -39,17 +39,21 @@ export function mount(el, { params, query, setQuery, navigate }) {
           <button class="btn ${starred ? '' : 'primary'}" data-action="watch">${starred ? ICON.star + ' Watching' : ICON.starOff + ' Watch'}</button>
         </div></div>`;
   }
+  // A long history's round-trip figures come from its latest events: say from when.
+  const cutSince = () => (an?.performance?.based_on?.truncated && an.performance.based_on.since ? date(an.performance.based_on.since) : null);
+  const cutTitle = () => (cutSince() ? ` title="Round trips from the latest ${int(an.performance.based_on.events)} of ${int(an.performance.based_on.total_events)} events"` : '');
   function kpis(d) {
     const p = d.portfolio, perf = an?.performance, s = d.summary;
+    const since = cutSince() ? ` · <span class="cut-since"${cutTitle()}>since ${cutSince().slice(0, -6)}</span>` : '';
     const wait = '<span class="skeleton" style="display:inline-block;width:72px;height:22px;vertical-align:middle"></span>';
     return `<div class="kpis k7">${[
       kpi({ label: 'Account value', value: usd(p?.account_value), note: p ? `${int(p.positions)} open · ${p.leverage ?? 0}x lev.` : 'live state unavailable', tip: 'Live balance, including funds locked by orders, plus open positions\' margin and unrealized PnL.' }),
       kpi({ label: 'Unrealized PnL', value: pnl(p?.unrealized_pnl), note: p?.closest_liquidation ? `closest liq. ${pct(p.closest_liquidation.distance_pct, { digits: 1 })} away` : '' }),
       kpi({ label: 'Net PnL', value: pnl(s.net_pnl), note: `after ${usd(s.fees)} fees`, tip: `All-time realized PnL with funding (${usd(s.realized, { sign: true })}), minus fees (${usd(s.fees)}).` }),
-      kpi({ label: 'Win rate', value: !perf ? wait : perf.win_rate_pct === null ? '—' : pct(perf.win_rate_pct, { digits: 1 }), note: perf ? `${int(perf.wins)}W · ${int(perf.losses)}L of ${int(perf.closed_trips)} trips` : 'analysing round trips…' }),
+      kpi({ label: 'Win rate', value: !perf ? wait : perf.win_rate_pct === null ? '—' : pct(perf.win_rate_pct, { digits: 1 }), note: perf ? `${int(perf.wins)}W · ${int(perf.losses)}L of ${int(perf.closed_trips)} trips${since}` : 'analysing round trips…' }),
       kpi({ label: 'Profit factor', value: !perf ? wait : perf.profit_factor === null ? '—' : perf.profit_factor.toFixed(2), note: perf ? `avg win ${usd(perf.average_win)} · loss ${usd(perf.average_loss)}` : '' }),
       kpi({ label: 'Volume', value: usd(s.volume), note: `${int(s.trades)} trades · ${pct(s.maker_share_pct, { digits: 0 })} maker` }),
-      kpi({ label: 'Max drawdown', value: !perf ? wait : `<span class="${num(perf.max_drawdown) > 0 ? 'neg' : ''}">${usd(perf.max_drawdown)}</span>`, note: perf?.drawdown_to ? dateSpan(perf.drawdown_from, perf.drawdown_to) : 'on closed round trips' })
+      kpi({ label: 'Max drawdown', value: !perf ? wait : `<span class="${num(perf.max_drawdown) > 0 ? 'neg' : ''}">${usd(perf.max_drawdown)}</span>`, note: perf?.drawdown_to ? `${dateSpan(perf.drawdown_from, perf.drawdown_to)}${since}` : 'on closed round trips' })
     ].join('')}</div>`;
   }
   const POS_COLS = [
@@ -132,10 +136,10 @@ export function mount(el, { params, query, setQuery, navigate }) {
           <section class="panel trend pnl-card"><div class="panel-head"><div class="trend-id"><h2>Net PnL <span class="info-tip" title="Realized PnL with funding, minus fees, per UTC day. Open positions count once reduced or closed.">i</span></h2><div class="head-value" id="pnl-v"></div></div>
             <div class="trend-side"><div class="trend-ctl">${chartTools('pnl-chart', `wallet-${d.account.id}-pnl`)}<div class="seg sm"><button data-action="pnl-cum" class="${pnlMode === 'cumulative' ? 'on' : ''}">Cumulative</button><button data-action="pnl-daily" class="${pnlMode === 'daily' ? 'on' : ''}">Daily</button><button data-action="pnl-cal" class="${pnlMode === 'calendar' ? 'on' : ''}">Calendar</button></div></div><div class="legend dots" id="pnl-lg"></div></div></div>
             <div class="panel-body"><div class="chart" id="pnl-chart"></div></div></section>
-          <section class="panel"><div class="panel-head"><h2>Performance</h2><span class="meta">Closed round trips, net of fees</span></div><div id="perf">${an ? perfPanel(an.performance, d.summary) : perfSkeleton()}</div></section>
+          <section class="panel"><div class="panel-head"><h2>Performance</h2><span class="meta" id="perf-meta">Closed round trips, net of fees</span></div><div id="perf">${an ? perfPanel(an.performance, d.summary) : perfSkeleton()}</div></section>
         </div>
         <div class="grid g-2">
-          <section class="panel"><div class="panel-head"><h2>Behaviour</h2><span class="meta">Rule-based, from this wallet's trades</span></div>
+          <section class="panel"><div class="panel-head"><h2>Behaviour</h2><span class="meta" id="ins-meta">Rule-based, from this wallet's trades</span></div>
             <div id="insights">${an ? insightsHtml() : perfSkeleton()}</div></section>
           <section class="panel"><div class="panel-head"><h2>By market</h2><span class="meta" title="Volume and net PnL are all-time; win rate and trips count closed round trips only">Volume, PnL all-time · win rate, trips from analysed trips</span></div><div class="panel-body flush">${table({ id: 'mk', compact: true, columns: [
             { key: 'm', label: 'Market', render: twinLink(d.markets) },
@@ -176,8 +180,8 @@ export function mount(el, { params, query, setQuery, navigate }) {
         { key: 'f', label: 'Outcome', phone: false, render: r => (r.open ? '<span class="tag" title="Still open: Net PnL counts only what is realized so far, after fees">open</span>' : r.liquidated ? '<span class="tag bad">liquidated</span>' : r.deleveraged ? '<span class="tag warn">ADL</span>' : num(r.net_pnl) > 0 ? '<span class="tag good">win</span>' : num(r.net_pnl) < 0 ? '<span class="tag">loss</span>' : '<span class="tag">flat</span>') }
       ], rows: tripRows, rowAttrs: r => (r.open ? 'title="Still open"' : ''), emptyText: 'No round trips yet' }) + '</section>';
     } else if (tab === 'flows') {
-      body.innerHTML = `<section class="panel"><div class="panel-head"><h2>Deposits and withdrawals</h2><span class="meta">Newest first</span></div><div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div>${num(d.summary.payouts_received) > 0 ? `<div class="stat"><span title="Transfers from Perpl's protocol balance to this account, such as rebates or rewards">Paid by the protocol</span><span class="pos">${usdFull(d.summary.payouts_received)}</span></div>` : ''}${num(d.summary.swept_to_protocol) > 0 ? `<div class="stat"><span title="Transfers from this account into Perpl's protocol balance">Moved to the protocol</span><span class="neg">${usdFull(d.summary.swept_to_protocol)}</span></div>` : ''}</div>` + table({ id: 'flows', columns: [
-        { key: 't', label: 'Time (UTC)', render: r => `<span class="muted num">${dateTime(r.ts)}</span>` },
+      body.innerHTML = `<section class="panel"><div class="panel-head"><h2>Deposits & withdrawals</h2><span class="meta">Newest first</span></div><div class="stat-grid" style="border-bottom:1px solid var(--line)"><div class="stat"><span>Total deposits</span><span class="pos">${usdFull(d.summary.deposits)}</span></div><div class="stat"><span>Total withdrawals</span><span class="neg">${usdFull(d.summary.withdrawals)}</span></div>${num(d.summary.payouts_received) > 0 ? `<div class="stat"><span title="Transfers from Perpl's protocol balance to this account, such as rebates or rewards">Paid by the protocol</span><span class="pos">${usdFull(d.summary.payouts_received)}</span></div>` : ''}${num(d.summary.swept_to_protocol) > 0 ? `<div class="stat"><span title="Transfers from this account into Perpl's protocol balance">Moved to the protocol</span><span class="neg">${usdFull(d.summary.swept_to_protocol)}</span></div>` : ''}</div>` + table({ id: 'flows', columns: [
+        { key: 't', label: 'Time (UTC)', render: r => { const t = dateTime(r.ts); return `<span class="muted num"><span class="yr">${t.slice(0, 5)}</span>${t.slice(5)}</span>`; } },
         { key: 'k', label: 'Type', render: r => `<span class="${FLOW_KIND[r.kind]?.[1] ?? ''}">${FLOW_KIND[r.kind]?.[0] ?? esc(r.kind)}</span>` },
         { key: 'a', label: 'Amount', n: true, render: r => usdFull(r.amount) },
         { key: 'b', label: 'Balance after', phone: false, n: true, render: r => usdFull(r.balance_after) },
@@ -298,7 +302,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
     $('more').hidden = !next;
   }
 
-  const PERIOD_LABEL = { '24h': '24 hours', '7d': '7 days', '30d': '30 days', all: 'All time', this_epoch: 'This epoch', last_epoch: 'Last epoch' };
+  const PERIOD_LABEL = { '24h': '24 hours', '7d': '7 days', '30d': '30 days', all: 'All-time', this_epoch: 'This epoch', last_epoch: 'Last epoch' };
   // An epoch row: its label, a CSV of its fills, and one line with its span and state;
   // hovering the line names the blocks it spans on Monad.
   const periodLabel = r => {
@@ -345,6 +349,9 @@ export function mount(el, { params, query, setQuery, navigate }) {
     const row = $('kpi-row'); if (row) row.innerHTML = kpis(data);
     const perf = $('perf'); if (perf) perf.innerHTML = perfPanel(an.performance, data.summary);
     const ins = $('insights'); if (ins) ins.innerHTML = insightsHtml();
+    const since = cutSince() ? ` · <span class="cut-since"${cutTitle()}>since ${cutSince()}</span>` : '';
+    const pm = $('perf-meta'); if (pm) pm.innerHTML = `Closed round trips, net of fees${since}`;
+    const im = $('ins-meta'); if (im) im.innerHTML = `Rule-based, from this wallet's trades${since}`;
     if (tab === 'trips' || tab === 'overview') renderTab();
   }
   const loadAnalytics = () => get(`wallets/${encodeURIComponent(key)}/analytics`, { maxAge: 20000 }).then(a => { if (!alive) return; an = a; applyAnalytics(); }).catch(() => {});

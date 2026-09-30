@@ -400,6 +400,8 @@ tr.inactive td { opacity: 0.5; }
 .t .ep-name { display: inline-flex; align-items: center; gap: 6px; }
 .t .ep-csv { width: 20px; height: 20px; }
 .t .ep-short { display: none; }
+/* A wallet's round-trip figures that start later than its history. */
+.cut-since { color: var(--warn); }
 @media (max-width: 640px) {
   .t tr.grp td { white-space: normal; }
   .t .ep-long, .t .ep-dot, .t .note, .t .ep-csv { display: none; }
