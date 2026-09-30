@@ -12,7 +12,8 @@
     "test:integration": "node --test test/clickhouse.test.js",
     "check": "node scripts/check.js",
     "validate:math": "node --env-file-if-exists=.env scripts/validate-math.js",
-    "measure:latency": "node --env-file-if-exists=.env scripts/measure-latency.js"
+    "measure:latency": "node --env-file-if-exists=.env scripts/measure-latency.js",
+    "check:live": "node scripts/check-live.js"
   },
   "dependencies": {
     "echarts": "6.1.0",

@@ -168,6 +168,14 @@ step.
 
 ## Operating
 
+The `uptime` workflow (`.github/workflows/uptime.yml`) runs `scripts/check-live.js`
+against the live site every 10 minutes: the page loads, `/api/v1/health` is ok,
+the index is under three minutes behind the clock, contract state is fresh and
+the history complete. A failure is retried once after 45 s (a deploy's restart
+is not an outage); a failed run mails the repository owner. With the
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` repository secrets set, the first
+failure and the recovery are also posted to that chat.
+
 - **Health**: `GET /api/v1/health` returns 200 with:
   - `snapshot.status`: the collector (`fresh`, `syncing`, `stale` and a
     reason);
@@ -229,4 +237,5 @@ npm test               # unit tests (fake exchange, no network)
 CLICKHOUSE_URL=http://127.0.0.1:8123 CLICKHOUSE_PASSWORD=dev npm run test:integration
 npm run validate:math  # formula checks against live contract state
 npm run measure:latency -- 90  # how far behind the chain the running app is (90 s sample)
+npm run check:live            # the live site from outside: page, API, index lag, contract state, history
 ```
