@@ -62,7 +62,11 @@ export function mount(el, { query, setQuery }) {
     const times = []; for (let t = Math.min(...all); t <= Math.max(...all); t += b) times.push(t);
     // Each bucket is annualised with the funding interval of its own time (the API's apr_pct).
     const oi = new Map(f.markets.map(m => [m.id, num(m.open_interest) ?? 0]));
-    const rows = f.series.filter(s => s.points.some(p => p.apr_pct !== null && p.apr_pct !== undefined)).sort((a, b2) => (oi.get(b2.id) ?? 0) - (oi.get(a.id) ?? 0)).map(s => {
+    // A market not trading, with no funding paid in the window, gets no row of grey cells.
+    const pm = new Map((p?.markets ?? []).map(m => [m.id, m]));
+    const quiet = s => { const m = pm.get(s.id); return !!m && (m.active === false || (!num(m.volume) && !num(m.open_interest))) && s.points.every(pt => !num(pt.apr_pct)); };
+    const shown = f.series.filter(s => !quiet(s)), left = f.series.length - shown.length;
+    const rows = shown.filter(s => s.points.some(p => p.apr_pct !== null && p.apr_pct !== undefined)).sort((a, b2) => (oi.get(b2.id) ?? 0) - (oi.get(a.id) ?? 0)).map(s => {
       const at = new Map(s.points.filter(p => p.apr_pct !== null && p.apr_pct !== undefined).map(p => [p.t, p.apr_pct]));
       return { name: rowName(s), values: times.map(t => at.get(t) ?? null) };
     });
@@ -72,7 +76,7 @@ export function mount(el, { query, setQuery }) {
     const mags = rows.flatMap(r => r.values).filter(v => v !== null).map(Math.abs).sort((a, b2) => a - b2);
     const p95 = mags.length ? mags[Math.min(mags.length - 1, Math.floor(mags.length * 0.95))] : 0;
     const clamp = [10, 20, 25, 50, 100, 200].find(x => x >= p95) ?? 200;
-    el.querySelector('#f-desc').textContent += ` · scale ±${clamp}% APR`;
+    el.querySelector('#f-desc').textContent += ` · scale ±${clamp}% APR${left ? ` · ${left} market${left === 1 ? '' : 's'} not trading left out` : ''}`;
     divergingHeatmap(node, { times, rows, bucketSeconds: b, clamp, labels: ['longs pay', 'shorts pay'], fmt: v => `${pct(v, { digits: 1, sign: true })} APR` });
   }
   // 24h follows every push; longer windows refetch at most every 15 s.

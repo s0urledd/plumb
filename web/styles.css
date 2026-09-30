@@ -542,6 +542,8 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 /* The link to the markets and the window switch share one line. */
 .vol-head { align-items: center; gap: 14px; }
 .vol-keys .meta { white-space: nowrap; }
+/* On a phone the link to the markets gives way to the switch; Markets is in the nav. */
+@media (max-width: 640px) { .vol-head > a.meta { display: none; } }
 
 /* Trend panels: title on the left; their own window switch, the tools and the value on the right. */
 .panel.trend > .panel-head { align-items: flex-start; }

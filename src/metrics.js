@@ -230,7 +230,8 @@ export function exchangeTotals(marketsMetrics) {
   totals.notionalAt500Bps = totals.moves[500][worse(500, 'notionalCNS')].notionalCNS;
   totals.directionAt1000Bps = worse(1000, 'notionalCNS');
   totals.notionalAt1000Bps = totals.moves[1000][totals.directionAt1000Bps].notionalCNS;
-  const shortfall = totals.moves[1000][worse(1000, 'shortfallCNS')];
+  totals.shortfallDirectionAt1000Bps = worse(1000, 'shortfallCNS');
+  const shortfall = totals.moves[1000][totals.shortfallDirectionAt1000Bps];
   totals.shortfallAt1000Bps = shortfall.shortfallCNS;
   totals.coveredAt1000Bps = shortfall.coveredCNS;
   return totals;

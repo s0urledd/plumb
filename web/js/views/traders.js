@@ -101,8 +101,9 @@ export function mount(el, { query, setQuery }) {
     $('meta').textContent = text + partial;
     $('meta').title = m.blocks?.first ? `Perpl activity from block ${int(m.blocks.first)} to block ${int(m.blocks.last)}` : '';
   }
-  // The countdown moves each minute; at the snapshot the epoch under way turns into the last one.
-  const epochTimer = setInterval(() => { if (!data || ep !== 'this_epoch') return; if (Date.now() / 1000 >= data.meta.from + 7 * 86400) load().catch(() => {}); else renderMeta(); }, 60000);
+  // The countdown moves on; at the snapshot the epoch under way turns into the
+  // last one, within seconds (and again until the server has rolled over too).
+  const epochTimer = setInterval(() => { if (!data || ep !== 'this_epoch') return; if (Date.now() / 1000 >= data.meta.from + 7 * 86400) load().catch(() => {}); else renderMeta(); }, 10000);
   // Prev is off on the first page and Next on the last; one page needs neither.
   const pages = () => Math.max(1, Math.ceil((data?.total ?? 0) / LIMIT));
   function renderPager() { const n = pages(); $('pager').innerHTML = n > 1 ? `<button class="btn ghost sm" data-action="prev" ${page === 0 ? 'disabled' : ''}>← Prev</button><span class="num">Page ${int(page + 1)} of ${int(n)}</span><button class="btn ghost sm" data-action="next" ${page + 1 >= n ? 'disabled' : ''}>Next →</button>` : ''; }
