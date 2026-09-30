@@ -9,12 +9,12 @@ import { mirrored, COLORS } from '../charts.js';
 // Depth read up to the walk's level cap is a lower bound; a no-break space
 // keeps the sign with its figure when a note wraps.
 const atLeast = complete => (complete === false ? '≥\u00a0' : '');
-// Book cover always reads as a percentage (rounded down, so a thin book never
-// reads as full); past 999 % the exact multiple moves to the title.
-const cover = (v, complete) => { const n = num(v); return n === null ? '—' : n >= 1000 ? `<span title="Order-book depth is ${complete === false ? 'at least ' : ''}${multiple(n)} what this move would liquidate">&gt;999%</span>` : atLeast(complete) + multiple(n); };
-// Insurance against shortfall always reads as a multiple, rounded down so a
-// fund short of its shortfall never reads as 1×.
+// Insurance against shortfall, and book depth against what a move would
+// liquidate (book cover), read as multiples, rounded down so a cover short of
+// what it faces never reads as 1×. The share actually absorbed (at most 100 %)
+// stays a percentage.
 const times = v => { const n = num(v); return n === null ? '—' : n >= 10000 ? `${int(Math.floor(n / 100))}×` : n >= 1000 ? `${(Math.floor(n / 10) / 10).toFixed(1)}×` : `${(Math.floor(n) / 100).toFixed(2)}×`; };
+const cover = (v, complete) => (num(v) === null ? '—' : `<span title="Order-book depth is ${complete === false ? 'at least ' : ''}${times(v)} what this move would liquidate">${atLeast(complete) + times(v)}</span>`);
 const signed = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}%`;
 // The ladder's sides, named in the card head as on the market page.
 const LADDER_KEY = [['Longs (price down)', COLORS.long], ['Shorts (price up)', COLORS.short]].map(([name, color]) => `<span><i style="background:${color}"></i>${name}</span>`).join('');
@@ -55,7 +55,7 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: 'At risk, 10% move', value: usd(t.notional_at_10pct), note: `${pct(num(t.notional_at_10pct) / num(t.total_notional) * 100, { digits: 1 })} of notional · if all markets ${esc(t.direction_at_10pct ?? 'move')}` }),
       kpi({ label: 'Shortfall, 10%', value: `<span class="${num(t.shortfall_at_10pct) > 0 ? 'neg' : ''}">${usd(t.shortfall_at_10pct)}</span>`, note: 'potential bad debt · worse direction', tip: 'Equity below zero if all markets fell or rose 10%, whichever is worse, before any liquidation.' }),
       kpi({ label: 'Insurance funds', value: usd(t.insurance_total), note: t.insurance_coverage_at_10pct !== null && t.insurance_coverage_at_10pct !== undefined ? `${multiple(t.insurance_coverage_at_10pct)} of that shortfall covered` : 'no shortfall at 10%', tip: 'Sum of all market insurance funds. Each fund covers only its own market’s shortfall, so the share covered caps at 100%.' }),
-      kpi({ label: 'Absorbed, 10%', value: t.liquidity?.absorbed_at_10pct_pct !== null && t.liquidity?.absorbed_at_10pct_pct !== undefined ? atLeast(t.liquidity.complete) + multiple(t.liquidity.absorbed_at_10pct_pct) : '—', note: t.liquidity?.weakest ? `weakest: ${esc(t.liquidity.weakest.symbol)} ${t.liquidity.weakest.side === 'long' ? 'longs' : 'shorts'} ${cover(t.liquidity.weakest.cover_pct, t.liquidity.weakest.complete)}` : 'depth vs liquidation demand', tip: 'Share of the liquidations from a 10% move in all markets that each market’s own book could fill, worse direction, capped at 100%. A ≥ marks a floor: part of a book was not read.' })
+      kpi({ label: 'Absorbed, 10%', value: t.liquidity?.absorbed_at_10pct_pct !== null && t.liquidity?.absorbed_at_10pct_pct !== undefined ? atLeast(t.liquidity.complete) + multiple(t.liquidity.absorbed_at_10pct_pct) : '—', note: t.liquidity?.weakest ? `weakest: ${esc(t.liquidity.weakest.symbol)} ${t.liquidity.weakest.side === 'long' ? 'longs' : 'shorts'} ${atLeast(t.liquidity.weakest.complete) + multiple(Math.min(num(t.liquidity.weakest.cover_pct), 100))}` : 'depth vs liquidation demand', tip: 'Share of the liquidations from a 10% move in all markets that each market’s own book could fill, worse direction, capped at 100%. A ≥ marks a floor: part of a book was not read.' })
     ].join('');
     const markets = overview.markets.filter(m => m.positions.count > 0).sort((a, b) => num(b.open_interest.total_notional) - num(a.open_interest.total_notional));
     if (!marketId || !markets.some(m => m.id === marketId)) marketId = markets[0]?.id ?? null;
@@ -70,7 +70,7 @@ export function mount(el, { query, setQuery }) {
       { key: 'ins', label: 'Insurance', phone: false, n: true, render: r => usd(r.insurance.balance) },
       { key: 'cov', label: 'Insurance / shortfall', phone: false, n: true, tip: 'The market’s insurance fund as a multiple of its shortfall after a 10% move', render: r => (r.risk.insurance_coverage_at_10pct === null ? '<span class="faint">no shortfall</span>' : times(r.risk.insurance_coverage_at_10pct)) },
       // The weaker side, named: the stress test above shows one side at a time.
-      { key: 'book', label: 'Book cover 10%', phone: false, n: true, tip: 'Order-book depth as a share of what a 10% move would liquidate, on the weaker side', render: r => { if (r.book_stale) return '<span class="faint" title="The last order-book read is too old to use">stale</span>'; if (!r.liquidity) return '<span class="faint" title="No order-book read for this market yet">not read</span>'; const c = r.liquidity.cover_at_10pct; if (c?.min_pct === null || c?.min_pct === undefined) return '<span class="faint" title="No position would reach liquidation in a 10% move">nothing to absorb</span>'; const weak = c.short_pct === c.min_pct ? 'shorts, +10%' : 'longs, −10%'; return `${cover(c.min_pct, c.complete)}<div class="sub" title="Longs in a fall or shorts in a rise, whichever the book covers less">${weak}</div>`; } },
+      { key: 'book', label: 'Book cover 10%', phone: false, n: true, tip: 'Order-book depth against what a 10% move would liquidate, on the weaker side (2× = twice what it would liquidate)', render: r => { if (r.book_stale) return '<span class="faint" title="The last order-book read is too old to use">stale</span>'; if (!r.liquidity) return '<span class="faint" title="No order-book read for this market yet">not read</span>'; const c = r.liquidity.cover_at_10pct; if (c?.min_pct === null || c?.min_pct === undefined) return '<span class="faint" title="No position would reach liquidation in a 10% move">nothing to absorb</span>'; const weak = c.short_pct === c.min_pct ? 'shorts, +10%' : 'longs, −10%'; return `${cover(c.min_pct, c.complete)}<div class="sub" title="Longs in a fall or shorts in a rise, whichever the book covers less">${weak}</div>`; } },
       { key: 'top', label: 'Top 5 share', phone: false, n: true, render: r => pct(r.concentration.top5_pct, { digits: 0 }) },
       { key: 'mm', label: 'Maint. margin', phone: false, n: true, render: r => (r.margin.maintenance_margin_pct ? pct(r.margin.maintenance_margin_pct, { digits: 2 }) : '—') }
     ], rows: markets, rowAttrs: r => `class="link" data-action="pick" data-id="${r.id}"` });
@@ -110,7 +110,7 @@ export function mount(el, { query, setQuery }) {
     // Past the band the book walk covers, depth is unknown rather than zero:
     // one row says so instead of two dashes.
     const book = r.liquidity
-      ? `<div class="stat"><span>Book depth to absorb</span><span>${atLeast(r.liquidity.complete) + usd(r.liquidity.depth)}</span></div><div class="stat"><span>Absorption</span><span>${absorbed === null || absorbed === undefined ? '<span class="faint">nothing to absorb</span>' : cover(absorbed, r.liquidity.complete)}</span></div>`
+      ? `<div class="stat"><span>Book depth to absorb</span><span>${atLeast(r.liquidity.complete) + usd(r.liquidity.depth)}</span></div><div class="stat"><span>Book cover</span><span>${absorbed === null || absorbed === undefined ? '<span class="faint">nothing to absorb</span>' : cover(absorbed, r.liquidity.complete)}</span></div>`
       : `<div class="stat rk-wide"><span>Book depth to absorb</span>${range === null ? '<span class="faint">no order book read</span>' : `<span class="faint" title="The order book is read to ${esc(range)}% either side of the mark; depth past that is unknown, not zero.">not read past ±${esc(range)}%</span>`}</div>`;
     $('stress').innerHTML = `<div class="stat-grid">
         <div class="stat"><span>Positions exposed</span><span>${int(r.liquidated.count)}</span></div><div class="stat"><span>Notional exposed</span><span>${usd(r.liquidated.notional)}</span></div>
