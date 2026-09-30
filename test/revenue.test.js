@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { feeSplit, liquidationSplit, liquidationMargin, rowRevenue, createRevenueParams, DEFAULT_RATES } from '../src/revenue.js';
 import { revenueSql, liqInferred, MARKET, REVENUE_COLUMNS, columns } from '../src/aggregates.js';
 import { rollupStatements, createRollups, markStale, CARRY } from '../src/rollup.js';
-import { DDL, migrate, ROLLUP_VERSION } from '../src/schema.js';
+import { DDL, migrate, ROLLUP_VERSION, KIND_INDEX } from '../src/schema.js';
 import { rowsFromLogs } from '../src/decode.js';
 import { createAnalyticsApi } from '../src/analytics-api.js';
 import * as m from '../src/math.js';
@@ -217,7 +217,9 @@ test('the market rollup has every aggregate column; an existing table gains the 
   const ran = [];
   await migrate({ database: 'perpl', exec: async sql => { ran.push(sql); }, query: async () => [] });
   assert.ok(ran.indexOf(alter) > ran.indexOf(create), 'the table exists before it is altered');
-  assert.ok(ran.every(s => /^(CREATE (DATABASE|TABLE|MATERIALIZED VIEW) IF NOT EXISTS|ALTER TABLE \w+ (ADD COLUMN IF NOT EXISTS [^,]+(, )?)+$)/.test(s)), 'every statement is idempotent');
+  // Building the kind index is a one-off, run only while the index is missing (balance.test.js).
+  const once = new Set(KIND_INDEX.slice(1));
+  assert.ok(ran.filter(s => !once.has(s)).every(s => /^(CREATE (DATABASE|TABLE|MATERIALIZED VIEW) IF NOT EXISTS|ALTER TABLE \w+ (ADD COLUMN IF NOT EXISTS [^,]+(, )?)+$|ALTER TABLE \w+ ADD INDEX IF NOT EXISTS )/.test(s)), 'every statement is idempotent');
   for (const c of REVENUE_COLUMNS) assert.ok(rollupStatements().market.includes(` AS ${c}`), `rolled up: ${c}`);
 });
 

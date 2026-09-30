@@ -190,9 +190,24 @@ async function extendKinds(ch) {
   }
 }
 
+// A skip index on the event kind lets the rare kinds (liquidations,
+// deleverages, transfers) be read without scanning every row of the months
+// asked for: each granule records the kinds it holds. Added once, then built
+// for the parts already stored (a background mutation); new parts carry it.
+export const KIND_INDEX = [
+  'ALTER TABLE ev ADD INDEX IF NOT EXISTS kind_idx kind TYPE set(0) GRANULARITY 1',
+  'ALTER TABLE ev MATERIALIZE INDEX kind_idx'
+];
+async function kindIndex(ch) {
+  const has = await ch.query("SELECT name FROM system.data_skipping_indices WHERE database = {db:String} AND table = 'ev' AND name = 'kind_idx'", { db: ch.database });
+  if (has.length) return;
+  for (const statement of KIND_INDEX) await ch.exec(statement);
+}
+
 export async function migrate(ch) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(ch.database)) throw new Error('INVALID_DATABASE_NAME');
   await ch.exec(`CREATE DATABASE IF NOT EXISTS ${ch.database}`, {}, {}, { db: null });
   for (const statement of DDL) await ch.exec(statement);
   await extendKinds(ch);
+  await kindIndex(ch);
 }
