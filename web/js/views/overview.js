@@ -85,10 +85,14 @@ export function mount(el, { query, setQuery }) {
   const seriesPath = () => `protocol/series?window=${w}${bucket ? `&bucket=${bucket}` : ''}`;
   function renderBucket() { const c = BUCKET_CHOICES[w]; $('bucket').innerHTML = c ? segSm('bucket', c, bucket ?? (w === 'all' ? '1w' : '1d')) : ''; }
 
+  // On all time the active traders card shows the last 30 days: not every
+  // account that ever traded is an active one.
+  let active30 = null;
+  const active30Data = () => Promise.all([get('protocol?window=30d', { maxAge: 15000 }), get('protocol/series?window=30d', { maxAge: 15000 })]).then(([p, s]) => ({ p, s }));
   async function load() {
-    const [p, s] = await Promise.all([get(`protocol?window=${w}`), get(seriesPath())]);
+    const [p, s, a] = await Promise.all([get(`protocol?window=${w}`), get(seriesPath()), w === 'all' ? active30Data().catch(() => null) : null]);
     if (!alive) return;
-    data = p; series = s;
+    data = p; series = s; active30 = a;
     assignColors([...p.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol })));
     renderBucket(); renderKpis(); renderVolume(); renderWindows();
     if (!trendsLoaded) { trendsLoaded = true; loadTrends().catch(() => {}); }
@@ -110,7 +114,7 @@ export function mount(el, { query, setQuery }) {
   function spark(key, values, color = COLORS.accent) { const node = $(key); if (node && values.some(v => v !== null && v !== undefined)) sparkline(node, values, { color }); }
   function renderKpis() {
     const h = data.headline, c = data.current, pts = series.points;
-    const cov = data.meta.coverage, wl = windowLabel();
+    const cov = data.meta.coverage, wl = windowLabel(), act = w === 'all' ? active30 : null;
     // A change against a previous window that is still being indexed would mislead: hide it.
     // All-time has no previous period, so no change is shown (not a "—").
     const ch = v => (w === 'all' || data.meta.previous_complete === false ? undefined : v);
@@ -122,14 +126,15 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: 'Open interest', value: usd(c?.open_interest), delta: seriesChange('open_interest'), ...within, note: c ? `${int(c.positions)} open positions` : '', spark: 'sp-oi' }),
       kpi({ label: 'TVL', value: usd(c?.tvl), delta: seriesChange('tvl'), ...within, note: `${usd(h.net_flow.value, { sign: true })} net flow · ${wl}`, spark: 'sp-tvl' }),
       kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.protocol_revenue ? `${usd(h.protocol_revenue.value)} protocol revenue` : '', spark: 'sp-fees' }),
-      kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr' }),
+      act ? kpi({ label: 'Active traders · 30d', value: int(act.p.headline.traders.value), note: `${int(act.p.headline.new_accounts.value)} new accounts`, spark: 'sp-tr' })
+        : kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr' }),
       kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq' })
     ].join('');
     spark('sp-vol', pts.map(p => num(p.volume)));
     spark('sp-oi', pts.map(p => num(p.open_interest)));
     spark('sp-tvl', pts.map(p => num(p.tvl)));
     spark('sp-fees', pts.map(p => num(p.fees)));
-    spark('sp-tr', pts.map(p => p.traders));
+    spark('sp-tr', (act ? act.s.points : pts).map(p => p.traders));
     spark('sp-liq', pts.map(p => num(p.liquidated)), COLORS.short);
   }
 
