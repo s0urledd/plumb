@@ -23,7 +23,8 @@ export function mount(el, { query, setQuery }) {
   // The trend charts each keep their own window, independent of the one at the
   // top (which drives the headline metrics, the volume chart and the activity lists).
   const TRENDS = ['oi', 'tvl', 'flows', 'traders', 'fees', 'liq', 'tpnl', 'taker'];
-  const pw = Object.fromEntries(TRENDS.map(id => [id, '24h']));
+  // The window each trend opens on.
+  const pw = { oi: '24h', tvl: '24h', flows: '24h', traders: '30d', fees: 'all', liq: '30d', tpnl: 'all', taker: 'all' };
   const winCtl = id => segSm(`tw:${id}`, WINDOWS, pw[id]);
   const panel = (id, title, desc, extra = '') => `<section class="panel trend"><div class="panel-head"><div class="trend-id"><h2>${title} <span class="info-tip" title="${esc(desc)}">i</span></h2><div class="head-value" id="${id}-v"></div>${extra}</div><div class="trend-side"><div class="trend-ctl">${chartTools(id, id)}<span id="${id}-win" class="trend-win">${winCtl(id)}</span></div><div class="legend dots" id="${id}-lg"></div></div></div><div class="panel-body"><div class="chart sm" id="${id}">${skChart()}</div></div></section>`;
 
