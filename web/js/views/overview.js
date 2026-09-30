@@ -22,12 +22,13 @@ export function mount(el, { query, setQuery }) {
   let minSize = localStorage.getItem('ps.minsize') ?? '100';
   let data = null, series = null, alive = true, flows = null, flowView = 'recent', lastLongLoad = 0, trendsLoaded = false;
   const tape = [], off = [];
-  // The trend charts each keep their own window, independent of the one at the
-  // top (which drives the headline metrics, the volume chart and the activity lists).
+  // The volume chart and the trend charts each keep their own window, independent
+  // of the one at the top (which drives the headline cards and the activity lists).
   const TRENDS = ['oi', 'tvl', 'flows', 'traders', 'fees', 'liq', 'tpnl', 'taker'];
   // The window each trend opens on.
   const pw = { oi: 'all', tvl: 'all', flows: 'all', traders: '30d', fees: 'all', liq: '30d', tpnl: 'all', taker: 'all' };
   const winCtl = id => segSm(`tw:${id}`, WINDOWS, pw[id]);
+  let vw = 'all';
   const panel = (id, title, desc, extra = '') => `<section class="panel trend"><div class="panel-head"><div class="trend-id"><h2>${title} <span class="info-tip" title="${esc(desc)}">i</span></h2><div class="head-value" id="${id}-v"></div>${extra}</div><div class="trend-side"><div class="trend-ctl">${chartTools(id, id)}<span id="${id}-win" class="trend-win">${winCtl(id)}</span></div><div class="legend dots" id="${id}-lg"></div></div></div><div class="panel-body"><div class="chart sm" id="${id}">${skChart()}</div></div></section>`;
 
   el.innerHTML = `
@@ -42,7 +43,7 @@ export function mount(el, { query, setQuery }) {
       <div class="kpis" id="kpis">${Array.from({ length: 6 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:70%;margin-top:10px"></div><div class="skeleton" style="height:28px;margin-top:10px"></div></div>').join('')}</div>
       <div class="grid g-main">
         <section class="panel">
-          <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right"><a class="meta" href="/markets">All markets →</a>${chartTools('main-chart', 'volume')}</div></div>
+          <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right"><span id="vwin" class="trend-win">${segSm('vw', WINDOWS, vw)}</span><a class="meta" href="/markets">All markets →</a>${chartTools('main-chart', 'volume')}</div></div>
           <div class="panel-head vol-keys"><div class="legend toggles" id="legend"></div><span class="head-right"><span id="bucket"></span><span class="meta" id="chart-meta"></span></span></div>
           <div class="panel-body"><div class="chart" id="main-chart">${skChart()}</div></div>
         </section>
@@ -81,20 +82,24 @@ export function mount(el, { query, setQuery }) {
   const BUCKET_NAMES = { 3600: 'hourly', 14400: '4-hour', 86400: 'daily', 604800: 'weekly' };
   // Period length: the API's default per window (all-time: weekly), or daily/weekly on request.
   const BUCKET_CHOICES = { '30d': [['1d', 'Daily'], ['1w', 'Weekly']], all: [['1d', 'Daily'], ['1w', 'Weekly']] };
-  let bucket = null;
-  const seriesPath = () => `protocol/series?window=${w}${bucket ? `&bucket=${bucket}` : ''}`;
-  function renderBucket() { const c = BUCKET_CHOICES[w]; $('bucket').innerHTML = c ? segSm('bucket', c, bucket ?? (w === 'all' ? '1w' : '1d')) : ''; }
+  // The headline cards' series (sparklines) follow the top switch; the volume
+  // chart's series follows its own window and period length.
+  let bucket = null, vseries = null;
+  const seriesPath = () => `protocol/series?window=${w}`;
+  const volPath = () => `protocol/series?window=${vw}${bucket ? `&bucket=${bucket}` : ''}`;
+  function renderBucket() { const c = BUCKET_CHOICES[vw]; $('bucket').innerHTML = c ? segSm('bucket', c, bucket ?? (vw === 'all' ? '1w' : '1d')) : ''; }
+  const loadVolume = (fresh = false) => get(volPath(), fresh ? { maxAge: 0 } : undefined).then(v => { if (!alive) return; vseries = v; renderVolume(); });
 
   // On all time the active traders card shows the last 30 days: not every
   // account that ever traded is an active one.
   let active30 = null;
   const active30Data = () => Promise.all([get('protocol?window=30d', { maxAge: 15000 }), get('protocol/series?window=30d', { maxAge: 15000 })]).then(([p, s]) => ({ p, s }));
   async function load() {
-    const [p, s, a] = await Promise.all([get(`protocol?window=${w}`), get(seriesPath()), w === 'all' ? active30Data().catch(() => null) : null]);
+    const [p, s, a, v] = await Promise.all([get(`protocol?window=${w}`), get(seriesPath()), w === 'all' ? active30Data().catch(() => null) : null, vseries ? null : get(volPath())]);
     if (!alive) return;
-    data = p; series = s; active30 = a;
+    data = p; series = s; active30 = a; if (v) vseries = v;
     assignColors([...p.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol })));
-    renderBucket(); renderKpis(); renderVolume(); renderWindows();
+    renderBucket(); renderKpis(); if (v) renderVolume(); renderWindows();
     if (!trendsLoaded) { trendsLoaded = true; loadTrends().catch(() => {}); }
   }
   async function loadFeeds() {
@@ -151,11 +156,12 @@ export function mount(el, { query, setQuery }) {
   // Redrawn in place on the minute refresh, so a zoom holds; a new window or
   // period length starts from a skeleton (update, onSeg).
   function renderVolume() {
-    const node = $('main-chart'), b = series.meta.bucket_seconds;
-    // With the daily/weekly switch shown, the meta names only the span.
-    $('chart-meta').textContent = BUCKET_CHOICES[w] ? `${w === 'all' ? 'All-time' : `Last ${w}`} · UTC` : `${w === 'all' ? 'All-time' : `Last ${w}`} · ${BUCKET_NAMES[b] ?? `${series.meta.bucket}`} bars · UTC`;
-    const list = byMarket('volume');
-    stackedBars(node, { times: series.times, series: list, bucketSeconds: b, cumulative: true, zoom: true });
+    if (!vseries) return;
+    const node = $('main-chart'), b = vseries.meta.bucket_seconds;
+    // With the daily/weekly switch shown, the meta says only UTC.
+    $('chart-meta').textContent = BUCKET_CHOICES[vw] ? 'UTC' : `${BUCKET_NAMES[b] ?? `${vseries.meta.bucket}`} bars · UTC`;
+    const list = byMarket('volume', vseries);
+    stackedBars(node, { times: vseries.times, series: list, bucketSeconds: b, cumulative: true, zoom: true });
     $('legend').innerHTML = list.map(s => `<button class="lg" data-action="toggle" data-name="${esc(s.name)}"><i style="background:${s.color}"></i>${legendLogo(s)}${esc(s.name)}</button>`).join('')
       + `<button class="lg" data-action="toggle" data-name="${CUMULATIVE}"><i style="background:#fff;height:2px;border-radius:1px"></i>Cumulative</button>`;
   }
@@ -390,7 +396,7 @@ export function mount(el, { query, setQuery }) {
     get('flows?window=24h', { maxAge: 0 }).then(f => { if (alive && w === '24h') renderFlows(f); }).catch(() => {});
   }));
   off.push(stream.on('protocol', p => { if (w !== '24h' || !data || !alive) return; data = { ...data, headline: p.headline, current: p.current, markets: data.markets.map(m => { const u = p.markets.find(x => x.id === m.id); return u ? { ...m, mark: u.mark ?? m.mark, volume: u.volume, change_pct: u.change_pct, open_interest: u.open_interest ?? m.open_interest, funding: u.funding ?? m.funding } : m; }) }; renderKpis(); }));
-  const timer = setInterval(() => { get(seriesPath(), { maxAge: 0 }).then(s => { if (!alive) return; series = s; renderVolume(); if (w !== '24h') load().catch(() => {}); }).catch(() => {}); loadTrends(true); }, 60000);
+  const timer = setInterval(() => { loadVolume(true).catch(() => {}); if (w !== '24h') load().catch(() => {}); else get(seriesPath(), { maxAge: 0 }).then(s => { if (alive) series = s; }).catch(() => {}); loadTrends(true); }, 60000);
 
   load().catch(error => { $('kpis').innerHTML = `<div class="empty-state">Could not load protocol data (${esc(error.message)})</div>`; });
   loadFeeds().catch(() => {});
@@ -402,11 +408,12 @@ export function mount(el, { query, setQuery }) {
       if (name === 'window') setQuery({ window: v === DEFAULT_WINDOW ? null : v });
       if (name === 'min') { minSize = v; try { localStorage.setItem('ps.minsize', v); } catch { /* storage unavailable */ } $('minsize').innerHTML = segSm('min', MIN_SIZES, minSize); renderTape(); }
       if (name === 'flowv') { flowView = v; $('flowview').innerHTML = segSm('flowv', FLOW_VIEWS, flowView); renderFlows(); }
-      if (name === 'bucket') { bucket = v; renderBucket(); $('main-chart').innerHTML = skChart(); get(seriesPath()).then(s => { if (!alive) return; series = s; renderVolume(); renderKpis(); }).catch(() => {}); return; }
+      if (name === 'bucket') { bucket = v; renderBucket(); $('main-chart').innerHTML = skChart(); loadVolume().catch(() => {}); return; }
+      if (name === 'vw') { vw = v; bucket = null; $('vwin').innerHTML = segSm('vw', WINDOWS, vw); renderBucket(); $('main-chart').innerHTML = skChart(); loadVolume().catch(() => {}); return; }
       if (name === 'feesv') { feeView = v; $('fees-mode').innerHTML = segSm('feesv', FEE_VIEWS, feeView); renderFees(); }
     },
     onAction(a, t) { if (a === 'toggle') { t.classList.toggle('off'); toggleSeries($('main-chart'), t.dataset.name); } },
-    update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : DEFAULT_WINDOW; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w); $('main-chart').innerHTML = skChart();
+    update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : DEFAULT_WINDOW; if (nw === w) return; w = nw; $('win').innerHTML = seg('window', WINDOWS, w);
       load().catch(() => {}); get(`flows?window=${w}`).then(f => alive && renderFlows(f)).catch(() => {}); },
     destroy() { alive = false; clearInterval(timer); off.forEach(f => f()); }
   };
