@@ -114,12 +114,16 @@ const running = [collector.start(), ingest.start()];
 alerts?.start();
 const rollupTimer = setInterval(() => rollups.run(), Number(env.ROLLUP_MS || 60000));
 rollups.run();
+// Keeps the pages' opening data computed (analytics warm()); WARM_MS=0 turns it off.
+const warmMs = Number(env.WARM_MS ?? 20000);
+let warming = false;
+const warmTimer = warmMs > 0 ? setInterval(() => { if (warming) return; warming = true; analytics.warm().finally(() => { warming = false; }); }, warmMs) : null;
 
 let stopping = false;
 async function shutdown(signal) {
   if (stopping) return; stopping = true;
   log('info', `${signal} received; stopping`);
-  clearInterval(rollupTimer);
+  clearInterval(rollupTimer); clearInterval(warmTimer);
   alerts?.stop(); collector.stop(); ingest.stop(); reference?.stop(); feeds.execEvents?.stop(); feeds.heads?.stop(); sse.close();
   try { await collector.checkpoint(); } catch (error) { log('warn', `checkpoint failed: ${error.message}`); }
   server.close(() => process.exit(0));

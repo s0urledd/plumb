@@ -37,6 +37,10 @@ const ASSET_SLOT = { MON: 0, BTC: 1, SOL: 2, ZEC: 3, LIT: 4, ETH: 5 };
 const COLOR_KEY = 'ps.colors.v2';
 let colorMap = {};
 try { colorMap = JSON.parse(localStorage.getItem(COLOR_KEY) || '{}'); } catch { colorMap = {}; }
+// Perpl's market ids for the assets that own a slot, so the first view of a new
+// browser has its colours without waiting for a request (views correct them).
+const KNOWN_MARKETS = { 1: 'BTC', 10: 'MON', 20: 'ETH', 30: 'SOL', 31: 'SOL', 50: 'ZEC', 60: 'LIT' };
+if (!Object.keys(colorMap).length) for (const [id, symbol] of Object.entries(KNOWN_MARKETS)) colorMap[id] = ASSET_SLOT[symbol];
 // markets: [{ id, symbol }] ranked by all-time volume (plain ids also accepted).
 export function assignColors(markets) {
   const list = markets.map(m => (typeof m === 'object' ? m : { id: m, symbol: null }));

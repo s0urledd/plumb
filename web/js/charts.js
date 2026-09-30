@@ -8,6 +8,12 @@ const T = {
   accent: '#a2a4ff', long: '#81c784', short: '#f65a6e', tooltip: '#1c1b20', border: 'rgba(255,255,255,0.10)', surface: '#121113', font: 'Geist, ui-sans-serif, system-ui, sans-serif'
 };
 export const COLORS = T;
+// ECharts loads async, so data requests need not wait for it: a chart asked for
+// before it has arrived is drawn when it does (the latest request per node).
+const waiting = new Map();
+function flushWaiting() { if (!window.echarts) return; const list = [...waiting.values()]; waiting.clear(); for (const draw of list) { try { draw(); } catch { /* the view has moved on */ } } }
+if (!window.echarts) { document.querySelector('script[src*="echarts"]')?.addEventListener('load', flushWaiting); addEventListener('load', flushWaiting); }
+const whenLoaded = fn => (el, ...args) => { if (window.echarts || !el) return fn(el, ...args); waiting.set(el, () => fn(el, ...args)); return null; };
 const registry = new Set();
 const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(entries => { for (const e of entries) { const c = e.target.__chart; c?.resize(); c?.__refit?.(); } }) : null;
 
@@ -82,7 +88,7 @@ export function chartPng(el) {
 
 // Shows or hides one series (legend chips outside the canvas drive this).
 export function toggleSeries(el, name) { el?.__chart?.dispatchAction({ type: 'legendToggleSelect', name }); }
-export function disposeAll() { for (const c of registry) { try { observer?.unobserve(c.getDom()); c.dispose(); } catch { /* already gone */ } } registry.clear(); }
+export function disposeAll() { waiting.clear(); for (const c of registry) { try { observer?.unobserve(c.getDom()); c.dispose(); } catch { /* already gone */ } } registry.clear(); }
 
 const base = () => ({
   animation: true, animationDuration: 300, animationDurationUpdate: 250,
@@ -192,7 +198,7 @@ function tooltip(fmt, bucketSeconds, { total = false, exclude = null, partial = 
   };
 }
 
-export function sparkline(el, values, { color = T.accent, area = true } = {}) {
+function sparklineNow(el, values, { color = T.accent, area = true } = {}) {
   const chart = init(el);
   if (!chart) return;
   chart.setOption({
@@ -228,7 +234,7 @@ const runningTotal = (total, bars) => ({
 // Stacked bars over time (one series per market, colour follows the market).
 // cumulative: a running total of all series as a line on a right-hand axis.
 // zoom: a range slider under the chart.
-export function stackedBars(el, { times, series, bucketSeconds, fmt = v => usd(v), yFmt = usdAxis, cumulative = false, zoom = false }) {
+function stackedBarsNow(el, { times, series, bucketSeconds, fmt = v => usd(v), yFmt = usdAxis, cumulative = false, zoom = false }) {
   const chart = init(el);
   if (!chart) return;
   const kept = zoom ? zoomOf(chart) : null;
@@ -265,7 +271,7 @@ function usdAxisFor(lo, hi) {
   return v => `${v < 0 ? '-' : ''}$${(Math.abs(v) / k).toFixed(d)}${u}`;
 }
 
-export function lineChart(el, { times, series, bucketSeconds, fmt = v => usd(v), yFmt = null, area = true, scale = false }) {
+function lineChartNow(el, { times, series, bucketSeconds, fmt = v => usd(v), yFmt = null, area = true, scale = false }) {
   const chart = init(el);
   if (!chart) return;
   if (!yFmt) {
@@ -281,7 +287,7 @@ export function lineChart(el, { times, series, bucketSeconds, fmt = v => usd(v),
 
 // Positive values green, negative red (net flows, daily PnL).
 // dayTicks: irregular event times (funding) get one date label per UTC day.
-export function signedBars(el, { times, values, bucketSeconds, name = 'Value', fmt = v => usd(v, { sign: true }), yFmt = usdAxis, dayTicks = false }) {
+function signedBarsNow(el, { times, values, bucketSeconds, name = 'Value', fmt = v => usd(v, { sign: true }), yFmt = usdAxis, dayTicks = false }) {
   const chart = init(el);
   if (!chart) return;
   const xAxis = timeAxis(times, bucketSeconds, el);
@@ -304,7 +310,7 @@ export function signedBars(el, { times, values, bucketSeconds, name = 'Value', f
 
 // Two-sided bars: inflow above zero, outflow below (drawn negative), with the
 // net per period as a line (deposits vs withdrawals, taker buys vs sells).
-export function twoSided(el, { times, up, down, net = 'Net', bucketSeconds, fmt = v => usd(v, { sign: true }), yFmt = usdAxis }) {
+function twoSidedNow(el, { times, up, down, net = 'Net', bucketSeconds, fmt = v => usd(v, { sign: true }), yFmt = usdAxis }) {
   const chart = init(el);
   if (!chart) return;
   const upData = up.data.map(v => num(v) ?? 0), downData = down.data.map(v => -(num(v) ?? 0));
@@ -325,7 +331,7 @@ export function twoSided(el, { times, up, down, net = 'Net', bucketSeconds, fmt 
 // hues and a grey midpoint; values beyond ±clamp take the end colours. The
 // hues are the site's positive/negative ones, so a cell reads like a rate.
 export const DIVERGING = { neg: '#f65a6e', mid: '#2c2b33', pos: '#81c784' };
-export function divergingHeatmap(el, { times, rows, bucketSeconds, clamp, fmt = v => String(v), labels = ['', ''] }) {
+function divergingHeatmapNow(el, { times, rows, bucketSeconds, clamp, fmt = v => String(v), labels = ['', ''] }) {
   const chart = init(el);
   if (!chart) return;
   const data = [];
@@ -345,7 +351,7 @@ export function divergingHeatmap(el, { times, rows, bucketSeconds, clamp, fmt = 
 // drawn across the price chart, longs green and shorts red, stronger where more
 // notional would be liquidated; the price axis widens to show bands within
 // `levelSpan` of the mark. onLevel(level) fires when a band is clicked.
-export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volColor = 'rgba(162,164,255,0.35)', zoom = false, levels = null, mark = null, levelSpan = 0.04, onLevel = null }) {
+function candlesNow(el, { times, ohlc, volume, bucketSeconds, priceFmt, volColor = 'rgba(162,164,255,0.35)', zoom = false, levels = null, mark = null, levelSpan = 0.04, onLevel = null }) {
   const chart = init(el);
   if (!chart) return;
   const kept = zoom ? zoomOf(chart) : null;
@@ -417,7 +423,7 @@ export function candles(el, { times, ohlc, volume, bucketSeconds, priceFmt, volC
 }
 
 // Horizontal bars (categories on y), e.g. per-market breakdowns.
-export function hbars(el, { labels, values, colors, fmt = v => usd(v) }) {
+function hbarsNow(el, { labels, values, colors, fmt = v => usd(v) }) {
   const chart = init(el);
   if (!chart) return;
   chart.setOption({
@@ -432,7 +438,7 @@ export function hbars(el, { labels, values, colors, fmt = v => usd(v) }) {
 // Mirrored bars: long exposure left of zero, short right (liquidation ladder).
 // legend: false leaves the key to a dot legend in the card head, which uses
 // the same names (and which a PNG export draws in).
-export function mirrored(el, { labels, long, short, fmt = v => usd(v), legend = true }) {
+function mirroredNow(el, { labels, long, short, fmt = v => usd(v), legend = true }) {
   const chart = init(el);
   if (!chart) return;
   const peak = Math.max(0, ...long.map(v => num(v) ?? 0), ...short.map(v => num(v) ?? 0));
@@ -456,7 +462,7 @@ export function mirrored(el, { labels, long, short, fmt = v => usd(v), legend = 
 
 // Open interest opened (above zero) and closed (below) per bucket, long and
 // short stacked, with the net change as a line. Closes are the paler shade.
-export function flowBars(el, { times, longOpen, longClose, shortOpen, shortClose, bucketSeconds, fmt = v => usd(v), yFmt = usdAxis }) {
+function flowBarsNow(el, { times, longOpen, longClose, shortOpen, shortClose, bucketSeconds, fmt = v => usd(v), yFmt = usdAxis }) {
   const chart = init(el);
   if (!chart) return;
   const partial = partialAt(times, bucketSeconds);
@@ -485,7 +491,7 @@ export function flowBars(el, { times, longOpen, longClose, shortOpen, shortClose
 
 // Open positions by entry price: longs to the right, shorts to the left, the
 // current mark as a marker line.
-export function entryProfile(el, { bins, mark, priceFmt = v => String(v), fmt = v => usd(v) }) {
+function entryProfileNow(el, { bins, mark, priceFmt = v => String(v), fmt = v => usd(v) }) {
   const chart = init(el);
   if (!chart) return;
   // Open-ended edge bins say so: "< 81,091" holds every entry below the range.
@@ -505,3 +511,6 @@ export function entryProfile(el, { bins, mark, priceFmt = v => String(v), fmt = 
     ]
   }, true);
 }
+
+// The builders, each drawn once ECharts has loaded.
+export const sparkline = whenLoaded(sparklineNow), stackedBars = whenLoaded(stackedBarsNow), lineChart = whenLoaded(lineChartNow), signedBars = whenLoaded(signedBarsNow), twoSided = whenLoaded(twoSidedNow), divergingHeatmap = whenLoaded(divergingHeatmapNow), candles = whenLoaded(candlesNow), hbars = whenLoaded(hbarsNow), mirrored = whenLoaded(mirroredNow), flowBars = whenLoaded(flowBarsNow), entryProfile = whenLoaded(entryProfileNow);
