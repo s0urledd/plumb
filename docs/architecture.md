@@ -243,8 +243,9 @@ Slower by design, not by lag:
   say so.
 
 With the execution-event ring (Monode), trades appear on the tape from the
-proposed block, within milliseconds of execution and dimmed until they
-finalize; finalized data still follows the timings above, because a commit
+proposed block, dimmed until they finalize: in a 60-second sample they were
+pushed before the node's RPC reported the block and a median 0.59 s before
+finalization ([evidence](evidence/latency-2026-09-30.json)); finalized data still follows the timings above, because a commit
 waits for finalization and runs at most once per `LIVE_COMMIT_MS`.
 
 ## Performance

@@ -75,8 +75,10 @@ Judging criteria:
   positions and distance to liquidation on demand; large liquidations,
   large trades and funding flips. One tap from any wallet page.
 - **Straight from Monad:**
-  - execution events via Monode: proposed-block trades on the tape within
-    milliseconds, finalized data about a second after the block;
+  - execution events via Monode: proposed-block trades on the tape as the
+    block is proposed, a median 0.59 s before it is final (sample of 30
+    September, `docs/evidence/latency-2026-09-30.json`); finalized data about
+    a second after the block;
   - no dependency on Perpl's API or any third-party indexer.
 
 ## Demo (about three minutes)

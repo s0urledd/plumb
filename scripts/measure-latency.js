@@ -7,7 +7,7 @@ const APP = process.env.APP_URL || 'http://127.0.0.1:8787';
 if (!RPC) { console.error('MONAD_RPC_URL is required'); process.exit(1); }
 const DURATION = Number(process.argv[2] || 90) * 1000;
 const t0 = Date.now();
-const latestSeen = new Map(), finalSeen = new Map(), sseSeen = [], snapSeen = [], tradesSeen = [], rpcMs = [];
+const latestSeen = new Map(), finalSeen = new Map(), sseSeen = [], snapSeen = [], tradesSeen = [], proposedSeen = new Map(), rpcMs = [];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let id = 1;
 async function rpc(method, params) {
@@ -50,6 +50,8 @@ async function stream() {
         const ev = /^event: (.*)$/m.exec(msg)?.[1], data = /^data: (.*)$/m.exec(msg)?.[1];
         if (ev === 'block') sseSeen.push({ b: Number(JSON.parse(data).block), at: Date.now() });
         if (ev === 'trades') for (const t of JSON.parse(data)) tradesSeen.push({ b: Number(t.block), at: Date.now() });
+        // Trades of a proposed block, pushed from the execution-event stream before finality.
+        if (ev === 'proposed') { const b = Number(JSON.parse(data).block); if (!proposedSeen.has(b)) proposedSeen.set(b, Date.now()); }
       }
     }
   } catch { /* aborted at the end */ }
@@ -79,6 +81,11 @@ console.log(JSON.stringify({
   sse_block_after_finalized_ms: stats(lag.sseFin),
   sse_block_interval_ms: stats(gaps(sseSeen)),
   trade_on_tape_after_proposed_ms: stats(tradesSeen.filter(t => latestSeen.has(t.b)).map(t => t.at - latestSeen.get(t.b))),
+  // Proposed-block trades (execution events): against the RPC head (negative = before the RPC reports the block) and the finalized head.
+  proposed_blocks_pushed: proposedSeen.size,
+  proposed_trades_after_rpc_head_ms: stats([...proposedSeen].filter(([b]) => latestSeen.has(b)).map(([b, at]) => at - latestSeen.get(b))),
+  proposed_trades_before_finalized_ms: stats([...proposedSeen].filter(([b]) => finalSeen.has(b)).map(([b, at]) => finalSeen.get(b) - at)),
+  finalized_trades_after_proposed_trades_ms: stats(tradesSeen.filter(t => proposedSeen.has(t.b)).map(t => t.at - proposedSeen.get(t.b))),
   contract_snapshot_after_proposed_ms: stats(lag.snap),
   contract_snapshot_after_finalized_ms: stats(lag.snapFin),
   contract_snapshot_interval_ms: stats(gaps(snapSeen))
