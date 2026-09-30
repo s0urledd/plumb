@@ -178,6 +178,20 @@ function partialAt(times, bucketSeconds) {
   const last = Number(times?.at?.(-1));
   return Number.isFinite(last) && bucketSeconds > 0 && last + bucketSeconds > Date.now() / 1000 ? times.length - 1 : -1;
 }
+// A bar covers a period, so its tooltip names the whole period: "Sep 10 – 16, 2026"
+// for a week (weeks start on Thursday 00:00 UTC, the Unix epoch's weekday), the
+// date for a day, "Sep 10, 14:00–15:00 UTC" within a day.
+const hm = d => `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+export function periodLabel(t, bucketSeconds) {
+  if (bucketSeconds > 86400) {
+    const a = new Date(Number(t) * 1000), b = new Date((Number(t) + bucketSeconds - 86400) * 1000);
+    const end = a.getUTCMonth() === b.getUTCMonth() ? b.getUTCDate() : `${MONTHS[b.getUTCMonth()]} ${b.getUTCDate()}`;
+    return `${MONTHS[a.getUTCMonth()]} ${a.getUTCDate()} – ${end}, ${b.getUTCFullYear()}`;
+  }
+  if (bucketSeconds === 86400) return date(t);
+  const a = new Date(Number(t) * 1000), b = new Date((Number(t) + bucketSeconds) * 1000);
+  return `${MONTHS[a.getUTCMonth()]} ${a.getUTCDate()}, ${hm(a)}–${hm(b)} UTC`;
+}
 const PARTIAL_OPACITY = 0.4;
 const fade = (data, at) => (at < 0 ? data : data.map((d, i) => (i !== at ? d : d && typeof d === 'object' && !Array.isArray(d) ? { ...d, itemStyle: { ...d.itemStyle, opacity: PARTIAL_OPACITY } } : { value: d, itemStyle: { opacity: PARTIAL_OPACITY } })));
 function tooltip(fmt, bucketSeconds, { total = false, exclude = null, partial = -1 } = {}) {
@@ -189,7 +203,7 @@ function tooltip(fmt, bucketSeconds, { total = false, exclude = null, partial = 
     if (!list.length) return '';
     const t = list[0].axisValue;
     const running = partial >= 0 && list[0].dataIndex === partial ? ' · in progress' : '';
-    const head = `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(t) : dateTime(t) + ' UTC'}${running}</div>`;
+    const head = `<div style="color:${T.faint};margin-bottom:4px">${periodLabel(t, bucketSeconds)}${running}</div>`;
     const rows = list.filter(p => p.value !== null && p.value !== undefined && p.value !== 0 && p.value !== '-').sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 10);
     const sum = list.reduce((a, p) => a + (num(p.value) ?? 0), 0);
     const ev = Array.isArray(extra?.value) ? extra.value[1] : extra?.value; // a drawn running total is [index, total, previous]
@@ -338,7 +352,7 @@ function divergingHeatmapNow(el, { times, rows, bucketSeconds, clamp, fmt = v =>
   rows.forEach((r, y) => r.values.forEach((v, x) => { if (v !== null && v !== undefined) data.push([x, y, v]); }));
   chart.setOption({
     ...base(), grid: { left: 8, right: 12, top: 6, bottom: 34, containLabel: true },
-    tooltip: { ...base().tooltip, trigger: 'item', axisPointer: undefined, formatter: p => `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(times[p.value[0]]) : dateTime(times[p.value[0]]) + ' UTC'}</div>${row(p.color, rows[p.value[1]].name, fmt(p.value[2]))}` },
+    tooltip: { ...base().tooltip, trigger: 'item', axisPointer: undefined, formatter: p => `<div style="color:${T.faint};margin-bottom:4px">${periodLabel(times[p.value[0]], bucketSeconds)}</div>${row(p.color, rows[p.value[1]].name, fmt(p.value[2]))}` },
     xAxis: { ...timeAxis(times, bucketSeconds, el), splitArea: { show: false } },
     yAxis: { type: 'category', data: rows.map(r => r.name), inverse: true, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: T.text, margin: 10 } },
     visualMap: { type: 'continuous', min: -clamp, max: clamp, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, itemWidth: 10, itemHeight: 180, text: labels, textGap: 8, textStyle: { color: T.faint, fontSize: 11 }, inRange: { color: [DIVERGING.neg, DIVERGING.mid, DIVERGING.pos] } },
@@ -477,7 +491,7 @@ function flowBarsNow(el, { times, longOpen, longClose, shortOpen, shortClose, bu
     tooltip: { ...base().tooltip, formatter: params => {
       const all = Array.isArray(params) ? params : [params];
       const i = all[0]?.dataIndex ?? 0, t = all[0]?.axisValue;
-      const head = `<div style="color:${T.faint};margin-bottom:4px">${bucketSeconds >= 86400 ? date(t) : dateTime(t) + ' UTC'}${i === partial ? ' · in progress' : ''}</div>`;
+      const head = `<div style="color:${T.faint};margin-bottom:4px">${periodLabel(t, bucketSeconds)}${i === partial ? ' · in progress' : ''}</div>`;
       return head + row(T.long, 'Longs opened', fmt(lo[i])) + row(T.long + '80', 'Longs closed', fmt(lc[i])) + row(T.short, 'Shorts opened', fmt(so[i])) + row(T.short + '80', 'Shorts closed', fmt(sc[i]))
         + `<div style="border-top:1px solid ${T.border};margin-top:4px;padding-top:4px">${row('#ffffff', 'Open interest change', `${net[i] > 0 ? '+' : ''}${fmt(net[i])}`)}</div>`;
     } },
