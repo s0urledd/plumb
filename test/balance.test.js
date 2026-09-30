@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { rowsFromLogs, ingestTopics, topicSetTopics, TOPIC_SET, BALANCE_EVENTS, TRANSFER_KINDS } from '../src/decode.js';
 import { topicsFor } from '../src/abi.js';
 import { BALANCE_MOVES, BALANCE_KINDS, protocolBalance } from '../src/revenue.js';
-import { KINDS, FLAG, kindEnum, kindAlter, migrate } from '../src/schema.js';
+import { KINDS, FLAG, kindEnum, kindAlter, migrate, KIND_INDEX } from '../src/schema.js';
 import { logBuilder } from './helpers/logs.js';
 
 test('each protocol balance transfer becomes its own row kind with its account, market and amount', () => {
@@ -59,6 +59,16 @@ test('the topic backfill reads the transfers and the rates that were not stored 
   assert.ok(TOPIC_SET.events.includes('BuyToLiquidateParamsUpdated'));
   assert.equal(TOPIC_SET.name, 'protocol-v3', 'a new name: the set is read over the whole history again');
   for (const t of topicSetTopics) assert.ok(ingestTopics.includes(t), 'live commits count toward the topic coverage only if the ingest reads the topic too');
+});
+
+test('the event kind skip index is added and built once, then left alone', async () => {
+  const run = async hasIndex => {
+    const ran = [];
+    await migrate({ database: 'perpl', exec: async sql => { ran.push(sql); }, query: async sql => (sql.includes('data_skipping_indices') ? (hasIndex ? [{ name: 'kind_idx' }] : []) : []) });
+    return ran.filter(s => s.includes('kind_idx'));
+  };
+  assert.deepEqual(await run(false), KIND_INDEX, 'added, then built for the stored parts');
+  assert.deepEqual(await run(true), [], 'already there: nothing rebuilt');
 });
 
 test('an index from before the transfers gains the new kinds in place, ev_account first, and only once', async () => {

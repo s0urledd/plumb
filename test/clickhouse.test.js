@@ -60,6 +60,8 @@ test('ClickHouse ingest, rollups, windows, repair and restart', { skip: !url && 
   await migrate(ch);
   await migrate(ch);
   const cols = (await ch.query("SELECT name FROM system.columns WHERE database = {db:String} AND table = 'agg_market_hour'", { db: database })).map(r => r.name);
+  // The kind skip index exists once, however often the migration runs.
+  assert.equal((await ch.query("SELECT name FROM system.data_skipping_indices WHERE database = {db:String} AND table = 'ev' AND name = 'kind_idx'", { db: database })).length, 1);
   for (const c of REVENUE_COLUMNS) assert.ok(cols.includes(c), c);
   assert.equal(Number((await ch.first('SELECT liq_prot_fees AS v FROM agg_market_hour')).v), 0, 'rows rolled before read 0');
   const fake = syntheticChain();
