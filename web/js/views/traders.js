@@ -8,11 +8,17 @@ import { SEA_ICONS } from '../cohort-icons.js';
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All'], ['this_epoch', 'This epoch'], ['last_epoch', 'Last epoch']];
 // Card labels per window; epochs are Perpl's weekly snapshot periods (Wednesday 16:00 UTC).
 const WINDOW_LABEL = { all: 'All-time', this_epoch: 'this epoch', last_epoch: 'last epoch' };
-// The page's window switch holds the rolling windows; Perpl's epochs sit beside
-// the leaderboard title as two chips. A chip picks that epoch for the cards and
-// the board; picking it again goes back to the last 24 hours.
+// The page's window switch holds the rolling windows and drives the cards and
+// the board; Perpl's epochs sit beside the board's title as two chips that set
+// the board alone (?epoch=last or this); picking the active chip again clears it
+// (and an older ?window=<epoch> in the address gives way to the page window).
 const windowCtl = w => seg('window', WINDOWS.filter(([v]) => !v.endsWith('_epoch')), w);
-const epochChips = w => [['this_epoch', 'This epoch'], ['last_epoch', 'Last epoch']].map(([v, label]) => `<button class="ep-chip${v === w ? ' on' : ''}" data-seg="window" data-v="${v === w ? '24h' : v}" aria-pressed="${v === w}" title="Perpl's weekly epoch: Wednesday 16:00 UTC to the next Wednesday 16:00 UTC">${label}</button>`).join('');
+const EPOCHS = { this: 'this_epoch', last: 'last_epoch' };
+const epochChips = ep => [['this', 'This epoch'], ['last', 'Last epoch']].map(([v, label]) => `<button class="ep-chip${EPOCHS[v] === ep ? ' on' : ''}" data-seg="epoch" data-v="${EPOCHS[v] === ep ? '' : v}" aria-pressed="${EPOCHS[v] === ep}" title="Ranks the leaderboard over Perpl's weekly epoch: Wednesday 16:00 UTC to the next Wednesday 16:00 UTC">${label}</button>`).join('');
+// The page window from ?window= (rolling only) and the board's epoch from ?epoch=
+// (an older ?window=last_epoch link still opens the board on that epoch).
+const rollingOf = q => (WINDOWS.some(([v]) => v === q.get('window') && !v.endsWith('_epoch')) ? q.get('window') : '24h');
+const epochOf = q => EPOCHS[q.get('epoch')] ?? (Object.values(EPOCHS).includes(q.get('window')) ? q.get('window') : null);
 const SORTS = [['pnl', 'Top PnL'], ['loss', 'Top losses'], ['volume', 'Volume'], ['fees', 'Fees paid'], ['liquidated', 'Liquidated'], ['net_flow', 'Net inflow'], ['deposits', 'Deposits'], ['withdrawals', 'Withdrawals']];
 const FLOW_SORTS = new Set(['net_flow', 'deposits', 'withdrawals']);
 // The ranking switches, trading rankings and flows apart, each with its label.
@@ -22,7 +28,9 @@ const SM_WINDOWS = [['7d', '7D'], ['30d', '30D'], ['all', 'All']];
 const SM_SIZES = [['100', '≥$100'], ['1000', '≥$1K'], ['10000', '≥$10K']];
 
 export function mount(el, { query, setQuery }) {
-  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '24h';
+  let w = rollingOf(query), ep = epochOf(query);
+  // The board's window: the epoch when one is picked, else the page's.
+  const bw = () => ep ?? w;
   let by = SORTS.some(([v]) => v === query.get('by')) ? query.get('by') : 'pnl';
   let page = 0, alive = true, data = null, cohorts = null, coTab = 'size', coSel = null, smWin = '30d', smMin = '1000';
   const LIMIT = 20;
@@ -30,7 +38,7 @@ export function mount(el, { query, setQuery }) {
     <div class="page-head"><div><h1>Traders</h1><div class="sub">Rankings of every account that traded, how traders are positioned now, and the latest moves of the most profitable ones.</div></div><div id="win">${windowCtl(w)}</div></div>
     <div class="stack traders-page">
     <div class="kpis k4" id="tkpis">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:60%;margin-top:10px"></div></div>').join('')}</div>
-    <section class="panel" id="board"><div class="panel-head lb-head"><div><div class="lb-title"><h2 id="title">Leaderboard</h2><span class="ep-chips" id="epochs" role="group" aria-label="Perpl epoch">${epochChips(w)}</span></div><div class="desc" id="meta"></div></div><div class="lb-tools"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><a class="btn ghost" id="csv">${ICON.download} CSV</a></div><div class="lb-rank" id="by" role="group" aria-label="Rank traders by">${rankBy(by)}</div></div>
+    <section class="panel" id="board"><div class="panel-head lb-head"><div><div class="lb-title"><h2 id="title">Leaderboard</h2><span class="ep-chips" id="epochs" role="group" aria-label="Perpl epoch">${epochChips(ep)}</span></div><div class="desc" id="meta"></div></div><div class="lb-tools"><input id="lb-search" class="calc-in lb-search" type="search" placeholder="Filter or paste a wallet" autocomplete="off" spellcheck="false" aria-label="Filter traders by address"><a class="btn ghost" id="csv">${ICON.download} CSV</a></div><div class="lb-rank" id="by" role="group" aria-label="Rank traders by">${rankBy(by)}</div></div>
       <div class="panel-body flush" id="list">${skeleton(12)}</div>
       <div class="panel-foot pager"><span id="count"></span><span class="pager-ctl" id="pager"></span></div></section>
     <section class="panel"><div class="panel-head"><div><h2>Positioning by cohort</h2><div class="desc" id="co-desc">Open positions now, grouped by account · click a cohort for its largest wallets</div></div><div id="co-tabs">${seg('co', CO_TABS, coTab)}</div></div>
@@ -45,7 +53,8 @@ export function mount(el, { query, setQuery }) {
     const out = [], trades = r.trades ?? 0, vol = num(r.volume) ?? 0;
     if (trades && vol / trades >= 25000) out.push(['Whale', `average trade ${usd(vol / trades)}`]);
     if (trades >= 100 && (r.maker_share_pct ?? 0) >= 80) out.push(['Maker', `${Math.round(r.maker_share_pct)}% of volume as maker`]);
-    if (DAYS[w] && trades / DAYS[w] >= 5000) out.push(['High frequency', `${int(trades / DAYS[w])} trades a day, one every ${Math.round(86400 * DAYS[w] / trades)} s`]);
+    const days = DAYS[bw()];
+    if (days && trades / days >= 5000) out.push(['High frequency', `${int(trades / days)} trades a day, one every ${Math.round(86400 * days / trades)} s`]);
     return out.slice(0, 2).map(([t, why]) => `<span class="tag" title="${esc(why)}">${t}</span>`).join(' ');
   }
   const SHARE_COL = { key: 'share', label: 'Share of volume', tip: 'Share of the exchange volume in the epoch (each trade has two sides, so shares add up to 200%)', phone: false, n: true, render: r => (r.volume_share_pct === null || r.volume_share_pct === undefined ? '<span class="faint">—</span>' : pct(r.volume_share_pct, { digits: r.volume_share_pct < 1 ? 2 : 1 })) };
@@ -69,30 +78,31 @@ export function mount(el, { query, setQuery }) {
   async function load() {
     const asked = ++seq;
     $('list').innerHTML = skeleton(12);
-    const d = await get(`leaderboard?window=${w}&by=${by}&limit=${LIMIT}&offset=${page * LIMIT}`);
+    const d = await get(`leaderboard?window=${bw()}&by=${by}&limit=${LIMIT}&offset=${page * LIMIT}`);
     if (!alive || asked !== seq) return; // a newer page or window was asked for meanwhile
     data = d;
     $('title').textContent = SORTS.find(([v]) => v === by)[1];
     renderMeta();
     // Flow rankings swap the fee and liquidation columns for the flows themselves;
     // an epoch shows each account's share of the epoch's volume where open positions (now) would be.
-    const flow = FLOW_SORTS.has(by), epoch = w.endsWith('_epoch');
+    const flow = FLOW_SORTS.has(by), epoch = ep !== null;
     const columns = COLS.filter(c => (flow ? !['fees', 'liq', 'maker'].includes(c.key) : !c.flow)).map(c => (epoch && c.key === 'open' ? SHARE_COL : c));
     lbColumns = columns; renderList();
-    $('csv').href = `/api/v1/leaderboard?window=${w}&by=${by}&limit=200&format=csv`;
+    $('csv').href = `/api/v1/leaderboard?window=${bw()}&by=${by}&limit=200&format=csv`;
     renderPager();
   }
-  // The board's subtitle: the window, and for an epoch its span and the time to the snapshot (or final).
-  // Hovering it names the blocks the epoch spans on Monad.
+  // The board's subtitle: the window, and for an epoch its span, the time to the
+  // snapshot (or final), its traders and volume. Hovering it names the epoch's blocks.
   function renderMeta() {
     if (!data) return;
     const m = data.meta, partial = m.coverage && !m.coverage.complete ? ' · history still indexing' : '';
-    const text = w === 'this_epoch' ? `This epoch · ${epochSpan(m.from)} · snapshot in ${epochLeft(m.from)}` : w === 'last_epoch' ? `Last epoch · ${epochSpan(m.from)} · final` : w === 'all' ? 'All-time' : `Last ${w}`;
+    const size = `${int(data.total)} traders${num(m.volume) ? ` · ${usd(m.volume)} volume` : ''}`;
+    const text = ep === 'this_epoch' ? `This epoch · ${epochSpan(m.from)} · snapshot in ${epochLeft(m.from)} · ${size}` : ep === 'last_epoch' ? `Last epoch · ${epochSpan(m.from)} · final · ${size}` : w === 'all' ? 'All-time' : `Last ${w}`;
     $('meta').textContent = text + partial;
     $('meta').title = m.blocks?.first ? `Perpl activity from block ${int(m.blocks.first)} to block ${int(m.blocks.last)}` : '';
   }
   // The countdown moves each minute; at the snapshot the epoch under way turns into the last one.
-  const epochTimer = setInterval(() => { if (!data || w !== 'this_epoch') return; if (Date.now() / 1000 >= data.meta.from + 7 * 86400) { load().catch(() => {}); loadSummary().catch(() => {}); } else renderMeta(); }, 60000);
+  const epochTimer = setInterval(() => { if (!data || ep !== 'this_epoch') return; if (Date.now() / 1000 >= data.meta.from + 7 * 86400) load().catch(() => {}); else renderMeta(); }, 60000);
   // Prev is off on the first page and Next on the last; one page needs neither.
   const pages = () => Math.max(1, Math.ceil((data?.total ?? 0) / LIMIT));
   function renderPager() { const n = pages(); $('pager').innerHTML = n > 1 ? `<button class="btn ghost sm" data-action="prev" ${page === 0 ? 'disabled' : ''}>← Prev</button><span class="num">Page ${int(page + 1)} of ${int(n)}</span><button class="btn ghost sm" data-action="next" ${page + 1 >= n ? 'disabled' : ''}>Next →</button>` : ''; }
@@ -221,9 +231,9 @@ export function mount(el, { query, setQuery }) {
   load().catch(error => { $('list').innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; });
   loadSummary().catch(() => { $('tkpis').innerHTML = ''; });
   return {
-    onSeg(name, v) { if (name === 'smm') { smMin = v; $('sm-min').innerHTML = seg('smm', SM_SIZES, smMin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'smw') { smWin = v; $('sm-win').innerHTML = seg('smw', SM_WINDOWS, smWin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'co') { coTab = v; coSel = null; $('co-tabs').innerHTML = seg('co', CO_TABS, coTab); renderCohorts(); return; } if (name === 'window') setQuery({ window: v === '24h' ? null : v }); if (name === 'by') setQuery({ by: v === 'pnl' ? null : v }); },
+    onSeg(name, v) { if (name === 'smm') { smMin = v; $('sm-min').innerHTML = seg('smm', SM_SIZES, smMin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'smw') { smWin = v; $('sm-win').innerHTML = seg('smw', SM_WINDOWS, smWin); $('moves').innerHTML = skeleton(6); loadMoves().catch(() => {}); return; } if (name === 'co') { coTab = v; coSel = null; $('co-tabs').innerHTML = seg('co', CO_TABS, coTab); renderCohorts(); return; } if (name === 'window') setQuery({ window: v === '24h' ? null : v }); if (name === 'epoch') setQuery({ epoch: v || null, window: w === '24h' ? null : w }); if (name === 'by') setQuery({ by: v === 'pnl' ? null : v }); },
     onAction(a, t) { if (a === 'co-pick') { coSel = coSel === t.dataset.key ? null : t.dataset.key; renderCohorts(); return; } if (a === 'co-close') { coSel = null; renderCohorts(); return; } if (a === 'next' && data && page + 1 < pages()) goTo(page + 1); if (a === 'prev' && page > 0) goTo(page - 1); },
-    update(q) { w = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; by = SORTS.some(([v]) => v === q.get('by')) ? q.get('by') : 'pnl'; page = 0; $('win').innerHTML = windowCtl(w); $('epochs').innerHTML = epochChips(w); $('by').innerHTML = rankBy(by); load().catch(() => {}); loadSummary().catch(() => {}); },
+    update(q) { const nw = rollingOf(q), cardsChanged = nw !== w; w = nw; ep = epochOf(q); by = SORTS.some(([v]) => v === q.get('by')) ? q.get('by') : 'pnl'; page = 0; $('win').innerHTML = windowCtl(w); $('epochs').innerHTML = epochChips(ep); $('by').innerHTML = rankBy(by); load().catch(() => {}); if (cardsChanged) loadSummary().catch(() => {}); },
     destroy() { alive = false; clearInterval(coTimer); clearInterval(smTimer); clearInterval(epochTimer); }
   };
 }
