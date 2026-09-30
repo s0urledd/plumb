@@ -1,0 +1,31 @@
+name: uptime
+# Checks the live site every 10 minutes (scripts/check-live.js). A failed run
+# mails the repository owner; with the TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
+# secrets set it also posts the first failure and the recovery to Telegram.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Previous result
+        id: prev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "state=$(gh run list --repo '${{ github.repository }}' --workflow uptime.yml --limit 2 --json conclusion --jq '.[1].conclusion // ""')" >> "$GITHUB_OUTPUT"
+      - name: Check the live site
+        env:
+          PREVIOUS_STATE: ${{ steps.prev.outputs.state == 'failure' && 'down' || '' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node scripts/check-live.js
