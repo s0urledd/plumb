@@ -178,7 +178,8 @@ async function poll() {
 }
 poll(); setInterval(poll, 30000);
 stream.connect();
-// Market colours follow all-time volume rank, assigned once per browser
-// before the first view renders (bounded wait).
-Promise.race([get('protocol?window=all', { maxAge: 60000 }).then(p => assignColors([...p.markets].sort((a, b) => Number(b.volume) - Number(a.volume)).map(m => ({ id: m.id, symbol: m.symbol })))).catch(() => {}), new Promise(resolve => setTimeout(resolve, 1500))]).then(() => route());
+// The first view renders at once (colours are seeded in ui.js); the market list
+// then confirms each market's colour for the views that follow.
+route();
+get('protocol?window=all', { maxAge: 60000 }).then(p => assignColors([...p.markets].sort((a, b) => Number(b.volume) - Number(a.volume)).map(m => ({ id: m.id, symbol: m.symbol })))).catch(() => {});
 export { lastBlock, dateTime };

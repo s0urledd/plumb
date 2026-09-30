@@ -100,6 +100,20 @@ test('medians average the two middle values; a drawdown from zero has a start', 
   assert.ok(insights(performance(roundTrips(rows).trips), rows).some(n => n.text === 'Median leverage on entries: 3.5x.'));
 });
 
+test('cache: slow-changing values (long TTL) are served stale for longer while they refresh', async () => {
+  let t = 0, n = 0;
+  const cache = createCache({ now: () => t, longStaleFrom: 100, longStaleMs: 1000 });
+  const compute = async () => ++n;
+  assert.equal(await cache.get('slow', 100, compute), 1);
+  t = 900; assert.equal(await cache.get('slow', 100, compute), 1, 'well past twice the TTL, still served at once');
+  await new Promise(resolve => setImmediate(resolve));
+  t = 901; assert.equal(await cache.get('slow', 100, compute), 2, 'and refreshed behind it');
+  t = 2000; assert.equal(await cache.get('slow', 100, compute), 3, 'older than longStaleMs: waits');
+  // Short TTLs keep the twice-the-TTL rule.
+  assert.equal(await cache.get('fast', 10, compute), 4);
+  t = 2025; assert.equal(await cache.get('fast', 10, compute), 5, 'older than twice the TTL: waits');
+});
+
 test('cache serves a stale value up to twice the TTL, then waits; fresh bypasses it', async () => {
   let t = 0, n = 0;
   const cache = createCache({ now: () => t });

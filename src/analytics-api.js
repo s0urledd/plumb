@@ -12,17 +12,20 @@ import { cohortTable } from './cohorts.js';
 const bad = (message, status = 400) => Object.assign(new Error(message), { status });
 const HOUR = 3600, DAY = 86400, YEAR = 365 * DAY; // funding is annualised over 365 days
 
-// A value is served for ttlMs, then (up to twice that age) served stale while
-// it is recomputed in the background; older values, and `fresh` requests,
-// wait for a new computation. A computation never replaces a newer one.
-export function createCache({ now = () => Date.now(), max = 500 } = {}) {
+// A value is served for ttlMs, then served stale while it is recomputed in the
+// background: up to twice ttlMs, or up to longStaleMs for values kept
+// longStaleFrom or more (windows of a week and longer, which move slowly; the
+// pages refresh them and the last day's figures stream live). Older values,
+// and `fresh` requests, wait for a new computation. A computation never
+// replaces a newer one.
+export function createCache({ now = () => Date.now(), max = 500, longStaleFrom = 8000, longStaleMs = 600000 } = {}) {
   const store = new Map(); // key -> { at, value, seq, pending }
   let seq = 0;
   async function get(key, ttlMs, compute, { fresh = false } = {}) {
     const hit = store.get(key);
     const age = hit && hit.value !== undefined ? now() - hit.at : Infinity;
     if (!fresh && age < ttlMs) return hit.value;
-    const stale = !fresh && age < 2 * ttlMs;
+    const stale = !fresh && age < (ttlMs >= longStaleFrom ? longStaleMs : 2 * ttlMs);
     if (!fresh && hit?.pending) return stale ? hit.value : hit.pending;
     const n = ++seq;
     const pending = compute().then(value => {
@@ -371,12 +374,17 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     const w = query.get('window') ? windowOf(query) : null;
     const sinceTs = w && w !== 'all' ? rangeOf(w).from : null;
     return cache.get(`liq:${limit}:${offset}:${market}:${w}`, 3000, async () => {
-      const [rows, total] = await Promise.all([queries.recent(['liquidation', 'deleverage'], { limit, offset, market, sinceTs }), w ? queries.recentCount(['liquidation', 'deleverage'], { market, sinceTs }) : null]);
-      const largestRow = w ? (await queries.recent(['liquidation'], { limit: 1, market, sinceTs, order: 'size' }))[0] ?? null : null;
-      const addr = await addresses([...new Set(rows.map(r => Number(r.account)))]);
       const { from, to } = rangeOf('24h');
-      const day = sumMarkets(await queries.marketTotals(from, to));
-      return { meta: metaOf(), last_24h: { count: day.liquidations, notional: dec(day.liquidated, cd()), deleverages: day.deleverages }, rows: rows.map(r => tradeView(r, addr)), ...(w ? { window: w, total, offset, largest: largestRow ? tradeView(largestRow, await addresses([Number(largestRow.account)])) : null } : {}) };
+      const [rows, total, largest, dayRows] = await Promise.all([
+        queries.recent(['liquidation', 'deleverage'], { limit, offset, market, sinceTs }),
+        w ? queries.recentCount(['liquidation', 'deleverage'], { market, sinceTs }) : null,
+        w ? queries.recent(['liquidation'], { limit: 1, market, sinceTs, order: 'size' }) : [],
+        queries.marketTotals(from, to)
+      ]);
+      const largestRow = largest[0] ?? null;
+      const addr = await addresses([...new Set([...rows, ...largest].map(r => Number(r.account)))]);
+      const day = sumMarkets(dayRows);
+      return { meta: metaOf(), last_24h: { count: day.liquidations, notional: dec(day.liquidated, cd()), deleverages: day.deleverages }, rows: rows.map(r => tradeView(r, addr)), ...(w ? { window: w, total, offset, largest: largestRow ? tradeView(largestRow, addr) : null } : {}) };
     });
   }
   async function trades(query) {
@@ -743,5 +751,21 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
       return { meta: metaOf({ window: 'all', from, to, coverage: coverageOf(from, to) }), block: state.block.number.toString(), ...t };
     });
   }
-  return { protocolBalanceAt, addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
+  // The requests each page opens with, re-read every WARM_MS so the first
+  // visitor after a quiet spell is not the one who waits for them (one at a
+  // time, and each only recomputed once its TTL has passed).
+  const OPENING = [
+    [protocol, 'window=24h'], [protocol, 'window=7d'], [protocol, 'window=30d'], [protocol, 'window=all'],
+    [series, 'window=24h'], [series, 'window=30d'], [series, 'window=all'],
+    [liquidations, 'limit=8'], [liquidations, 'limit=50&offset=0&window=30d'],
+    [flows, 'window=24h'],
+    [leaderboard, 'window=24h&by=pnl&limit=20&offset=0'],
+    [traderSummary, 'window=24h'], [traderSummary, 'window=30d'], [traderSummary, 'window=all'], [traderSummary, 'window=this_epoch'], [traderSummary, 'window=last_epoch'],
+    [smartMoves, 'window=30d&min=1000&limit=500'],
+    [fundingOverview, 'window=24h']
+  ];
+  async function warm() {
+    for (const [fn, q] of OPENING) { try { await fn(new URLSearchParams(q)); } catch { /* the next round tries again */ } }
+  }
+  return { warm, protocolBalanceAt, addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
 }
