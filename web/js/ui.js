@@ -53,7 +53,7 @@ export const colorOf = id => (colorMap[id] === undefined ? OTHER_HEX : SLOT_HEX[
 export const hasColor = id => colorMap[id] !== undefined;
 
 // --- market logos: self-hosted, keyed by base asset (sources in web/img/markets/README.md)
-const LOGOS = { BTC: 'btc.svg', ETH: 'eth.svg', SOL: 'sol.svg', MON: 'mon.svg', HYPE: 'hype.png', ZEC: 'zec.svg', LIT: 'lit.png', VVV: 'vvv.png', TAO: 'tao.png', PUMP: 'pump.png' };
+const LOGOS = { BTC: 'btc.svg', ETH: 'eth.svg', SOL: 'sol.svg', MON: 'mon.svg', HYPE: 'hype.png', ZEC: 'zec.svg', LIT: 'lit.png', VVV: 'vvv.png', TAO: 'tao.png', PUMP: 'pump.png', NEAR: 'near.png', UNI: 'uni.png', ARB: 'arb.png', AAVE: 'aave.png', MORPHO: 'morpho.png', ENA: 'ena.png' };
 // 'SOL_v2' and 'BTC Perp' are the same assets as 'SOL' and 'BTC'.
 export const assetOf = symbol => String(symbol ?? '').replace(/(\s+perp|[_-]v\d+)$/i, '').trim().toUpperCase();
 // A newly listed market has no logo file yet: it gets its first letter on its
