@@ -58,6 +58,8 @@ export function mount(el, { query, navigate }) {
       ['Volume', w => usd(w.summary.volume)],
       ['Trades', w => int(w.summary.trades)],
       ['Maker share', w => pct(w.summary.maker_share_pct, { digits: 0 })],
+      // Round-trip rows follow: where a long history is cut, say from when, right above them.
+      ...(ws.some(w => !w.error && w.performance?.based_on?.truncated) ? [['Round trips from', w => (w.performance?.based_on?.truncated ? `<span class="cmp-since" title="${int(w.performance.based_on.events)} of ${int(w.performance.based_on.total_events)} events">since ${w.performance.based_on.since ? date(w.performance.based_on.since) : '—'}</span>` : '<span class="faint">full history</span>')]] : []),
       ['Win rate', w => (w.performance.win_rate_pct === null ? '—' : pct(w.performance.win_rate_pct, { digits: 1 }))],
       ['Profit factor', w => (w.performance.profit_factor === null ? '—' : w.performance.profit_factor.toFixed(2))],
       ['Closed round trips', w => int(w.performance.closed_trips)],

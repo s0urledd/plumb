@@ -839,3 +839,6 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .mpick-list button { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
 .mpick-list button:hover, .mpick-list button:focus-visible { background: rgba(255, 255, 255, 0.06); outline: none; }
 .mpick-list button[aria-selected="true"] { color: var(--accent); font-weight: 600; }
+
+/* Compare: where a wallet's round-trip rows start (long histories are cut). */
+.cmp-since { color: var(--warn); font-size: 12px; }
