@@ -30,7 +30,7 @@ export function mount(el, { query, setQuery }) {
     if (!alive || asked !== filters()) return;
     markets = p.markets;
     assignColors([...p.markets].sort((a, b) => num(b.volume) - num(a.volume)).map(m => ({ id: m.id, symbol: m.symbol })));
-    const h = p.headline, row = market ? p.markets.find(m => String(m.id) === market) ?? null : null, wl = w === 'all' ? 'all-time' : w;
+    const h = p.headline, row = market ? p.markets.find(m => String(m.id) === market) ?? null : null, wl = w === 'all' ? 'All-time' : w;
     // A market filter narrows the KPIs and the chart too, not only the feed. A
     // market with nothing in the window had no liquidations and no volume, not unknowns.
     const liquidated = row ? row.liquidated ?? 0 : h.liquidated.value, count = row ? row.liquidations ?? 0 : h.liquidations.value, volume = row ? row.volume ?? 0 : h.volume.value;

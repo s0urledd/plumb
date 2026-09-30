@@ -12,10 +12,12 @@ const FEE_VIEWS = [['type', 'By recipient'], ['market', 'By market']];
 const FLOW_VIEWS = [['recent', 'Latest'], ['in', 'Top in'], ['out', 'Top out']];
 // Windows other than 24h have no push of their own: refetch at most this often while blocks arrive.
 const LONG_WINDOW_REFRESH_MS = 15000;
+// The window the headline cards, the volume chart and the lists open on.
+const DEFAULT_WINDOW = 'all';
 const segSm = (name, options, active) => seg(name, options, active).replace('class="seg"', 'class="seg sm"');
 
 export function mount(el, { query, setQuery }) {
-  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '24h';
+  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : DEFAULT_WINDOW;
   let feeView = 'type';
   let minSize = localStorage.getItem('ps.minsize') ?? '100';
   let data = null, series = null, alive = true, flows = null, flowView = 'recent', lastLongLoad = 0, trendsLoaded = false;
@@ -23,7 +25,8 @@ export function mount(el, { query, setQuery }) {
   // The trend charts each keep their own window, independent of the one at the
   // top (which drives the headline metrics, the volume chart and the activity lists).
   const TRENDS = ['oi', 'tvl', 'flows', 'traders', 'fees', 'liq', 'tpnl', 'taker'];
-  const pw = Object.fromEntries(TRENDS.map(id => [id, '24h']));
+  // The window each trend opens on.
+  const pw = { oi: '24h', tvl: '24h', flows: '24h', traders: '30d', fees: 'all', liq: '30d', tpnl: 'all', taker: 'all' };
   const winCtl = id => segSm(`tw:${id}`, WINDOWS, pw[id]);
   const panel = (id, title, desc, extra = '') => `<section class="panel trend"><div class="panel-head"><div class="trend-id"><h2>${title} <span class="info-tip" title="${esc(desc)}">i</span></h2><div class="head-value" id="${id}-v"></div>${extra}</div><div class="trend-side"><div class="trend-ctl">${chartTools(id, id)}<span id="${id}-win" class="trend-win">${winCtl(id)}</span></div><div class="legend dots" id="${id}-lg"></div></div></div><div class="panel-body"><div class="chart sm" id="${id}">${skChart()}</div></div></section>`;
 
@@ -74,7 +77,7 @@ export function mount(el, { query, setQuery }) {
     </div>`;
   const $ = id => el.querySelector(`#${id}`);
   // Every figure says which period it covers: the window, or "now" for state.
-  const windowLabel = () => (w === 'all' ? 'all-time' : w);
+  const windowLabel = () => (w === 'all' ? 'All-time' : w);
   const BUCKET_NAMES = { 3600: 'hourly', 14400: '4-hour', 86400: 'daily', 604800: 'weekly' };
   // Period length: the API's default per window (all-time: weekly), or daily/weekly on request.
   const BUCKET_CHOICES = { '30d': [['1d', 'Daily'], ['1w', 'Weekly']], all: [['1d', 'Daily'], ['1w', 'Weekly']] };
@@ -174,7 +177,7 @@ export function mount(el, { query, setQuery }) {
   }
   // Each trend panel: its window's totals (header) and series (chart).
   const trendOf = {};
-  const winLabel = win => (win === 'all' ? 'all-time' : win);
+  const winLabel = win => (win === 'all' ? 'All-time' : win);
   const trendData = (win, fresh) => Promise.all([get(`protocol?window=${win}`, { maxAge: fresh ? 0 : 15000 }), get(`protocol/series?window=${win}`, { maxAge: fresh ? 0 : 15000 })]).then(([p, s]) => ({ p, s }));
   async function loadTrend(id, fresh = false) {
     const win = pw[id];
@@ -389,14 +392,14 @@ export function mount(el, { query, setQuery }) {
   return {
     onSeg(name, v) {
       if (name.startsWith('tw:')) { const id = name.slice(3); pw[id] = v; $(`${id}-win`).innerHTML = winCtl(id); $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); return; }
-      if (name === 'window') setQuery({ window: v === '24h' ? null : v });
+      if (name === 'window') setQuery({ window: v === DEFAULT_WINDOW ? null : v });
       if (name === 'min') { minSize = v; try { localStorage.setItem('ps.minsize', v); } catch { /* storage unavailable */ } $('minsize').innerHTML = segSm('min', MIN_SIZES, minSize); renderTape(); }
       if (name === 'flowv') { flowView = v; $('flowview').innerHTML = segSm('flowv', FLOW_VIEWS, flowView); renderFlows(); }
       if (name === 'bucket') { bucket = v; renderBucket(); $('main-chart').innerHTML = skChart(); get(seriesPath()).then(s => { if (!alive) return; series = s; renderVolume(); renderKpis(); }).catch(() => {}); return; }
       if (name === 'feesv') { feeView = v; $('fees-mode').innerHTML = segSm('feesv', FEE_VIEWS, feeView); renderFees(); }
     },
     onAction(a, t) { if (a === 'toggle') { t.classList.toggle('off'); toggleSeries($('main-chart'), t.dataset.name); } },
-    update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w); $('main-chart').innerHTML = skChart();
+    update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : DEFAULT_WINDOW; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w); $('main-chart').innerHTML = skChart();
       load().catch(() => {}); get(`flows?window=${w}`).then(f => alive && renderFlows(f)).catch(() => {}); },
     destroy() { alive = false; clearInterval(timer); off.forEach(f => f()); }
   };
