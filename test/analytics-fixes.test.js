@@ -100,6 +100,17 @@ test('medians average the two middle values; a drawdown from zero has a start', 
   assert.ok(insights(performance(roundTrips(rows).trips), rows).some(n => n.text === 'Median leverage on entries: 3.5x.'));
 });
 
+test('cache: drop forgets the values under a prefix, so the next request computes', async () => {
+  let n = 0;
+  const cache = createCache({ now: () => 0 });
+  const compute = async () => ++n;
+  assert.equal(await cache.get('liq:8', 60000, compute), 1);
+  assert.equal(await cache.get('trades:200', 60000, compute), 2);
+  cache.drop('liq:');
+  assert.equal(await cache.get('liq:8', 60000, compute), 3, 'recomputed, not served stale');
+  assert.equal(await cache.get('trades:200', 60000, compute), 2, 'other keys kept');
+});
+
 test('cache: slow-changing values (long TTL) are served stale for longer while they refresh', async () => {
   let t = 0, n = 0;
   const cache = createCache({ now: () => t, longStaleFrom: 100, longStaleMs: 1000 });
