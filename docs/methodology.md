@@ -118,8 +118,8 @@ on-chain are checked against this classification on every validation run.
 | Liquidity cover, stress test | derived | Deterministic functions of validated inputs |
 | ADL queue | estimate | Perpl documents "most profitable first" without the metric; selection is off-chain |
 | Trade price, size and fee from linked fills | validated | Full history: 33,557,868 / 33,557,868 position events linked, and fee split equal to the fill fee on 18,630,950 / 18,630,950 building fills (2026-09-23) |
-| Volume | validated | 24 h maker-fill volume within 0.001 % (2026-09-21) and 0.035 % (2026-09-23) of Perpl's venue figure |
-| Protocol revenue by source | validated | Revenue plus the balance moves that are not revenue reproduce `protocolBalanceCNS` and every market's `insuranceBalanceCNS` with zero residual: 16 block ranges and 24 hourly checks, 25–28 Sep 2026 (`docs/evidence/protocol-revenue-2026-09-28.json`). Bankrupt, partial and off-book liquidations, deleverages and buy-to-liquidate were not observed |
+| Volume | validated | 24 h maker-fill volume within 0.001 % (2026-09-21), 0.035 % (2026-09-23) and 0.049 % (2026-09-28) of Perpl's venue figure |
+| Protocol revenue by source | validated | Revenue plus the balance moves that are not revenue reproduce `protocolBalanceCNS` and every market's `insuranceBalanceCNS` with zero residual: 16 block ranges and 24 hourly checks, 25–28 Sep 2026 (`docs/evidence/protocol-revenue-2026-09-28.json`). Bankrupt and off-book liquidations, liquidations that add the trader's share to the position, deleverages and buy-to-liquidate were not observed (partial liquidations that pay the trader were, and split the same way) |
 | Open interest and TVL from events | validated | Summed from launch, both equal the contract at the same block: all 11 markets exact, TVL to the micro-dollar (2026-09-23, `docs/evidence/integrity-2026-09-23.json`) |
 
 Not modelled: individual resting orders (only aggregate depth per price
@@ -331,7 +331,8 @@ while the exchange balance did not change.
 
 **Topic backfill.** The transfers (and `FeeParamsUpdated` and
 `ContractAdded`) were not read for the history indexed before 29 September
-2026. The set is named (`protocol-v2` since `ResidueTransferred` was added):
+2026. The set is named (`protocol-v3` since `ResidueTransferred` and
+`BuyToLiquidateParamsUpdated` were added):
 a new name starts its coverage empty, so the whole history is read again
 and rows already stored are skipped. A separate backfill reads only these topics over every block range
 indexed before, newest first: the node while it still has the range, then
