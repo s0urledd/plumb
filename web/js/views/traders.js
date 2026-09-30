@@ -112,7 +112,7 @@ export function mount(el, { query, setQuery }) {
   async function loadMoves() {
     const m = await get(`traders/moves?window=${smWin}&min=${smMin}&limit=${MOVE_FILLS}`, { maxAge: 8000 });
     if (!alive) return;
-    const wl = smWin === 'all' ? 'all-time' : smWin;
+    const wl = smWin === 'all' ? 'All-time' : smWin;
     // Cut off by the fill limit, the list covers less than the 7 days asked for: it says how much.
     const oldest = m.rows.at(-1)?.ts, cut = m.rows.length >= MOVE_FILLS && oldest;
     const span = cut ? `the last ${duration(Date.now() / 1000 - oldest)} (the latest ${int(MOVE_FILLS)} fills)` : 'last 7 days';
@@ -133,7 +133,7 @@ export function mount(el, { query, setQuery }) {
   async function loadSummary() {
     const t = await get(`traders/summary?window=${w}`, { maxAge: 20000 });
     if (!alive) return;
-    const wl = w === 'all' ? 'all-time' : w, partial = t.meta?.coverage && !t.meta.coverage.complete ? ' <span class="tag warn" title="History for this window is still being indexed">partial</span>' : '';
+    const wl = w === 'all' ? 'All-time' : w, partial = t.meta?.coverage && !t.meta.coverage.complete ? ' <span class="tag warn" title="History for this window is still being indexed">partial</span>' : '';
     $('tkpis').innerHTML = [
       kpi({ label: `Traders · ${wl}`, value: int(t.traders), note: `${usd(t.volume)} volume${partial}` }),
       kpi({ label: `Profitable · ${wl}`, value: int(t.profitable), note: `${pct(t.profitable_pct, { digits: 1 })} of traders, after fees` }),

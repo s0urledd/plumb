@@ -13,7 +13,7 @@ const FLOW_VIEWS = [['recent', 'Latest'], ['in', 'Top in'], ['out', 'Top out']];
 // Windows other than 24h have no push of their own: refetch at most this often while blocks arrive.
 const LONG_WINDOW_REFRESH_MS = 15000;
 // The window the headline cards, the volume chart and the lists open on.
-const DEFAULT_WINDOW = '30d';
+const DEFAULT_WINDOW = 'all';
 const segSm = (name, options, active) => seg(name, options, active).replace('class="seg"', 'class="seg sm"');
 
 export function mount(el, { query, setQuery }) {
@@ -77,7 +77,7 @@ export function mount(el, { query, setQuery }) {
     </div>`;
   const $ = id => el.querySelector(`#${id}`);
   // Every figure says which period it covers: the window, or "now" for state.
-  const windowLabel = () => (w === 'all' ? 'all-time' : w);
+  const windowLabel = () => (w === 'all' ? 'All-time' : w);
   const BUCKET_NAMES = { 3600: 'hourly', 14400: '4-hour', 86400: 'daily', 604800: 'weekly' };
   // Period length: the API's default per window (all-time: weekly), or daily/weekly on request.
   const BUCKET_CHOICES = { '30d': [['1d', 'Daily'], ['1w', 'Weekly']], all: [['1d', 'Daily'], ['1w', 'Weekly']] };
@@ -177,7 +177,7 @@ export function mount(el, { query, setQuery }) {
   }
   // Each trend panel: its window's totals (header) and series (chart).
   const trendOf = {};
-  const winLabel = win => (win === 'all' ? 'all-time' : win);
+  const winLabel = win => (win === 'all' ? 'All-time' : win);
   const trendData = (win, fresh) => Promise.all([get(`protocol?window=${win}`, { maxAge: fresh ? 0 : 15000 }), get(`protocol/series?window=${win}`, { maxAge: fresh ? 0 : 15000 })]).then(([p, s]) => ({ p, s }));
   async function loadTrend(id, fresh = false) {
     const win = pw[id];

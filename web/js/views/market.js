@@ -51,7 +51,7 @@ export function mount(el, { params, query, setQuery }) {
   const BOOK_LEVELS = 12;
   let calc = { side: 'long', usd: 1000, lev: 5, entry: null, exit: null };
   const $ = s => el.querySelector(`#${s}`);
-  const wl = () => (w === 'all' ? 'all-time' : w);
+  const wl = () => (w === 'all' ? 'All-time' : w);
   const closed = () => row?.active === false;
   const none = text => empty(closed() ? CLOSED : text);
   // Open on the contract, but nothing traded in the window and nothing open: tagged like the list does.
