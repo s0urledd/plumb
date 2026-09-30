@@ -3,7 +3,7 @@
 // test, all from contract state at the collector's latest finalized block.
 import { get } from '../api.js';
 import { usd, int, price, pct, num, esc, size, multiple } from '../format.js';
-import { kpi, table, mktLink, sideTag, addr, pnl, skeleton, skChart, empty } from '../ui.js';
+import { kpi, table, mktLink, sideTag, addr, pnl, skeleton, skChart, empty, logo } from '../ui.js';
 import { mirrored, COLORS } from '../charts.js';
 
 // Depth read up to the walk's level cap is a lower bound; a no-break space
@@ -30,7 +30,7 @@ export function mount(el, { query, setQuery }) {
     <div class="stack">
       <div class="kpis rk-kpis" id="kpis"></div>
       <div class="grid g-main">
-        <section class="panel rk-stress"><div class="panel-head"><h2>Stress test</h2><select id="mkt" class="btn ghost" aria-label="Market"></select></div>
+        <section class="panel rk-stress"><div class="panel-head"><h2>Stress test</h2><div id="mkt" class="mpick"></div></div>
           <div class="panel-body"><div style="display:flex;align-items:center;gap:14px"><span class="faint num" style="width:48px">−50%</span><input id="move" class="range" type="range" min="-50" max="50" step="1" value="${move}" aria-label="Price move"><span class="faint num" style="width:48px;text-align:right">+50%</span></div>
           <div style="text-align:center;margin-top:6px;font-size:13px" class="muted">Mark moves <b id="move-label" class="num" style="color:var(--text)"></b> to <b id="move-price" class="num" style="color:var(--text)"></b></div></div>
           <div id="stress">${skeleton(5)}</div></section>
@@ -59,7 +59,7 @@ export function mount(el, { query, setQuery }) {
     ].join('');
     const markets = overview.markets.filter(m => m.positions.count > 0).sort((a, b) => num(b.open_interest.total_notional) - num(a.open_interest.total_notional));
     if (!marketId || !markets.some(m => m.id === marketId)) marketId = markets[0]?.id ?? null;
-    $('mkt').innerHTML = markets.map(m => `<option value="${m.id}" ${m.id === marketId ? 'selected' : ''}>${esc(m.symbol)}</option>`).join('');
+    pickMarkets = markets; if (!pickOpen) renderPick();
     $('table').innerHTML = table({ id: 'risk', columns: [
       { key: 'm', label: 'Market', render: r => mktLink(r.id, r.symbol) },
       { key: 'oi', label: 'Notional', n: true, render: r => usd(r.open_interest.total_notional) },
@@ -131,15 +131,39 @@ export function mount(el, { query, setQuery }) {
       { key: 'u', label: 'uPnL', phone: false, n: true, render: p => pnl(p.pnl) }
     ], rows: hits }) : empty('No position reaches its liquidation price at this move');
   }
-  $('mkt').addEventListener('change', e => { marketId = Number(e.target.value); setQuery({ market: marketId }); });
+  // The market picker lists each market with its logo (a native select cannot
+  // show images); Escape or a click elsewhere closes it, arrow keys move through it.
+  let pickMarkets = [], pickOpen = false;
+  const caret = '<svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function renderPick() {
+    const cur = pickMarkets.find(m => m.id === marketId);
+    $('mkt').innerHTML = `<button class="btn ghost mpick-btn" data-action="mpick-open" aria-haspopup="listbox" aria-expanded="${pickOpen}" aria-label="Market">${cur ? `${logo(cur.id, cur.symbol, 16)}${esc(cur.symbol)}` : 'Market'}${caret}</button>`
+      + `<div class="mpick-list" role="listbox" aria-label="Market"${pickOpen ? '' : ' hidden'}>${pickMarkets.map(m => `<button role="option" aria-selected="${m.id === marketId}" data-action="mpick" data-id="${m.id}">${logo(m.id, m.symbol, 16)}${esc(m.symbol)}</button>`).join('')}</div>`;
+  }
+  const choose = id => { marketId = id; pickOpen = false; renderPick(); setQuery({ market: marketId }); };
+  const closePick = e => {
+    if (!pickOpen || (e.type === 'click' && e.composedPath().some(n => n.id === 'mkt')) || (e.type === 'keydown' && e.key !== 'Escape')) return;
+    pickOpen = false; renderPick(); if (e.type === 'keydown') el.querySelector('.mpick-btn')?.focus();
+  };
+  document.addEventListener('click', closePick); document.addEventListener('keydown', closePick);
+  $('mkt').addEventListener('keydown', e => {
+    if (!pickOpen || !['ArrowDown', 'ArrowUp'].includes(e.key)) return;
+    e.preventDefault();
+    const opts = [...el.querySelectorAll('.mpick-list button')], i = opts.indexOf(document.activeElement);
+    opts[(i + (e.key === 'ArrowDown' ? 1 : -1) + opts.length) % opts.length]?.focus();
+  });
   $('move').addEventListener('input', e => { move = Number(e.target.value); $('move-label').textContent = signed(move); clearTimeout(stressTimer); stressTimer = setTimeout(() => { stress().catch(() => {}); }, 120); });
   $('move').addEventListener('change', () => setQuery({ move }));
   const timer = setInterval(() => load().catch(() => {}), 5000); // contract state, cached per block on the server
   load().catch(error => { $('kpis').innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; });
   return {
-    onAction(a, t) { if (a === 'pick') { marketId = Number(t.dataset.id); $('mkt').value = String(marketId); setQuery({ market: marketId }); } },
-    update(q) { marketId = Number(q.get('market')) || marketId; move = moveOf(q, move); $('move').value = String(move); ladder().catch(() => {}); stress().catch(() => {}); },
-    destroy() { alive = false; clearInterval(timer); clearTimeout(stressTimer); }
+    onAction(a, t) {
+      if (a === 'mpick-open') { pickOpen = !pickOpen; renderPick(); if (pickOpen) el.querySelector('.mpick-list [aria-selected="true"]')?.focus(); return; }
+      if (a === 'mpick') { choose(Number(t.dataset.id)); el.querySelector('.mpick-btn')?.focus(); return; }
+      if (a === 'pick') choose(Number(t.dataset.id));
+    },
+    update(q) { marketId = Number(q.get('market')) || marketId; move = moveOf(q, move); renderPick(); $('move').value = String(move); ladder().catch(() => {}); stress().catch(() => {}); },
+    destroy() { alive = false; clearInterval(timer); clearTimeout(stressTimer); document.removeEventListener('click', closePick); document.removeEventListener('keydown', closePick); }
   };
 }
 export { size };

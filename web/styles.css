@@ -806,3 +806,13 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
   .t .sub-sm { display: block; font-size: 11.5px; }
 }
 @media (max-width: 380px) { .t th, .t td { padding-left: 6px; padding-right: 6px; } }
+
+/* Stress test market picker: each market with its logo. */
+.mpick { position: relative; }
+.mpick-btn { display: inline-flex; align-items: center; gap: 8px; }
+.mpick-btn .caret { width: 12px; height: 12px; margin-left: 2px; color: var(--text-3); }
+.mpick-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; min-width: 168px; max-height: 340px; overflow-y: auto; display: grid; gap: 2px; padding: 4px; background: var(--menu); border-radius: var(--radius); box-shadow: var(--card-edge), 0 16px 40px rgba(0, 0, 0, 0.55); }
+.mpick-list[hidden] { display: none; }
+.mpick-list button { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
+.mpick-list button:hover, .mpick-list button:focus-visible { background: rgba(255, 255, 255, 0.06); outline: none; }
+.mpick-list button[aria-selected="true"] { color: var(--accent); font-weight: 600; }
