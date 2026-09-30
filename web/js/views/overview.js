@@ -43,7 +43,7 @@ export function mount(el, { query, setQuery }) {
       <div class="kpis" id="kpis">${Array.from({ length: 6 }, () => '<div class="kpi"><div class="skeleton sk-line" style="width:40%"></div><div class="skeleton" style="height:26px;width:70%;margin-top:10px"></div><div class="skeleton" style="height:28px;margin-top:10px"></div></div>').join('')}</div>
       <div class="grid g-main">
         <section class="panel">
-          <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right"><span id="vwin" class="trend-win">${segSm('vw', WINDOWS, vw)}</span><a class="meta" href="/markets">All markets →</a>${chartTools('main-chart', 'volume')}</div></div>
+          <div class="panel-head"><div><h2>Trading volume</h2><div class="desc">Maker-fill notional by market; line: running total</div></div><div class="head-right vol-head">${chartTools('main-chart', 'volume')}<a class="meta" href="/markets">Market details →</a><span id="vwin" class="trend-win">${segSm('vw', WINDOWS, vw)}</span></div></div>
           <div class="panel-head vol-keys"><div class="legend toggles" id="legend"></div><span class="head-right"><span id="bucket"></span><span class="meta" id="chart-meta"></span></span></div>
           <div class="panel-body"><div class="chart" id="main-chart">${skChart()}</div></div>
         </section>
