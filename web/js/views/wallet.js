@@ -2,7 +2,7 @@
 // history, trader analytics (win rate, profit factor, drawdown, streaks,
 // hold time, best/worst markets), behaviour notes, trades, round trips, flows.
 import { get, stream } from '../api.js';
-import { usd, usdFull, int, price, pct, num, esc, size, duration, date, dateTime, ago, short, signClass, epochSpan } from '../format.js';
+import { usd, usdFull, int, price, pct, num, esc, size, duration, date, dateTime, ago, short, signClass, epochSpan, epochLeft } from '../format.js';
 import { kpi, tabs, table, mktLink, sideTag, pnl, pctCell, skeleton, skChart, empty, watch, ICON, EXPLORER, toast, chartTools, alertsLink, alertsBotReady, ratioCell } from '../ui.js';
 import { lineChart, signedBars, COLORS } from '../charts.js';
 
@@ -126,7 +126,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
     if (tab === 'overview') {
       body.innerHTML = `
         ${d.positions.length ? `<section class="panel"><div class="panel-head"><h2>Open positions</h2><span class="meta">Contract state at block ${block}</span></div><div class="panel-body flush">${table({ id: 'pos', columns: POS_COLS, rows: d.positions })}</div></section>` : ''}
-        <section class="panel"><div class="panel-head"><h2>By period</h2><span class="meta">Rolling windows and Perpl's weekly epochs (Wednesday 16:00 UTC) · rank among every account that traded in the period</span></div>
+        <section class="panel"><div class="panel-head"><h2>By period</h2><span class="meta">Rank among every account that traded in the period</span></div>
           <div class="panel-body flush" id="periods">${periods ? periodsTable() : skeleton(4)}</div></section>
         <div class="grid g-main">
           <section class="panel trend pnl-card"><div class="panel-head"><div class="trend-id"><h2>Net PnL <span class="info-tip" title="Realized PnL with funding, minus fees, per UTC day. Open positions count once reduced or closed.">i</span></h2><div class="head-value" id="pnl-v"></div></div>
@@ -299,21 +299,33 @@ export function mount(el, { params, query, setQuery, navigate }) {
   }
 
   const PERIOD_LABEL = { '24h': '24 hours', '7d': '7 days', '30d': '30 days', all: 'All time', this_epoch: 'This epoch', last_epoch: 'Last epoch' };
-  // Epochs name their span under the label.
-  const periodLabel = r => `${PERIOD_LABEL[r.window] ?? esc(r.window)}${r.window.endsWith('_epoch') ? `<div class="sub">${epochSpan(r.from, r.to, r.window === 'this_epoch')}</div>` : ''}`;
+  // An epoch row: its label, a CSV of its fills, and one line with its span and state;
+  // hovering the line names the blocks it spans on Monad.
+  const periodLabel = r => {
+    if (!r.window.endsWith('_epoch')) return PERIOD_LABEL[r.window] ?? esc(r.window);
+    const live = r.window === 'this_epoch', blocks = r.blocks?.first ? ` title="Perpl activity from block ${int(r.blocks.first)} to block ${int(r.blocks.last)}"` : '';
+    const csv = r.trades ? `<a class="icon-btn ep-csv" href="/api/v1/wallets/${encodeURIComponent(periods.account.address ?? periods.account.id)}/trades?format=csv&from=${r.from}&to=${r.to}" download title="This account's fills in the epoch, as CSV (up to 100,000)" aria-label="Download the epoch's fills as CSV">${ICON.download}</a>` : '';
+    // Phones get a short form on two lines ("Sep 23–30", "1h 41m left"); the group header names 16:00 UTC.
+    const d = ts => new Date(ts * 1000), end = d(r.from + 7 * 86400), mon = x => x.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    const short = `${mon(d(r.from))} ${d(r.from).getUTCDate()}–${mon(end) === mon(d(r.from)) ? '' : `${mon(end)} `}${end.getUTCDate()}`;
+    const left = epochLeft(r.from), both = (long, brief) => `<span class="ep-long">${long}</span><span class="ep-short">${brief}</span>`;
+    return `<span class="ep-name">${PERIOD_LABEL[r.window]}${csv}</span><div class="sub ep-sub"${blocks}>${both(epochSpan(r.from), short)}<span class="ep-state"><span class="ep-dot"> · </span>${live ? both(`snapshot in ${left}`, `${left} left`) : 'final'}</span></div>`;
+  };
+  // Epochs first (the rows people come for on snapshot day), then the rolling windows.
+  const periodRows = () => { const ps = periods.periods, ep = ps.filter(p => p.window.endsWith('_epoch')), roll = ps.filter(p => !p.window.endsWith('_epoch')); return [...(ep.length ? [{ group: 'Perpl epochs · snapshot every Wednesday 16:00 UTC' }, ...ep] : []), { group: 'Rolling windows' }, ...roll]; };
   const rankCell = (n, of) => (n ? `<span class="rank-pill${n <= 10 ? ' lead' : ''}">#${int(n)}</span><span class="faint rank-of">of ${int(of)}</span>` : '<span class="faint">—</span>');
   function periodsTable() {
     return table({ id: 'periods', compact: true, columns: [
       { key: 'w', label: 'Period', render: r => `${periodLabel(r)}${r.coverage_complete ? '' : ' <span class="tag warn" title="History for this window is still being indexed">partial</span>'}` },
-      { key: 'v', label: 'Volume', n: true, render: r => (r.trades ? usd(r.volume) : '<span class="faint">—</span>') },
-      { key: 'mk', label: 'Maker share', tip: 'Share of the volume where this account was the maker', phone: false, n: true, render: r => (r.trades && r.maker_share_pct !== null && r.maker_share_pct !== undefined ? pct(r.maker_share_pct, { digits: 0 }) : '<span class="faint">—</span>') },
+      { key: 'v', label: 'Volume', n: true, render: r => (r.trades ? `${usd(r.volume)}${r.window.endsWith('_epoch') && r.volume_share_pct !== null && r.volume_share_pct !== undefined ? `<span class="note" title="Share of the exchange volume in the epoch (each trade has two sides)">${pct(r.volume_share_pct, { digits: r.volume_share_pct < 1 ? 2 : 1 })} of volume</span>` : ''}` : '<span class="faint">—</span>') },
+      { key: 'mk', label: 'Maker share', tip: 'Share of the volume where this account was the maker', phone: false, n: true, render: r => (r.trades && r.maker_share_pct !== null && r.maker_share_pct !== undefined ? `<span title="${usd(r.maker_volume)} as maker · ${usd(r.taker_volume)} as taker">${pct(r.maker_share_pct, { digits: 0 })}</span>` : '<span class="faint">—</span>') },
       { key: 't', label: 'Trades', phone: false, n: true, render: r => (r.trades ? int(r.trades) : '<span class="faint">0</span>') },
       { key: 'f', label: 'Fees', tip: 'Fees paid on fills', phone: false, n: true, render: r => (r.trades ? usd(r.fees) : '<span class="faint">—</span>') },
       { key: 'p', label: 'Net PnL', n: true, render: r => (r.trades ? pnl(r.net_pnl) : '<span class="faint">—</span>') },
       { key: 'e', label: 'PnL / volume', tip: 'Net PnL per dollar traded, in basis points; shown from $1K of volume in the period', phone: false, n: true, render: r => ratioCell(r.pnl_per_volume_bps, r.volume) },
       { key: 'rp', label: 'Rank by PnL', n: true, render: r => rankCell(r.rank?.pnl, r.rank?.of) },
-      { key: 'rv', label: 'Rank by volume', phone: false, n: true, render: r => rankCell(r.rank?.volume, r.rank?.of) }
-    ], rows: periods.periods, rowAttrs: r => (r.window === 'this_epoch' ? 'class="group-start"' : '') });
+      { key: 'rv', label: 'Rank by volume', phone: false, n: true, render: r => (r.rank?.volume_to_next ? `<span title="${usd(r.rank.volume_to_next)} more volume to reach #${int(r.rank.next_rank)}">${rankCell(r.rank.volume, r.rank.of)}</span>` : rankCell(r.rank?.volume, r.rank?.of)) }
+    ], rows: periodRows() });
   }
   const loadPeriods = () => get(`wallets/${encodeURIComponent(key)}/periods`, { maxAge: 20000 }).then(p => { if (!alive) return; periods = p; const n = $('periods'); if (n) n.innerHTML = periodsTable(); markPartial(); }).catch(() => { const n = $('periods'); if (n && !periods) n.innerHTML = empty('Period totals unavailable'); });
 

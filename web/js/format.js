@@ -49,10 +49,15 @@ export function pct(v, { digits = 2, sign = false } = {}) {
 // A share of a total: none reads 0%, and one too small for a decimal <0.1%, never 0.0%.
 export const share = v => { const n = num(v); return n === 0 ? '0%' : n !== null && n > 0 && n < 0.05 ? '<0.1%' : pct(v, { digits: 1 }); };
 // Basis points, as pct: a value that rounds to zero reads 0.0 bps, with no minus or plus.
-// An epoch's span, e.g. "Sep 16 → Sep 23, 16:00 UTC", or "since Sep 23, 16:00 UTC" while it runs.
-export function epochSpan(from, to, running = false) {
+// An epoch's span, snapshot to snapshot: "Sep 16 16:00 → Sep 23 16:00 UTC".
+export function epochSpan(from) {
   const day = ts => new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  return running ? `since ${day(from)}, 16:00 UTC` : `${day(from)} → ${day(to)}, 16:00 UTC`;
+  return `${day(from)} 16:00 → ${day(from + 7 * 86400)} 16:00 UTC`;
+}
+// Time left until the snapshot that ends the epoch starting at `from`: "2d 5h", "3h 12m", "8m".
+export function epochLeft(from, now = Date.now() / 1000) {
+  const left = Math.max(0, from + 7 * 86400 - now), d = Math.floor(left / 86400), h = Math.floor(left % 86400 / 3600), m = Math.floor(left % 3600 / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 }
 
 export function bps(v, { digits = 1, sign = false } = {}) {

@@ -134,13 +134,14 @@ export function table({ id, columns, rows, sortKey = null, sortDir = 'desc', row
   // A number with a second line under it (APR under a rate, "5 liq." under an
   // amount) is centred, header included, so both lines and the header share
   // one axis; single-line numbers stay right-aligned for easy comparison.
-  const cells = list.map((r, i) => columns.map(c => c.render(r, i)));
-  const stacked = columns.map((c, j) => Boolean(c.n) && cells.some(row => /class="sub[\s"]/.test(row[j])));
+  // A row { group: 'label' } is a header over the rows after it.
+  const cells = list.map((r, i) => (r.group ? null : columns.map(c => c.render(r, i))));
+  const stacked = columns.map((c, j) => Boolean(c.n) && cells.some(row => row && /class="sub[\s"]/.test(row[j])));
   const align = (c, j) => (c.center || stacked[j] ? 'c' : c.n ? 'n' : '');
   // A column marked phone: false hides on phones (styles.css, .hide-sm).
   const sm = c => (c.phone === false ? ' hide-sm' : '');
   const head = columns.map((c, j) => `<th class="${align(c, j)}${sm(c)} ${c.sort ? 'sort' : ''} ${c.key === sortKey ? 'sorted' : ''}" ${c.sort ? `data-sort="${esc(id)}:${esc(c.key)}"` : ''}${c.tip ? ` title="${esc(c.tip)}"` : ''}>${esc(c.label)}${c.key === sortKey ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</th>`).join('');
-  const body = list.map((r, i) => `<tr ${rowAttrs(r, i)}>${columns.map((c, j) => `<td class="${align(c, j)}${sm(c)} ${c.cls ?? ''}">${cells[i][j]}</td>`).join('')}</tr>`).join('');
+  const body = list.map((r, i) => (r.group ? `<tr class="grp"><td colspan="${columns.length}">${r.group}</td></tr>` : `<tr ${rowAttrs(r, i)}>${columns.map((c, j) => `<td class="${align(c, j)}${sm(c)} ${c.cls ?? ''}">${cells[i][j]}</td>`).join('')}</tr>`)).join('');
   return `<div class="table-wrap"><table class="t ${compact ? 'compact' : ''}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
