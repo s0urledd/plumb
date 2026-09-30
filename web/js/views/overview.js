@@ -12,8 +12,8 @@ const FEE_VIEWS = [['type', 'By recipient'], ['market', 'By market']];
 const FLOW_VIEWS = [['recent', 'Latest'], ['in', 'Top in'], ['out', 'Top out']];
 // Windows other than 24h have no push of their own: refetch at most this often while blocks arrive.
 const LONG_WINDOW_REFRESH_MS = 15000;
-// The window the headline cards, the volume chart and the lists open on.
-const DEFAULT_WINDOW = 'all';
+// The window the headline cards and the lists open on: the last day, updated live.
+const DEFAULT_WINDOW = '24h';
 const segSm = (name, options, active) => seg(name, options, active).replace('class="seg"', 'class="seg sm"');
 
 export function mount(el, { query, setQuery }) {
