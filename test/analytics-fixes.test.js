@@ -100,6 +100,17 @@ test('medians average the two middle values; a drawdown from zero has a start', 
   assert.ok(insights(performance(roundTrips(rows).trips), rows).some(n => n.text === 'Median leverage on entries: 3.5x.'));
 });
 
+test('cache: keys left out of the long stale window keep twice their TTL', async () => {
+  let t = 0, n = 0;
+  const cache = createCache({ now: () => t, longStaleFrom: 100, longStaleMs: 1000, longStaleFor: key => !key.startsWith('wallet') });
+  const compute = async () => ++n;
+  assert.equal(await cache.get('wallet:1', 100, compute), 1);
+  assert.equal(await cache.get('protocol:all', 100, compute), 2);
+  t = 500;
+  assert.equal(await cache.get('wallet:1', 100, compute), 3, 'a wallet waits for a fresh value past twice its TTL');
+  assert.equal(await cache.get('protocol:all', 100, compute), 2, 'a slow window is still served at once');
+});
+
 test('cache: drop forgets the values under a prefix, so the next request computes', async () => {
   let n = 0;
   const cache = createCache({ now: () => 0 });

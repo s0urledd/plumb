@@ -97,7 +97,9 @@ test('static dashboard is served and traversal is rejected', async t => {
   assert.equal((await get('/api/v1/nothing')).status, 404);
   // The dashboard's pages are served the page; other paths are not.
   for (const path of ['/traders', '/markets/1', '/wallet/0x5d8f00000000000000000000000000000000765a', '/compare', '/status/']) { const r = await get(path); assert.equal(r.status, 200, path); assert.match(r.body, /Plumb/, path); }
-  for (const path of ['/traders/x', '/markets/btc', '/wallets']) assert.equal((await get(path)).status, 404, path);
+  // Other paths are not found: a page-like one gets the page (its own "Page not found"), a file stays a JSON 404.
+  for (const path of ['/traders/x', '/markets/btc', '/wallets']) { const r = await get(path); assert.equal(r.status, 404, path); assert.match(r.body, /Plumb/, path); }
+  assert.deepEqual((await get('/missing.js')).body, { error: 'NOT_FOUND' });
 });
 
 test('stress, book, account state, series and CSV endpoints', async t => {
