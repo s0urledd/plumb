@@ -83,9 +83,12 @@ archives at the default pace) and rows already stored are skipped.
 ## Execution events (optional, fastest)
 
 With the node's execution event ring enabled, Perpl trades from proposed
-blocks reach the live tape within milliseconds of execution. They appear
-dimmed and are replaced by the finalized ones, which follow about a second
-later (see [Freshness](architecture.md#freshness)). On the node host:
+blocks reach the live tape as the block is proposed: in a 60-second sample
+on 30 September they were pushed before the node's RPC reported the block,
+a median 0.59 s before it was finalized
+([evidence](evidence/latency-2026-09-30.json)). They appear dimmed and are
+replaced by the finalized ones, which follow about a second later (see
+[Freshness](architecture.md#freshness)). On the node host:
 
 1. Huge pages and the ring directory:
    ```bash

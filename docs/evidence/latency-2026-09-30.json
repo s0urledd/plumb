@@ -1,0 +1,83 @@
+{
+ "measured_at": "2026-09-30",
+ "setup": "production instance with the Monode execution-event stream connected; run inside the app container, polling the Monad node RPC for the head and finalized block every 100 ms (RPC round trip p50 1 ms) and reading the app on 127.0.0.1; script: scripts/measure-latency.js",
+ "unit": "milliseconds; n = samples, p50/p90/max. Negative proposed_trades_after_rpc_head_ms: the proposed-block trades were pushed before the RPC head poll first reported the block (poll step 100 ms)",
+ "sample": {
+  "seconds": 60,
+  "blocks_seen": 197,
+  "block_time_ms": 303,
+  "rpc_roundtrip_ms": {
+   "n": 591,
+   "p50": 1,
+   "p90": 2,
+   "max": 49
+  },
+  "finalization_lag_ms": {
+   "n": 195,
+   "p50": 511,
+   "p90": 612,
+   "max": 715
+  },
+  "sse_block_after_proposed_ms": {
+   "n": 195,
+   "p50": 1013,
+   "p90": 1415,
+   "max": 1620
+  },
+  "sse_block_after_finalized_ms": {
+   "n": 195,
+   "p50": 473,
+   "p90": 859,
+   "max": 985
+  },
+  "sse_block_interval_ms": {
+   "n": 59,
+   "p50": 1000,
+   "p90": 1009,
+   "max": 1030
+  },
+  "trade_on_tape_after_proposed_ms": {
+   "n": 59,
+   "p50": 1007,
+   "p90": 1465,
+   "max": 1620
+  },
+  "proposed_blocks_pushed": 49,
+  "proposed_trades_after_rpc_head_ms": {
+   "n": 47,
+   "p50": -50,
+   "p90": -18,
+   "max": -2
+  },
+  "proposed_trades_before_finalized_ms": {
+   "n": 46,
+   "p50": 589,
+   "p90": 673,
+   "max": 805
+  },
+  "finalized_trades_after_proposed_trades_ms": {
+   "n": 60,
+   "p50": 1046,
+   "p90": 1483,
+   "max": 1710
+  },
+  "contract_snapshot_after_proposed_ms": {
+   "n": 192,
+   "p50": 1163,
+   "p90": 1577,
+   "max": 1802
+  },
+  "contract_snapshot_after_finalized_ms": {
+   "n": 192,
+   "p50": 640,
+   "p90": 986,
+   "max": 1193
+  },
+  "contract_snapshot_interval_ms": {
+   "n": 59,
+   "p50": 1018,
+   "p90": 1024,
+   "max": 1150
+  }
+ }
+}
