@@ -4,7 +4,7 @@
 // recomputed in the background, so requests are served from memory.
 import { BALANCE_MOVES, BALANCE_KINDS, protocolBalance, CHECKED_FROM_TS } from './revenue.js';
 import * as m from './math.js';
-import { WINDOWS, BUCKETS, DEFAULT_BUCKET, EPOCH_WINDOWS, epochRange } from './query.js';
+import { WINDOWS, BUCKETS, DEFAULT_BUCKET, EPOCH_WINDOWS, epochRange, epochStart } from './query.js';
 import { roundTrips, performance, insights, activityGrid } from './analytics.js';
 import { metrics as computeMetrics } from './state.js';
 import { cohortTable } from './cohorts.js';
@@ -18,14 +18,14 @@ const HOUR = 3600, DAY = 86400, YEAR = 365 * DAY; // funding is annualised over 
 // pages refresh them and the last day's figures stream live). Older values,
 // and `fresh` requests, wait for a new computation. A computation never
 // replaces a newer one.
-export function createCache({ now = () => Date.now(), max = 500, longStaleFrom = 8000, longStaleMs = 600000 } = {}) {
+export function createCache({ now = () => Date.now(), max = 500, longStaleFrom = 8000, longStaleMs = 600000, longStaleFor = () => true } = {}) {
   const store = new Map(); // key -> { at, value, seq, pending }
   let seq = 0;
   async function get(key, ttlMs, compute, { fresh = false } = {}) {
     const hit = store.get(key);
     const age = hit && hit.value !== undefined ? now() - hit.at : Infinity;
     if (!fresh && age < ttlMs) return hit.value;
-    const stale = !fresh && age < (ttlMs >= longStaleFrom ? longStaleMs : 2 * ttlMs);
+    const stale = !fresh && age < (ttlMs >= longStaleFrom && longStaleFor(key) ? longStaleMs : 2 * ttlMs);
     if (!fresh && hit?.pending) return stale ? hit.value : hit.pending;
     const n = ++seq;
     const pending = compute().then(value => {
@@ -56,7 +56,8 @@ export function pickLeaders(rows, { days, top }) {
 
 export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collector, accountState = null, now = () => Date.now(), maxTripEvents = 150000 }) {
   const { state } = collector;
-  const cache = createCache({ now });
+  // A wallet's own figures keep the short stale window: its owner may have just traded.
+  const cache = createCache({ now, longStaleFor: key => !key.startsWith('wallet') });
   const cd = () => ingest.collateralDecimals;
   const dec = (v, d = cd()) => (v === null || v === undefined ? null : m.toDecimalString(BigInt(v), d));
   const B = v => BigInt(v ?? 0);
@@ -615,7 +616,8 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   async function walletPeriods(key) {
     const acct = await resolve(key);
     const c = cd();
-    return cache.get(`wallet-periods:${acct.id}`, 30000, async () => {
+    // Keyed by the epoch too, so a snapshot never leaves last week's epochs on the page.
+    return cache.get(`wallet-periods:${acct.id}:${epochStart(headTs())}`, 30000, async () => {
       const periods = await Promise.all(PERIODS.map(async w => {
         const { from, to } = rangeOf(w);
         const [{ rows }, table, xv, blocks] = await Promise.all([queries.accounts(from, to, { account: acct.id, limit: 1 }), scores(w), exchangeVolume(w).catch(() => null), isEpoch(w) ? epochBlocks(w).catch(() => null) : null]);

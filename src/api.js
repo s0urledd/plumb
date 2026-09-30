@@ -408,7 +408,10 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
   }
   // The dashboard's own pages (the router in web/js/app.js) are served the page itself.
   const APP_PATH = /^\/(?:markets(?:\/\d+)?|traders|liquidations|risk|wallet\/[0-9a-zA-Zx]{1,42}|compare|alerts|watchlist|status)\/?$/;
-  async function serveStatic(pathname, req, res) {
+  // An address that is no file and no page of the dashboard gets the page with a
+  // 404 status, so the reader sees the site's own "Page not found".
+  const pageLike = pathname => !/\.[a-z0-9]{1,8}$/i.test(pathname);
+  async function serveStatic(pathname, req, res, status = 200) {
     if (Object.hasOwn(VENDOR, pathname)) {
       const file = VENDOR[pathname];
       if (!file) return send(res, 404, { error: 'NOT_FOUND' });
@@ -418,23 +421,23 @@ export function createApi({ collector, analytics = null, sse = null, statusOf = 
       res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'public, max-age=86400, immutable', 'content-length': body.length, 'access-control-allow-origin': '*', ...(zip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}), ...SECURITY_HEADERS });
       return res.end(body);
     }
-    const relative = pathname === '/' || APP_PATH.test(pathname) ? 'index.html' : normalize(pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
+    const relative = pathname === '/' || APP_PATH.test(pathname) || status === 404 ? 'index.html' : normalize(pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
     const file = join(webDir, relative);
     if (!file.startsWith(webDir) || relative.includes('..')) return send(res, 404, { error: 'NOT_FOUND' });
     try {
       const info = await stat(file);
-      if (!info.isFile()) return send(res, 404, { error: 'NOT_FOUND' });
+      if (!info.isFile()) return status !== 404 && pageLike(pathname) ? serveStatic(pathname, req, res, 404) : send(res, 404, { error: 'NOT_FOUND' });
       // Dashboard files are revalidated on every load (a cheap 304 when
       // unchanged), so a deploy never leaves a browser mixing old and new modules.
       const etag = `W/"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}"`;
-      if (req.headers['if-none-match'] === etag) { res.writeHead(304, { etag, 'cache-control': 'no-cache' }); return res.end(); }
+      if (status === 200 && req.headers['if-none-match'] === etag) { res.writeHead(304, { etag, 'cache-control': 'no-cache' }); return res.end(); }
       const raw = await readFile(file);
       const zip = wantsGzip(req, file, raw.length);
       const body = zip ? gzipped(file, etag, raw) : raw;
       const csp = extname(file) === '.html' ? CSP : extname(file) === '.svg' ? SVG_CSP : null;
-      res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag, 'content-length': body.length, ...(zip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}), ...SECURITY_HEADERS, ...(csp ? { 'content-security-policy': csp } : {}) });
+      res.writeHead(status, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag, 'content-length': body.length, ...(zip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}), ...SECURITY_HEADERS, ...(csp ? { 'content-security-policy': csp } : {}) });
       res.end(body);
-    } catch { send(res, 404, { error: 'NOT_FOUND' }); }
+    } catch { if (status !== 404 && pageLike(pathname)) return serveStatic(pathname, req, res, 404); send(res, 404, { error: 'NOT_FOUND' }); }
   }
 
   function send(res, status, body, extra = {}, req = null) {
