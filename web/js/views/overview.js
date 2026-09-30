@@ -130,7 +130,7 @@ export function mount(el, { query, setQuery }) {
       kpi({ label: `Volume · ${wl}`, value: usd(h.volume.value), delta: ch(h.volume.change_pct), ...vsPrev, note: `${int(data.markets.reduce((a, m) => a + (m.fills ?? 0), 0))} trades${partial}`, spark: 'sp-vol' }),
       kpi({ label: 'Open interest', value: usd(c?.open_interest), delta: seriesChange('open_interest'), ...within, note: c ? `${int(c.positions)} open positions` : '', spark: 'sp-oi' }),
       kpi({ label: 'TVL', value: usd(c?.tvl), delta: seriesChange('tvl'), ...within, note: `${usd(h.net_flow.value, { sign: true })} net flow · ${wl}`, spark: 'sp-tvl' }),
-      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.protocol_revenue ? `${usd(h.protocol_revenue.value)} protocol revenue` : '', spark: 'sp-fees' }),
+      kpi({ label: `Fees · ${wl}`, value: usd(h.fees.value), delta: ch(h.fees.change_pct), ...vsPrev, note: h.protocol_revenue ? `<span data-tip="The protocol's share of fees (${usd(h.protocol_fees?.value)}) plus its share of liquidations (${usd(h.revenue?.protocol?.liquidations)})">${usd(h.protocol_revenue.value)} protocol revenue</span>` : '', spark: 'sp-fees' }),
       act ? kpi({ label: 'Active traders · 30d', value: int(act.p.headline.traders.value), note: `${int(act.p.headline.new_accounts.value)} new accounts`, spark: 'sp-tr' })
         : kpi({ label: `Active traders · ${wl}`, value: int(h.traders.value), delta: ch(h.traders.change_pct), ...vsPrev, note: `${int(h.new_accounts.value)} new accounts`, spark: 'sp-tr' }),
       kpi({ label: `Liquidations · ${wl}`, value: usd(h.liquidated.value), delta: ch(h.liquidated.change_pct), ...vsPrev, invert: true, note: `${int(h.liquidations.value)} liquidations`, spark: 'sp-liq' })
