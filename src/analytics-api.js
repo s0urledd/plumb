@@ -39,7 +39,9 @@ export function createCache({ now = () => Date.now(), max = 500, longStaleFrom =
     store.set(key, { at: hit?.at ?? 0, value: hit?.value, seq: hit?.seq ?? 0, pending });
     return stale ? hit.value : pending;
   }
-  return { get, clear: () => store.clear(), size: () => store.size };
+  // Forget every value whose key starts with prefix (the next request computes anew).
+  const drop = prefix => { for (const key of [...store.keys()]) if (key.startsWith(prefix)) store.delete(key); };
+  return { get, drop, clear: () => store.clear(), size: () => store.size };
 }
 
 // Directional leaders from a PnL leaderboard: profitable accounts, market
@@ -298,7 +300,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     const w = windowOf(query);
     const bucket = bucketOf(w, query);
     const marketFilter = /^\d{1,5}$/.test(query.get('market') ?? '') ? Number(query.get('market')) : null;
-    return cache.get(`series:${w}:${bucket.name}:${marketFilter}`, w === '24h' ? 3000 : 15000, async () => {
+    return cache.get(`series:${w}:${bucket.name}:${marketFilter}`, w === '24h' ? 8000 : 15000, async () => {
       const range = rangeOf(w);
       // Buckets are labelled on the bucket grid, but the data starts at the window's
       // own start: the first bucket is partial, so chart sums equal the headline.
@@ -373,7 +375,8 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     // with the window's total and its largest liquidation.
     const w = query.get('window') ? windowOf(query) : null;
     const sinceTs = w && w !== 'all' ? rangeOf(w).from : null;
-    return cache.get(`liq:${limit}:${offset}:${market}:${w}`, 3000, async () => {
+    // The feed only changes when a liquidation lands, which drops it (liquidationsChanged).
+    return cache.get(`liq:${limit}:${offset}:${market}:${w}`, 60000, async () => {
       const { from, to } = rangeOf('24h');
       const [rows, total, largest, dayRows] = await Promise.all([
         queries.recent(['liquidation', 'deleverage'], { limit, offset, market, sinceTs }),
@@ -767,5 +770,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   async function warm() {
     for (const [fn, q] of OPENING) { try { await fn(new URLSearchParams(q)); } catch { /* the next round tries again */ } }
   }
-  return { warm, protocolBalanceAt, addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
+  // New liquidations: the cached feeds are recomputed on their next request.
+  const liquidationsChanged = () => cache.drop('liq:');
+  return { warm, liquidationsChanged, protocolBalanceAt, addressesOf: addresses, resolveAccount: resolve, symbolOf: symbol, smartMoves, positionFlow, protocol, series, liquidations, trades, funding, fundingOverview, cohorts, traderSummary, flows, leaderboard, search, profile, walletAnalytics, walletPeriods, walletTrades, compare, integrity, cache, tradeView, tradeViews, rangeOf };
 }

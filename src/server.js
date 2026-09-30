@@ -86,7 +86,7 @@ ingest.on(event => {
     const push = (name, rows) => analytics.tradeViews(rows).then(views => sse.send(name, views)).catch(error => log('warn', `${name} push failed: ${error.message}`));
     if (trades.length) push('trades', trades.slice(-100));
     const liqs = event.ev.filter(r => r.kind === 'liquidation' || r.kind === 'deleverage');
-    if (liqs.length) push('liquidations', liqs);
+    if (liqs.length) { analytics.liquidationsChanged(); push('liquidations', liqs); }
     if (!pushTimer) pushTimer = setTimeout(pushHeadline, Math.max(0, 2000 - (Date.now() - lastPush)));
     const hour = Math.floor(event.ts / 3600);
     if (hour !== lastRollup) { lastRollup = hour; setTimeout(() => rollups.run(), 5000); }
