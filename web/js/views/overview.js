@@ -12,10 +12,12 @@ const FEE_VIEWS = [['type', 'By recipient'], ['market', 'By market']];
 const FLOW_VIEWS = [['recent', 'Latest'], ['in', 'Top in'], ['out', 'Top out']];
 // Windows other than 24h have no push of their own: refetch at most this often while blocks arrive.
 const LONG_WINDOW_REFRESH_MS = 15000;
+// The window the headline cards, the volume chart and the lists open on.
+const DEFAULT_WINDOW = '30d';
 const segSm = (name, options, active) => seg(name, options, active).replace('class="seg"', 'class="seg sm"');
 
 export function mount(el, { query, setQuery }) {
-  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : '24h';
+  let w = WINDOWS.some(([v]) => v === query.get('window')) ? query.get('window') : DEFAULT_WINDOW;
   let feeView = 'type';
   let minSize = localStorage.getItem('ps.minsize') ?? '100';
   let data = null, series = null, alive = true, flows = null, flowView = 'recent', lastLongLoad = 0, trendsLoaded = false;
@@ -390,14 +392,14 @@ export function mount(el, { query, setQuery }) {
   return {
     onSeg(name, v) {
       if (name.startsWith('tw:')) { const id = name.slice(3); pw[id] = v; $(`${id}-win`).innerHTML = winCtl(id); $(id).innerHTML = skChart(); loadTrend(id).catch(() => {}); return; }
-      if (name === 'window') setQuery({ window: v === '24h' ? null : v });
+      if (name === 'window') setQuery({ window: v === DEFAULT_WINDOW ? null : v });
       if (name === 'min') { minSize = v; try { localStorage.setItem('ps.minsize', v); } catch { /* storage unavailable */ } $('minsize').innerHTML = segSm('min', MIN_SIZES, minSize); renderTape(); }
       if (name === 'flowv') { flowView = v; $('flowview').innerHTML = segSm('flowv', FLOW_VIEWS, flowView); renderFlows(); }
       if (name === 'bucket') { bucket = v; renderBucket(); $('main-chart').innerHTML = skChart(); get(seriesPath()).then(s => { if (!alive) return; series = s; renderVolume(); renderKpis(); }).catch(() => {}); return; }
       if (name === 'feesv') { feeView = v; $('fees-mode').innerHTML = segSm('feesv', FEE_VIEWS, feeView); renderFees(); }
     },
     onAction(a, t) { if (a === 'toggle') { t.classList.toggle('off'); toggleSeries($('main-chart'), t.dataset.name); } },
-    update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : '24h'; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w); $('main-chart').innerHTML = skChart();
+    update(q) { const nw = WINDOWS.some(([v]) => v === q.get('window')) ? q.get('window') : DEFAULT_WINDOW; if (nw === w) return; w = nw; bucket = null; $('win').innerHTML = seg('window', WINDOWS, w); $('main-chart').innerHTML = skChart();
       load().catch(() => {}); get(`flows?window=${w}`).then(f => alive && renderFlows(f)).catch(() => {}); },
     destroy() { alive = false; clearInterval(timer); off.forEach(f => f()); }
   };
