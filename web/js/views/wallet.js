@@ -3,7 +3,7 @@
 // hold time, best/worst markets), behaviour notes, trades, round trips, flows.
 import { get, stream } from '../api.js';
 import { usd, usdFull, int, price, pct, num, esc, size, duration, date, dateTime, ago, short, signClass } from '../format.js';
-import { kpi, tabs, table, mktLink, sideTag, pnl, pctCell, bpsCell, skeleton, skChart, empty, watch, ICON, EXPLORER, toast, chartTools, alertsLink, alertsBotReady } from '../ui.js';
+import { kpi, tabs, table, mktLink, sideTag, pnl, pctCell, skeleton, skChart, empty, watch, ICON, EXPLORER, toast, chartTools, alertsLink, alertsBotReady, ratioCell } from '../ui.js';
 import { lineChart, signedBars, COLORS } from '../charts.js';
 
 const twinLink = rows => { const ids = {}; for (const r of rows) (ids[r.symbol] ??= new Set()).add(r.market); return r => `${mktLink(r.market, r.symbol)}${ids[r.symbol]?.size > 1 ? ` <span class="faint" title="Relisted market: the same asset under a new market id">#${esc(r.market)}</span>` : ''}`; };
@@ -306,7 +306,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
       { key: 'v', label: 'Volume', n: true, render: r => (r.trades ? usd(r.volume) : '<span class="faint">—</span>') },
       { key: 't', label: 'Trades', phone: false, n: true, render: r => (r.trades ? int(r.trades) : '<span class="faint">0</span>') },
       { key: 'p', label: 'Net PnL', n: true, render: r => (r.trades ? pnl(r.net_pnl) : '<span class="faint">—</span>') },
-      { key: 'e', label: 'PnL / volume', phone: false, n: true, render: r => bpsCell(r.pnl_per_volume_bps) },
+      { key: 'e', label: 'PnL / volume', tip: 'Net PnL per dollar traded, in basis points; shown from $1K of volume in the period', phone: false, n: true, render: r => ratioCell(r.pnl_per_volume_bps, r.volume) },
       { key: 'rp', label: 'Rank by PnL', n: true, render: r => rankCell(r.rank?.pnl, r.rank?.of) },
       { key: 'rv', label: 'Rank by volume', phone: false, n: true, render: r => rankCell(r.rank?.volume, r.rank?.of) }
     ], rows: periods.periods });

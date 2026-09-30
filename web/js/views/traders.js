@@ -2,7 +2,7 @@
 // with open positions from the live contract state.
 import { get } from '../api.js';
 import { usd, int, pct, num, esc, price, ago, duration } from '../format.js';
-import { seg, table, addr, pnl, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON, go } from '../ui.js';
+import { seg, table, addr, pnl, bpsCell, kpi, skeleton, mkt, mktLink, tradeAction, logo, assetOf, ICON, go, ratioCell } from '../ui.js';
 import { SEA_ICONS } from '../cohort-icons.js';
 
 const WINDOWS = [['24h', '24H'], ['7d', '7D'], ['30d', '30D'], ['all', 'All']];
@@ -45,7 +45,7 @@ export function mount(el, { query, setQuery }) {
     { key: 'rank', label: '#', render: r => `<span class="rank">${r.rank}</span>` },
     { key: 'addr', label: 'Trader', render: r => { const t = styleTags(r); return `${addr(r.address, r.account)}${t ? `<div class="sub tags">${t}</div>` : ''}`; } },
     { key: 'pnl', label: 'Net PnL', tip: 'Realized PnL, funding included, minus fees', n: true, render: r => pnl(r.pnl) },
-    { key: 'roi', label: 'PnL / volume', phone: false, n: true, render: r => bpsCell(r.roi_on_volume_bps) }, // in bps, as the KPI above and the wallet page
+    { key: 'roi', label: 'PnL / volume', tip: 'Net PnL per dollar traded, in basis points; shown from $1K of volume in the window', phone: false, n: true, render: r => ratioCell(r.roi_on_volume_bps, r.volume) }, // in bps, as the KPI above and the wallet page
     { key: 'volume', label: 'Volume', n: true, render: r => usd(r.volume) },
     { key: 'trades', label: 'Trades', phone: false, n: true, render: r => int(r.trades) },
     { key: 'maker', label: 'Maker share', phone: false, n: true, render: r => pct(r.maker_share_pct, { digits: 0 }) },

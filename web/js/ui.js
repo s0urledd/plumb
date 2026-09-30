@@ -117,6 +117,10 @@ export function fundingCell(f, { apr = true } = {}) {
 export const pctCell = (v, sign = true) => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${sign ? signClass(v) : ''}">${pct(v, { sign })}</span>`);
 // Whole basis points from 100 up, where a decimal adds nothing (+2405 bps, +25.2 bps).
 export const bpsCell = v => (num(v) === null ? '<span class="faint">—</span>' : `<span class="${signClass(v, 1)}">${bps(v, { sign: true, digits: Math.abs(num(v)) >= 100 ? 0 : 1 })}</span>`);
+// PnL per $ traded means little on a few dollars of volume (a $100 gain on $10
+// traded reads as +100,000 bps), so under $1K it shows a dash.
+export const RATIO_MIN_VOLUME = 1000;
+export const ratioCell = (v, volume) => (num(volume) !== null && num(volume) >= RATIO_MIN_VOLUME ? bpsCell(v) : '<span class="faint" title="Shown from $1K of volume in the window">—</span>');
 export const skeleton = (rows = 6) => `<div class="panel-body">${Array.from({ length: rows }, (_, i) => `<div class="skeleton sk-line" style="width:${92 - (i % 3) * 14}%"></div>`).join('')}</div>`;
 export const skChart = () => '<div class="panel-body"><div class="skeleton sk-block"></div></div>';
 export const empty = text => `<div class="empty-state">${esc(text)}</div>`;

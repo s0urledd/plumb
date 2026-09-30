@@ -52,8 +52,8 @@ export const share = v => { const n = num(v); return n === 0 ? '0%' : n !== null
 export function bps(v, { digits = 1, sign = false } = {}) {
   const n = num(v);
   if (n === null) return '—';
-  const t = n.toFixed(digits);
-  return Number(t) === 0 ? `${t.replace('-', '')} bps` : `${sign && n > 0 ? '+' : ''}${t} bps`;
+  const t = n.toFixed(digits), shown = Number(t).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return Number(t) === 0 ? `${t.replace('-', '')} bps` : `${sign && n > 0 ? '+' : ''}${shown} bps`;
 }
 export function size(v) { const n = num(v); if (n === null) return '—'; const a = Math.abs(n); return n.toLocaleString('en-US', { maximumFractionDigits: a >= 100 ? 2 : a >= 1 ? 4 : 6 }); }
 // Colour for a signed value as shown at `digits` decimals: one that rounds to zero is neutral.
