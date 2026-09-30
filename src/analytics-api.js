@@ -4,7 +4,7 @@
 // recomputed in the background, so requests are served from memory.
 import { BALANCE_MOVES, BALANCE_KINDS, protocolBalance, CHECKED_FROM_TS } from './revenue.js';
 import * as m from './math.js';
-import { WINDOWS, BUCKETS, DEFAULT_BUCKET } from './query.js';
+import { WINDOWS, BUCKETS, DEFAULT_BUCKET, EPOCH_WINDOWS, epochRange } from './query.js';
 import { roundTrips, performance, insights, activityGrid } from './analytics.js';
 import { metrics as computeMetrics } from './state.js';
 import { cohortTable } from './cohorts.js';
@@ -95,12 +95,18 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   // --- windows ------------------------------------------------------------
   const headTs = () => ingest.status.live.toTs ?? Math.floor(now() / 1000);
   const firstTs = () => { const iv = ingest.coverage.intervals; return iv.length ? iv[0].fromTs : headTs(); };
-  function windowOf(query) {
+  // Epoch windows (query.js) are accepted where a view ranks accounts: the
+  // leaderboard, the traders summary and a wallet's periods.
+  function windowOf(query, { epochs = false } = {}) {
     const w = query.get('window') || '24h';
-    if (!Object.hasOwn(WINDOWS, w)) throw bad('INVALID_WINDOW');
+    if (!Object.hasOwn(WINDOWS, w) && !(epochs && EPOCH_WINDOWS.includes(w))) throw bad('INVALID_WINDOW');
     return w;
   }
+  const isEpoch = w => EPOCH_WINDOWS.includes(w);
+  // A cache key for an epoch names the epoch, so a new week never serves the last one.
+  const windowKey = w => (isEpoch(w) ? `${w}@${epochRange(w, headTs()).from}` : w);
   function rangeOf(w, to = headTs() + 1) {
+    if (isEpoch(w)) return epochRange(w, headTs());
     const len = WINDOWS[w];
     const from = len === null ? firstTs() : to - len;
     return { from, to };
@@ -447,12 +453,12 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     });
   }
   async function leaderboard(query) {
-    const w = windowOf(query);
+    const w = windowOf(query, { epochs: true });
     const sort = query.get('by') || 'pnl';
     const limit = Math.min(Math.max(Number(query.get('limit')) || 50, 1), 200);
     const offset = Math.min(Math.max(Number(query.get('offset')) || 0, 0), 10000);
     const market = /^\d{1,5}$/.test(query.get('market') ?? '') ? Number(query.get('market')) : null;
-    return cache.get(`lb:${w}:${sort}:${limit}:${offset}:${market}`, w === '24h' ? 5000 : 20000, async () => {
+    return cache.get(`lb:${windowKey(w)}:${sort}:${limit}:${offset}:${market}`, w === '24h' ? 5000 : 20000, async () => {
       const { from, to } = rangeOf(w);
       const { total, rows } = await queries.accounts(from, to, { sort, limit, offset, market });
       const addr = await addresses(rows.map(r => Number(r.account)));
@@ -568,9 +574,9 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   // all wallet pages and refreshed each minute; a rank is a binary search.
   // An account is ranked by its own values in the same table, so its rank
   // never exceeds the table's size.
-  const PERIODS = ['24h', '7d', '30d', 'all'];
+  const PERIODS = ['24h', '7d', '30d', 'all', 'this_epoch', 'last_epoch'];
   function scores(w) {
-    return cache.get(`scores:${w}`, 60000, async () => {
+    return cache.get(`scores:${windowKey(w)}`, 60000, async () => {
       const { from, to } = rangeOf(w);
       const rows = await queries.accountScores(from, to);
       const desc = (a, b) => b - a;
@@ -593,7 +599,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
         const view = { window: w, from, to, coverage_complete: ingest.coverage.spanCovered(from, to - 1), traders: table.pnl.length };
         if (!r || !Number(r.trades)) return { ...view, trades: 0, volume: '0', net_pnl: '0', realized: '0', fees: '0', liquidations: 0, rank: null };
         const net = B(r.realized) - B(r.fees);
-        return { ...view, trades: Number(r.trades), volume: dec(r.volume, c), net_pnl: dec(net, c), realized: dec(r.realized, c), fees: dec(r.fees, c), funding: dec(r.funding_paid, c), liquidations: Number(r.liquidations), pnl_per_volume_bps: B(r.volume) > 0n ? Number(net * 100000000n / B(r.volume)) / 10000 : null, rank: own ? { pnl: rankIn(table.pnl, own.pnl), volume: rankIn(table.volume, own.volume), of: table.pnl.length } : null };
+        return { ...view, trades: Number(r.trades), volume: dec(r.volume, c), maker_share_pct: share(B(r.maker_volume), B(r.volume)), net_pnl: dec(net, c), realized: dec(r.realized, c), fees: dec(r.fees, c), funding: dec(r.funding_paid, c), liquidations: Number(r.liquidations), pnl_per_volume_bps: B(r.volume) > 0n ? Number(net * 100000000n / B(r.volume)) / 10000 : null, rank: own ? { pnl: rankIn(table.pnl, own.pnl), volume: rankIn(table.volume, own.volume), of: table.pnl.length } : null };
       }));
       return { meta: metaOf(), account: { id: acct.id, address: acct.address }, periods };
     });
@@ -686,7 +692,7 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
   // a taker account, so the traders' summed volume is halved to match the
   // exchange volume elsewhere.
   async function traderSummary(query) {
-    const w = windowOf(query);
+    const w = windowOf(query, { epochs: true });
     const table = await scores(w);
     const scale = 10 ** cd(), rows = [...table.of.values()];
     const profitable = rows.filter(r => r.pnl > 0).length;

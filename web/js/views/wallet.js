@@ -2,7 +2,7 @@
 // history, trader analytics (win rate, profit factor, drawdown, streaks,
 // hold time, best/worst markets), behaviour notes, trades, round trips, flows.
 import { get, stream } from '../api.js';
-import { usd, usdFull, int, price, pct, num, esc, size, duration, date, dateTime, ago, short, signClass } from '../format.js';
+import { usd, usdFull, int, price, pct, num, esc, size, duration, date, dateTime, ago, short, signClass, epochSpan } from '../format.js';
 import { kpi, tabs, table, mktLink, sideTag, pnl, pctCell, skeleton, skChart, empty, watch, ICON, EXPLORER, toast, chartTools, alertsLink, alertsBotReady, ratioCell } from '../ui.js';
 import { lineChart, signedBars, COLORS } from '../charts.js';
 
@@ -126,7 +126,7 @@ export function mount(el, { params, query, setQuery, navigate }) {
     if (tab === 'overview') {
       body.innerHTML = `
         ${d.positions.length ? `<section class="panel"><div class="panel-head"><h2>Open positions</h2><span class="meta">Contract state at block ${block}</span></div><div class="panel-body flush">${table({ id: 'pos', columns: POS_COLS, rows: d.positions })}</div></section>` : ''}
-        <section class="panel"><div class="panel-head"><h2>By period</h2><span class="meta">Rolling windows · rank among every account that traded in the window</span></div>
+        <section class="panel"><div class="panel-head"><h2>By period</h2><span class="meta">Rolling windows and Perpl's weekly epochs (Wednesday 16:00 UTC) · rank among every account that traded in the period</span></div>
           <div class="panel-body flush" id="periods">${periods ? periodsTable() : skeleton(4)}</div></section>
         <div class="grid g-main">
           <section class="panel trend pnl-card"><div class="panel-head"><div class="trend-id"><h2>Net PnL <span class="info-tip" title="Realized PnL with funding, minus fees, per UTC day. Open positions count once reduced or closed.">i</span></h2><div class="head-value" id="pnl-v"></div></div>
@@ -298,18 +298,22 @@ export function mount(el, { params, query, setQuery, navigate }) {
     $('more').hidden = !next;
   }
 
-  const PERIOD_LABEL = { '24h': '24 hours', '7d': '7 days', '30d': '30 days', all: 'All time' };
+  const PERIOD_LABEL = { '24h': '24 hours', '7d': '7 days', '30d': '30 days', all: 'All time', this_epoch: 'This epoch', last_epoch: 'Last epoch' };
+  // Epochs name their span under the label.
+  const periodLabel = r => `${PERIOD_LABEL[r.window] ?? esc(r.window)}${r.window.endsWith('_epoch') ? `<div class="sub">${epochSpan(r.from, r.to, r.window === 'this_epoch')}</div>` : ''}`;
   const rankCell = (n, of) => (n ? `<span class="rank-pill${n <= 10 ? ' lead' : ''}">#${int(n)}</span><span class="faint rank-of">of ${int(of)}</span>` : '<span class="faint">—</span>');
   function periodsTable() {
     return table({ id: 'periods', compact: true, columns: [
-      { key: 'w', label: 'Period', render: r => `${PERIOD_LABEL[r.window] ?? esc(r.window)}${r.coverage_complete ? '' : ' <span class="tag warn" title="History for this window is still being indexed">partial</span>'}` },
+      { key: 'w', label: 'Period', render: r => `${periodLabel(r)}${r.coverage_complete ? '' : ' <span class="tag warn" title="History for this window is still being indexed">partial</span>'}` },
       { key: 'v', label: 'Volume', n: true, render: r => (r.trades ? usd(r.volume) : '<span class="faint">—</span>') },
+      { key: 'mk', label: 'Maker share', tip: 'Share of the volume where this account was the maker', phone: false, n: true, render: r => (r.trades && r.maker_share_pct !== null && r.maker_share_pct !== undefined ? pct(r.maker_share_pct, { digits: 0 }) : '<span class="faint">—</span>') },
       { key: 't', label: 'Trades', phone: false, n: true, render: r => (r.trades ? int(r.trades) : '<span class="faint">0</span>') },
+      { key: 'f', label: 'Fees', tip: 'Fees paid on fills', phone: false, n: true, render: r => (r.trades ? usd(r.fees) : '<span class="faint">—</span>') },
       { key: 'p', label: 'Net PnL', n: true, render: r => (r.trades ? pnl(r.net_pnl) : '<span class="faint">—</span>') },
       { key: 'e', label: 'PnL / volume', tip: 'Net PnL per dollar traded, in basis points; shown from $1K of volume in the period', phone: false, n: true, render: r => ratioCell(r.pnl_per_volume_bps, r.volume) },
       { key: 'rp', label: 'Rank by PnL', n: true, render: r => rankCell(r.rank?.pnl, r.rank?.of) },
       { key: 'rv', label: 'Rank by volume', phone: false, n: true, render: r => rankCell(r.rank?.volume, r.rank?.of) }
-    ], rows: periods.periods });
+    ], rows: periods.periods, rowAttrs: r => (r.window === 'this_epoch' ? 'class="group-start"' : '') });
   }
   const loadPeriods = () => get(`wallets/${encodeURIComponent(key)}/periods`, { maxAge: 20000 }).then(p => { if (!alive) return; periods = p; const n = $('periods'); if (n) n.innerHTML = periodsTable(); markPartial(); }).catch(() => { const n = $('periods'); if (n && !periods) n.innerHTML = empty('Period totals unavailable'); });
 

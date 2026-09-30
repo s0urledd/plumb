@@ -392,6 +392,8 @@ tr.inactive td { opacity: 0.5; }
 /* section labels with a rule (HyperScreener-style grouping) */
 .section-label { color: var(--text); font-size: 20px; font-weight: 400; letter-spacing: -0.02em; margin: 22px 0 2px; }
 .panel-head .desc { color: var(--text-3); font-size: 12px; margin-top: 2px; font-weight: 400; }
+/* A row that starts a new group in a table (the wallet's epoch periods). */
+.t tr.group-start td { border-top: 1px solid var(--line-2); }
 .head-value { text-align: right; }
 .head-value .hv { font-size: 17px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .head-value .hn { color: var(--text-3); font-size: 11.5px; margin-top: 2px; font-variant-numeric: tabular-nums; }

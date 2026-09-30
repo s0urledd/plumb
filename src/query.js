@@ -24,6 +24,19 @@ export const BUCKETS = { '1h': 3600, '4h': 14400, '1d': 86400, '1w': 604800 };
 export const WINDOWS = { '24h': 86400, '7d': 7 * 86400, '30d': 30 * 86400, '90d': 90 * 86400, all: null };
 export const DEFAULT_BUCKET = { '24h': '1h', '7d': '4h', '30d': '1d', '90d': '1d', all: '1w' }; // all-time: weekly, so single spikes do not flatten the rest
 
+// Perpl's weekly epochs: activity is snapshotted every Wednesday at 16:00 UTC,
+// so an epoch runs from one Wednesday 16:00 UTC to the next. this_epoch is the
+// one under way (from the latest snapshot to the head); last_epoch is the full
+// week before it.
+export const EPOCH_SECONDS = 7 * 86400;
+export const EPOCH_ANCHOR = Date.UTC(2026, 8, 30, 16) / 1000; // a Wednesday, 16:00 UTC
+export const EPOCH_WINDOWS = ['this_epoch', 'last_epoch'];
+export const epochStart = ts => EPOCH_ANCHOR + Math.floor((ts - EPOCH_ANCHOR) / EPOCH_SECONDS) * EPOCH_SECONDS;
+export function epochRange(w, headTs) {
+  const start = epochStart(headTs);
+  return w === 'this_epoch' ? { from: start, to: headTs + 1 } : { from: start - EPOCH_SECONDS, to: start };
+}
+
 // Intersection of two sorted lists of [a, b) ranges.
 export function intersect(ranges, allowed) {
   const out = [];
