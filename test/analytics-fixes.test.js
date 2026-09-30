@@ -199,7 +199,11 @@ test('wallet period ranks use the value in the same rank table and never exceed 
   });
   const p = await api.walletPeriods('8');
   assert.deepEqual(p.periods.map(x => x.window), ['24h', '7d', '30d', 'all', 'this_epoch', 'last_epoch']);
-  assert.deepEqual(p.periods.map(x => x.rank), Array(6).fill({ pnl: 2, volume: 3, of: 4 }), 'ties share a rank');
+  assert.deepEqual(p.periods.map(({ rank: { pnl, volume, of } }) => ({ pnl, volume, of })), Array(6).fill({ pnl: 2, volume: 3, of: 4 }), 'ties share a rank');
+  // In the epoch under way only: the volume to the next rank up (5 - 1, in dollars).
+  const now = p.periods.find(x => x.window === 'this_epoch');
+  assert.deepEqual([now.rank.next_rank, now.rank.volume_to_next], [2, '4.00']);
+  assert.ok(p.periods.filter(x => x.window !== 'this_epoch').every(x => x.rank.volume_to_next === undefined));
   // Epochs are the week from a Wednesday 16:00 UTC snapshot (query.js).
   const last = p.periods.find(x => x.window === 'last_epoch');
   assert.equal(last.to - last.from, 7 * 86400);

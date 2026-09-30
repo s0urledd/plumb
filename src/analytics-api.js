@@ -111,6 +111,19 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     const from = len === null ? firstTs() : to - len;
     return { from, to };
   }
+  // Epoch facts shared by every view of the same epoch: the exchange volume
+  // (each fill once, for shares of it) and the blocks the epoch spans. A
+  // finished epoch never changes; the one under way is re-read each minute.
+  function exchangeVolume(w) {
+    return cache.get(`xvol:${windowKey(w)}`, 60000, async () => { const { from, to } = rangeOf(w); return sumMarkets(await queries.marketTotals(from, to)).volume; });
+  }
+  function epochBlocks(w) {
+    return cache.get(`blocks:${windowKey(w)}`, w === 'last_epoch' ? 3600000 : 60000, async () => {
+      const { from, to } = rangeOf(w);
+      const r = await queries.blockSpan(from, to);
+      return { first: r?.first ? String(r.first) : null, last: r?.last ? String(r.last) : null };
+    });
+  }
   function coverageOf(from, to) {
     const cov = ingest.coverage;
     const complete = cov.spanCovered(from, to - 1);
@@ -460,12 +473,12 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     const market = /^\d{1,5}$/.test(query.get('market') ?? '') ? Number(query.get('market')) : null;
     return cache.get(`lb:${windowKey(w)}:${sort}:${limit}:${offset}:${market}`, w === '24h' ? 5000 : 20000, async () => {
       const { from, to } = rangeOf(w);
-      const { total, rows } = await queries.accounts(from, to, { sort, limit, offset, market });
+      const [{ total, rows }, xv, blocks] = await Promise.all([queries.accounts(from, to, { sort, limit, offset, market }), isEpoch(w) ? exchangeVolume(w).catch(() => null) : null, isEpoch(w) ? epochBlocks(w).catch(() => null) : null]);
       const addr = await addresses(rows.map(r => Number(r.account)));
       const c = cd();
       return {
-        meta: metaOf({ window: w, from, to, sort, market, coverage: coverageOf(from, to) }), total,
-        rows: rows.map(r => { const id = Number(r.account), open = openPositions(id); const vol = B(r.volume), net = B(r.realized) - B(r.fees); return { rank: Number(r.rank), account: id, address: addr.get(id)?.address ?? null, pnl: dec(net, c), realized: dec(r.realized, c), fees: dec(r.fees, c), volume: dec(vol, c), maker_share_pct: share(B(r.maker_volume), vol), trades: Number(r.trades), roi_on_volume_bps: vol > 0n ? Number(net * 100000000n / vol) / 10000 : null, liquidations: Number(r.liquidations), liquidated: dec(r.liquidated, c), deposits: dec(r.deposits, c), withdrawals: dec(r.withdrawals, c), markets: (r.markets ?? []).map(Number).map(symbol), open_positions: open.count, open_notional: dec(open.notional, c), unrealized_pnl: dec(open.upnl, c) }; })
+        meta: metaOf({ window: w, from, to, sort, market, coverage: coverageOf(from, to), ...(isEpoch(w) ? { volume: xv === null ? null : dec(xv, c), blocks } : {}) }), total,
+        rows: rows.map(r => { const id = Number(r.account), open = openPositions(id); const vol = B(r.volume), net = B(r.realized) - B(r.fees); return { rank: Number(r.rank), account: id, address: addr.get(id)?.address ?? null, pnl: dec(net, c), realized: dec(r.realized, c), fees: dec(r.fees, c), volume: dec(vol, c), ...(xv ? { volume_share_pct: share(vol, xv) } : {}), maker_share_pct: share(B(r.maker_volume), vol), trades: Number(r.trades), roi_on_volume_bps: vol > 0n ? Number(net * 100000000n / vol) / 10000 : null, liquidations: Number(r.liquidations), liquidated: dec(r.liquidated, c), deposits: dec(r.deposits, c), withdrawals: dec(r.withdrawals, c), markets: (r.markets ?? []).map(Number).map(symbol), open_positions: open.count, open_notional: dec(open.notional, c), unrealized_pnl: dec(open.upnl, c) }; })
       };
     });
   }
@@ -594,12 +607,15 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     return cache.get(`wallet-periods:${acct.id}`, 30000, async () => {
       const periods = await Promise.all(PERIODS.map(async w => {
         const { from, to } = rangeOf(w);
-        const [{ rows }, table] = await Promise.all([queries.accounts(from, to, { account: acct.id, limit: 1 }), scores(w)]);
+        const [{ rows }, table, xv, blocks] = await Promise.all([queries.accounts(from, to, { account: acct.id, limit: 1 }), scores(w), exchangeVolume(w).catch(() => null), isEpoch(w) ? epochBlocks(w).catch(() => null) : null]);
         const r = rows[0], own = table.of.get(acct.id);
-        const view = { window: w, from, to, coverage_complete: ingest.coverage.spanCovered(from, to - 1), traders: table.pnl.length };
+        const view = { window: w, from, to, coverage_complete: ingest.coverage.spanCovered(from, to - 1), traders: table.pnl.length, ...(isEpoch(w) ? { blocks } : {}) };
         if (!r || !Number(r.trades)) return { ...view, trades: 0, volume: '0', net_pnl: '0', realized: '0', fees: '0', liquidations: 0, rank: null };
         const net = B(r.realized) - B(r.fees);
-        return { ...view, trades: Number(r.trades), volume: dec(r.volume, c), maker_share_pct: share(B(r.maker_volume), B(r.volume)), net_pnl: dec(net, c), realized: dec(r.realized, c), fees: dec(r.fees, c), funding: dec(r.funding_paid, c), liquidations: Number(r.liquidations), pnl_per_volume_bps: B(r.volume) > 0n ? Number(net * 100000000n / B(r.volume)) / 10000 : null, rank: own ? { pnl: rankIn(table.pnl, own.pnl), volume: rankIn(table.volume, own.volume), of: table.pnl.length } : null };
+        // In the epoch under way, the volume still needed to reach the next rank up.
+        const rankVol = own ? rankIn(table.volume, own.volume) : null, above = rankVol > 1 ? table.volume[rankVol - 2] : null;
+        const gap = w === 'this_epoch' && above !== null ? { volume_to_next: ((above - own.volume) / 10 ** c).toFixed(2), next_rank: rankVol - 1 } : {};
+        return { ...view, trades: Number(r.trades), volume: dec(r.volume, c), maker_volume: dec(r.maker_volume ?? 0, c), taker_volume: dec(B(r.volume) - B(r.maker_volume), c), volume_share_pct: xv ? share(B(r.volume), xv) : null, maker_share_pct: share(B(r.maker_volume), B(r.volume)), net_pnl: dec(net, c), realized: dec(r.realized, c), fees: dec(r.fees, c), funding: dec(r.funding_paid, c), liquidations: Number(r.liquidations), pnl_per_volume_bps: B(r.volume) > 0n ? Number(net * 100000000n / B(r.volume)) / 10000 : null, rank: own ? { pnl: rankIn(table.pnl, own.pnl), volume: rankVol, of: table.pnl.length, ...gap } : null };
       }));
       return { meta: metaOf(), account: { id: acct.id, address: acct.address }, periods };
     });
@@ -610,7 +626,11 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     const before = /^\d{1,12}:\d{1,9}$/.test(query.get('before') ?? '') ? query.get('before') : null;
     const limit = Math.min(Math.max(Number(query.get('limit')) || 100, 1), query.get('format') === 'csv' ? 10000 : 500);
     const market = /^\d{1,5}$/.test(query.get('market') ?? '') ? Number(query.get('market')) : null;
-    const rows = await queries.accountTrades(acct.id, { before, limit, market });
+    // An optional time range [from, to) in unix seconds (an epoch, say); as CSV it may hold up to 100,000 fills.
+    const secs = k => (/^\d{9,10}$/.test(query.get(k) ?? '') ? Number(query.get(k)) : null);
+    const from = secs('from'), to = secs('to'), ranged = from !== null && to !== null && to > from;
+    const csvRange = ranged && query.get('format') === 'csv';
+    const rows = await queries.accountTrades(acct.id, { before, limit: csvRange ? Math.min(Math.max(Number(query.get('limit')) || 100000, 1), 100000) : limit, market, ...(ranged ? { from, to } : {}) });
     const addr = new Map([[acct.id, { address: acct.address }]]);
     const list = rows.map(r => tradeView(r, addr));
     return { meta: metaOf(), account: { id: acct.id, address: acct.address }, next: rows.length === limit ? `${rows.at(-1).block}:${rows.at(-1).log_index}` : null, rows: list };

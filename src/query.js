@@ -263,11 +263,17 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
   }
 
   // Newest-first page of an account's trades (cursor = "block:log_index").
-  async function accountTrades(accountId, { before = null, limit = 100, market = null } = {}) {
+  async function accountTrades(accountId, { before = null, limit = 100, market = null, from = null, to = null } = {}) {
     const [b, l] = before ? before.split(':').map(int) : [null, null];
     const cursor = before ? ` AND (block, log_index) < (${b}, ${l})` : '';
     const m = market !== null ? ` AND market = ${int(market)}` : '';
-    return q(`SELECT ${EV_COLUMNS} FROM ev_account WHERE account = {a:UInt32} AND (kind IN ${USER} OR kind IN ('liquidation','deleverage','unwind'))${m}${cursor} ORDER BY block DESC, log_index DESC LIMIT ${int(limit)}`, { a: accountId });
+    // A time range [from, to) in unix seconds, e.g. one epoch.
+    const span = from !== null && to !== null ? ` AND ts >= toDateTime(${int(from)}, 'UTC') AND ts < toDateTime(${int(to)}, 'UTC')` : '';
+    return q(`SELECT ${EV_COLUMNS} FROM ev_account WHERE account = {a:UInt32} AND (kind IN ${USER} OR kind IN ('liquidation','deleverage','unwind'))${m}${span}${cursor} ORDER BY block DESC, log_index DESC LIMIT ${int(limit)}`, { a: accountId });
+  }
+  // The first and last blocks holding exchange events in [from, to) (an epoch's span on chain).
+  async function blockSpan(from, to) {
+    return (await q(`SELECT min(block) AS first, max(block) AS last FROM ev WHERE ts >= toDateTime(${int(from)}, 'UTC') AND ts < toDateTime(${int(to)}, 'UTC')`))[0] ?? null;
   }
   // Deposits, withdrawals and the protocol's payouts to and sweeps from the account.
   async function accountFlows(accountId, { limit = 200 } = {}) {
@@ -335,5 +341,5 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
     return new Map(rows.map(r => [Number(r.account), { address: r.address, created: Number(r.ts) }]));
   }
 
-  return { tsAtBlock, marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, accountTransfers, balanceMoves, balanceMovesAtBlock, revenueUpTo, unsplitAtBlock, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
+  return { tsAtBlock, blockSpan, marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, accountTransfers, balanceMoves, balanceMovesAtBlock, revenueUpTo, unsplitAtBlock, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
 }
