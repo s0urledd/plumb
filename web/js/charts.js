@@ -4,7 +4,7 @@
 import { usd, compact, dateTime, date, num, esc } from './format.js';
 
 const T = {
-  text: 'rgba(224,225,255,0.70)', faint: 'rgba(255,255,255,0.42)', grid: 'rgba(255,255,255,0.045)', axis: 'rgba(255,255,255,0.10)',
+  text: 'rgba(224,225,255,0.70)', faint: 'rgba(255,255,255,0.5)', grid: 'rgba(255,255,255,0.045)', axis: 'rgba(255,255,255,0.10)',
   accent: '#a2a4ff', long: '#81c784', short: '#f65a6e', tooltip: '#1c1b20', border: 'rgba(255,255,255,0.10)', surface: '#121113', font: 'Geist, ui-sans-serif, system-ui, sans-serif'
 };
 export const COLORS = T;
