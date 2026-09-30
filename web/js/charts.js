@@ -95,6 +95,8 @@ const base = () => ({
   textStyle: { fontFamily: T.font, color: T.text, fontSize: 11 },
   grid: { left: 4, right: 8, top: 12, bottom: 4, containLabel: true },
   tooltip: {
+    // On a phone the tooltip stays inside its chart, so it never runs off the screen.
+    confine: innerWidth < 640,
     trigger: 'axis', backgroundColor: T.tooltip, borderColor: T.border, borderWidth: 1, padding: [8, 10], textStyle: { color: '#fff', fontSize: 12, fontFamily: T.font },
     axisPointer: { type: 'line', lineStyle: { color: 'rgba(162,164,255,0.35)', width: 1 }, shadowStyle: { color: 'rgba(162,164,255,0.06)' } },
     extraCssText: 'box-shadow:0 12px 32px rgba(0,0,0,.55);border-radius:8px;'

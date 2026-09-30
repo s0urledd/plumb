@@ -57,7 +57,7 @@ export function epochSpan(from) {
 // Time left until the snapshot that ends the epoch starting at `from`: "2d 5h", "3h 12m", "8m".
 export function epochLeft(from, now = Date.now() / 1000) {
   const left = Math.max(0, from + 7 * 86400 - now), d = Math.floor(left / 86400), h = Math.floor(left % 86400 / 3600), m = Math.floor(left % 3600 / 60);
-  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : m ? `${m}m` : '<1m';
 }
 
 export function bps(v, { digits = 1, sign = false } = {}) {

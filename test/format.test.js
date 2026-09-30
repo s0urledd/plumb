@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compact, usd, usdFull, pct, bps, share, price, short, signClass, deltaHtml, duration } from '../web/js/format.js';
+import { compact, usd, usdFull, pct, bps, share, price, short, signClass, deltaHtml, duration, epochLeft } from '../web/js/format.js';
 
 test('compact amounts switch unit on the rounded figure', () => {
   assert.equal(usd(999.4), '$999');
@@ -94,4 +94,12 @@ test('durations switch unit on the rounded figure', () => {
   assert.equal(duration(86000), '1.0d');
   assert.equal(duration(863990), '10d');
   assert.equal(duration(null), '—');
+});
+
+test('the epoch countdown never reads 0m before the snapshot', () => {
+  const from = 1000000, end = from + 7 * 86400;
+  assert.equal(epochLeft(from, end - 2 * 86400 - 5 * 3600), '2d 5h');
+  assert.equal(epochLeft(from, end - 3 * 3600 - 12 * 60), '3h 12m');
+  assert.equal(epochLeft(from, end - 8 * 60), '8m');
+  assert.equal(epochLeft(from, end - 30), '<1m');
 });

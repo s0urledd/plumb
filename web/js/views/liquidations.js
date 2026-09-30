@@ -68,7 +68,7 @@ export function mount(el, { query, setQuery }) {
     // The feed has ADL and force closes too, so it runs longer than the liquidation
     // count above. A redraw under filters not yet loaded leaves the count out.
     const n = adl?.key === filters() ? adl.n : null;
-    $('feed-meta').textContent = `${int(total)} events${n ? ` · incl. ${int(n)} ADL and force close${n === 1 ? '' : 's'}` : ''} · ${w === 'all' ? 'all-time' : w}`;
+    $('feed-meta').textContent = `${int(total)} events${n ? ` · incl. ${int(n)} ADL and force close${n === 1 ? '' : 's'}` : ''} · ${w === 'all' ? 'All-time' : w}`;
     const first = total ? page * PAGE + 1 : 0, last = page * PAGE + rows.length;
     const pager = pages > 1 ? `<div class="panel-foot pager"><span>${int(first)}–${int(last)} of ${int(total)}</span><span class="pager-ctl"><button class="btn ghost sm" data-action="prev" ${page === 0 ? 'disabled' : ''}>← Prev</button><span class="num">Page ${int(page + 1)} of ${int(pages)}</span><button class="btn ghost sm" data-action="next" ${page + 1 >= pages ? 'disabled' : ''}>Next →</button></span></div>` : '';
     $('feed').innerHTML = table({ id: 'liq', columns: [
