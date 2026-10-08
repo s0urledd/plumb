@@ -323,20 +323,32 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
   }
 
   // --- alert messages --------------------------------------------------------------
-  const txLink = tx => (tx ? `<a href="${explorer}/tx/${escHtml(tx)}">tx ↗</a>` : '');
-  const sideOf = v => (v.side ? v.side.toUpperCase() : '');
-  const fill = v => `${escHtml(v.size)} ${escHtml(assetOf(v.symbol))} @ ${fmtPrice(v.price ?? v.mark)}`;
-  const pnlPart = v => (['decrease', 'close', 'invert', 'liquidation', 'deleverage'].includes(v.kind) && Number(v.pnl) ? ` · PnL <b>${usd(v.pnl, { sign: true })}</b>` : '');
-  function walletAlert(v) {
-    const [icon, verb] = EVENT[v.kind];
-    return `${icon} <b>${verb} ${escHtml(assetOf(v.symbol))} ${sideOf(v)}</b> · ${walletLink(v.address, v.account)}\n<b>${usd(v.notional)}</b> · ${fill(v)}${pnlPart(v)}\n${txLink(v.tx)}`;
-  }
-  function liqAlert(v) {
-    return `${v.kind === 'liquidation' ? '💥 <b>Liquidation' : '⚠️ <b>Deleverage'} · ${escHtml(assetOf(v.symbol))} ${sideOf(v)}</b>\n<b>${usd(v.notional)}</b> · ${fill(v)}${pnlPart(v)}\n${walletLink(v.address, v.account)} · ${txLink(v.tx)}`;
+  // A bold headline saying what happened, then one labelled fact per line, as
+  // wallet-tracking bots lay them out; the #ASSET tag lets Telegram search a chat
+  // for one market.
+  const txLink = tx => (tx ? `<a href="${explorer}/tx/${escHtml(tx)}">View on explorer ↗</a>` : '');
+  const tag = s => { const t = assetOf(s).replace(/[^A-Z0-9_]/g, ''); return t ? `  #${t}` : ''; };
+  const sideOf = v => (v.side ? String(v.side).toLowerCase() : '');
+  const row = (label, value) => `<b>${label}:</b> ${value}`;
+  const lines = (...xs) => xs.filter(Boolean).join('\n');
+  const sizeRow = v => row('Size', `${usd(v.notional)} · ${escHtml(v.size)} ${escHtml(assetOf(v.symbol))}`);
+  const priceRow = v => row('Price', fmtPrice(v.price ?? v.mark));
+  // Below a cent the dollar figure reads "-$0.00"; the row says it in words instead.
+  const pnlRow = v => {
+    const n = Number(v.pnl);
+    if (!['decrease', 'close', 'invert', 'liquidation', 'deleverage'].includes(v.kind) || v.pnl === null || v.pnl === undefined || !Number.isFinite(n)) return null;
+    return row('PnL', Math.abs(n) < 0.005 ? 'under $0.01' : usd(n, { sign: true }));
+  };
+  const HEAD = { open: 'opened', increase: 'increased', decrease: 'reduced', close: 'closed', liquidation: 'liquidated', deleverage: 'deleveraged' };
+  const headline = v => (v.kind === 'invert' ? `${escHtml(assetOf(v.symbol))} flipped to ${sideOf(v)}` : `${escHtml(assetOf(v.symbol))} ${sideOf(v)} ${HEAD[v.kind]}`);
+  // A watched wallet's trade, and a liquidation or deleverage above a chat's threshold.
+  function positionAlert(v) {
+    const [icon] = EVENT[v.kind];
+    return lines(`${icon} <b>${headline(v)}</b>${tag(v.symbol)}`, sizeRow(v), priceRow(v), pnlRow(v), row('Wallet', walletLink(v.address, v.account)), txLink(v.tx));
   }
   function tradeAlert(v) {
     const [, verb] = EVENT[v.kind];
-    return `🐋 <b>Large ${v.buy ? 'buy' : 'sell'} · ${escHtml(assetOf(v.symbol))}</b>\n<b>${usd(v.notional)}</b> · ${fill(v)}\n${walletLink(v.address, v.account)} ${verb.toLowerCase()} ${sideOf(v).toLowerCase()} · ${txLink(v.tx)}`;
+    return lines(`🐋 <b>Large ${escHtml(assetOf(v.symbol))} ${v.buy ? 'buy' : 'sell'}</b>${tag(v.symbol)}`, sizeRow(v), priceRow(v), row('Trader', `${walletLink(v.address, v.account)} ${verb.toLowerCase()} ${sideOf(v)}`), txLink(v.tx));
   }
   // Called with each committed range of blocks (ingest 'commit' events).
   async function onCommit(event) {
@@ -364,8 +376,8 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
     for (const [chat, s] of chats) {
       for (const v of views) {
         const n = Number(v.notional);
-        if (s.wallets[String(v.account)] !== undefined) add(chat, walletAlert(v));
-        else if (s.liqs && (v.kind === 'liquidation' || v.kind === 'deleverage') && n >= s.liqs.min && (s.liqs.market === null || v.market === s.liqs.market)) add(chat, liqAlert(v));
+        if (s.wallets[String(v.account)] !== undefined) add(chat, positionAlert(v));
+        else if (s.liqs && (v.kind === 'liquidation' || v.kind === 'deleverage') && n >= s.liqs.min && (s.liqs.market === null || v.market === s.liqs.market)) add(chat, positionAlert(v));
         else if (s.trades && v.role === 'taker' && v.kind !== 'liquidation' && n >= s.trades.min && (s.trades.market === null || v.market === s.trades.market)) add(chat, tradeAlert(v));
       }
     }
@@ -410,7 +422,7 @@ export function createAlerts({ token, fetch: doFetch = globalThis.fetch, store, 
           warned.set(key, level);
           // Not awaited: each chat's queue keeps the order, and one slow chat does not hold up the rest.
           // Sent without a time, so a busy queue never drops a warning.
-          send(chat, `${level === levels.at(-1) ? '🚨' : '⚠️'} <b>Near liquidation · ${escHtml(assetOf(p.symbol))} ${escHtml(String(p.side).toUpperCase())}</b>\n${walletLink(subs[chat]?.wallets[id], id)} · <b>${usd(p.notional)}</b> position\nMark ${fmtPrice(p.mark)} → liquidation ${fmtPrice(p.liquidation_price)}\n<b>${d.toFixed(1)}% away</b>`);
+          send(chat, lines(`${level === levels.at(-1) ? '🚨' : '⚠️'} <b>${escHtml(assetOf(p.symbol))} ${escHtml(String(p.side).toLowerCase())} near liquidation</b>${tag(p.symbol)}`, row('Distance', `${d.toFixed(1)}%`), row('Mark → liq', `${fmtPrice(p.mark)} → ${fmtPrice(p.liquidation_price)}`), row('Position', usd(p.notional)), row('Wallet', walletLink(subs[chat]?.wallets[id], id))));
         }
       }
       // A closed position clears its warning.
