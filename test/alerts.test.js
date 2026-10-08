@@ -194,7 +194,7 @@ test('a busy chat keeps its newest alerts, and alerts gone stale in the queue ar
   h.release();
   await Promise.all(commits); await h.flush();
   // Of the 29 waiting, the 20 newest go out.
-  assert.deepEqual(h.sent.map(m => /<b>\$(\d+K)<\/b>/.exec(m.text)[1]), ['1K', ...Array.from({ length: 20 }, (_, i) => `${i + 11}K`)]);
+  assert.deepEqual(h.sent.map(m => /Size:<\/b> \$(\d+K) /.exec(m.text)[1]), ['1K', ...Array.from({ length: 20 }, (_, i) => `${i + 11}K`)]);
   assert.equal(h.alerts.stats.dropped, 9);
 
   const s = harness();
@@ -208,7 +208,7 @@ test('a busy chat keeps its newest alerts, and alerts gone stale in the queue ar
   await Promise.all([first, second]); await s.flush();
   // The alert that waited past five minutes is dropped; the reply is not.
   assert.equal(s.sent.length, 2);
-  assert.match(s.sent[0].text, /<b>\$1K<\/b>/);
+  assert.match(s.sent[0].text, /Size:<\/b> \$1K /);
   assert.match(s.sent[1].text, /Watched wallets/);
   assert.equal(s.alerts.stats.dropped, 1);
 });
