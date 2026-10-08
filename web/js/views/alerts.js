@@ -22,10 +22,11 @@ export function mount(el, { navigate }) {
 
   // A sample of what the bot sends, drawn as a chat bubble.
   const sample = `<div class="tg-bubble" aria-hidden="true">
-      <div class="tg-line"><b>🚨 Near liquidation · BTC LONG</b></div>
-      <div class="tg-line"><span class="tg-link">0xcfe9…b477</span> · <b>$478</b> position</div>
-      <div class="tg-line">Mark 84,419.3 → liquidation 82,252.5</div>
-      <div class="tg-line"><b>2.6% away</b></div>
+      <div class="tg-line">🚨 <b>BTC long near liquidation</b>  <span class="tg-link">#BTC</span></div>
+      <div class="tg-line"><b>Distance:</b> 2.6%</div>
+      <div class="tg-line"><b>Mark → liq:</b> 84,419.3 → 82,252.5</div>
+      <div class="tg-line"><b>Position:</b> $478</div>
+      <div class="tg-line"><b>Wallet:</b> <span class="tg-link">0xcfe9…b477</span></div>
       <div class="tg-time">15:55</div>
     </div>`;
   function renderBot() {

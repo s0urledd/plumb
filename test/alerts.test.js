@@ -126,11 +126,22 @@ test('events reach the right chats, grouped per commit', async () => {
   await h.flush();
   const to = chat => h.sent.filter(m => m.chat_id === chat).map(m => m.text);
   assert.equal(to('1').length, 1);
-  assert.match(to('1')[0], /⚪ <b>Closed BTC LONG<\/b> · .*0x1111…1111.*\n<b>\$900<\/b> · 0\.5 BTC @ 84,000 · PnL <b>\+\$12\.50<\/b>\n.*tx ↗/);
+  assert.match(to('1')[0], /^⚪ <b>BTC long closed<\/b> {2}#BTC\n<b>Size:<\/b> \$900 · 0\.5 BTC\n<b>Price:<\/b> 84,000\n<b>PnL:<\/b> \+\$12\.50\n<b>Wallet:<\/b> .*0x1111…1111.*\n<a href="[^"]+\/tx\/0xabc">View on explorer ↗<\/a>$/);
   assert.equal(to('2').length, 1);
-  assert.match(to('2')[0], /💥 <b>Liquidation · BTC LONG<\/b>\n<b>\$27K<\/b>/);
+  assert.match(to('2')[0], /^💥 <b>BTC long liquidated<\/b> {2}#BTC\n<b>Size:<\/b> \$27K · 0\.5 BTC\n<b>Price:<\/b> 84,000\n<b>PnL:<\/b> under \$0\.01\n<b>Wallet:<\/b> /);
   assert.equal(to('3').length, 1);
-  assert.match(to('3')[0], /🐋 <b>Large buy · BTC<\/b>\n<b>\$42K<\/b>/);
+  assert.match(to('3')[0], /^🐋 <b>Large BTC buy<\/b> {2}#BTC\n<b>Size:<\/b> \$42K · 0\.5 BTC\n<b>Price:<\/b> 84,000\n<b>Trader:<\/b> .* opened long\n.*View on explorer ↗/);
+});
+
+test('a profit or loss under a cent is written out', async () => {
+  const h = harness();
+  await h.alerts.handle('1', '/watch 7');
+  await h.alerts.onCommit({ ts: NOW, ev: [trade({ account: 7, kind: 'close', role: 'maker', notional: '100', pnl: '-0.003' }), trade({ account: 7, kind: 'decrease', role: 'maker', notional: '50', pnl: '-1.5' })], funding: [] });
+  await h.flush();
+  const text = h.sent.map(m => m.text).join('\n\n');
+  assert.match(text, /BTC long closed[\s\S]*<b>PnL:<\/b> under \$0\.01/);
+  assert.match(text, /BTC long reduced[\s\S]*<b>PnL:<\/b> -\$1\.50/);
+  assert.doesNotMatch(text, /\$0\.00/);
 });
 
 test('old events after downtime are not sent', async () => {
@@ -160,16 +171,16 @@ test('near-liquidation warnings follow the chat\'s levels, once per level, and r
   await h.flush();
   const texts = h.sent.map(m => m.text);
   assert.equal(texts.length, 3);
-  assert.match(texts[0], /⚠️ <b>Near liquidation · BTC LONG<\/b>\n.*\$478<\/b> position\nMark 84,419\.3 → liquidation 82,252\.5\n<b>9\.0% away<\/b>/);
-  assert.match(texts[1], /🚨.*[\s\S]*4\.5% away/);
-  assert.match(texts[2], /9\.0% away/);
+  assert.match(texts[0], /^⚠️ <b>BTC long near liquidation<\/b> {2}#BTC\n<b>Distance:<\/b> 9\.0%\n<b>Mark → liq:<\/b> 84,419\.3 → 82,252\.5\n<b>Position:<\/b> \$478\n<b>Wallet:<\/b> /);
+  assert.match(texts[1], /^🚨[\s\S]*Distance:<\/b> 4\.5%/);
+  assert.match(texts[2], /Distance:<\/b> 9\.0%/);
 
   const early = harness();
   await early.alerts.handle('1', '/watch 7');
   await early.alerts.press('1', 'levels:early');
   for (const d of [30, 19, 9]) { early.setPositions([pos(d)]); await early.alerts.checkRisk(); }
   await early.flush();
-  assert.deepEqual(early.sent.map(m => /(\d+\.\d)% away/.exec(m.text)[1]), ['19.0', '9.0']);
+  assert.deepEqual(early.sent.map(m => /Distance:<\/b> (\d+\.\d)%/.exec(m.text)[1]), ['19.0', '9.0']);
 });
 
 test('a busy chat keeps its newest alerts, and alerts gone stale in the queue are dropped', async () => {
