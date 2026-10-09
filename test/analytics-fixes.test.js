@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { roundTrips, performance, insights } from '../src/analytics.js';
+import { roundTrips, performance, insights, walletAnalyzer } from '../src/analytics.js';
+import { tradeHistory } from './helpers/trade-history.js';
 import { createCache, createAnalyticsApi } from '../src/analytics-api.js';
 import { createQueries } from '../src/query.js';
 import { createCollector, collectorOptions } from '../src/collector.js';
@@ -15,7 +16,7 @@ const row = (kind, market, side, o = {}) => ({ kind, market, side, role: 'taker'
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
 
 // An analytics API over fake queries and an in-memory collector state.
-function analyticsWith(queries, { state = { block: null, markets: new Map(), exchangeInfo: null, stats: {} }, clock = { t: 1790005000000 } } = {}) {
+function analyticsWith(queries, { state = { block: null, markets: new Map(), exchangeInfo: null, stats: {} }, clock = { t: 1790005000000 }, options = {} } = {}) {
   const ingest = {
     collateralDecimals: 6,
     markets: new Map([[1, { symbol: 'BTC', name: 'BTC', priceDecimals: 1, lotDecimals: 5 }], [20, { symbol: 'ETH', name: 'ETH', priceDecimals: 1, lotDecimals: 5 }]]),
@@ -25,7 +26,7 @@ function analyticsWith(queries, { state = { block: null, markets: new Map(), exc
     progress: () => ({ complete: true })
   };
   const findAccounts = async text => [{ account: Number(text), address: '0x' + Number(text).toString(16).padStart(40, '0'), ts: 1789000000 }];
-  return createAnalyticsApi({ ingest, rollups: {}, queries: { findAccounts, balanceMoves: async () => [], accountTransfers: async () => null, ...queries }, collector: { state, reader: {} }, now: () => clock.t });
+  return createAnalyticsApi({ ingest, rollups: {}, queries: { findAccounts, balanceMoves: async () => [], accountTransfers: async () => null, ...queries }, collector: { state, reader: {} }, now: () => clock.t, ...options });
 }
 
 test('funding settled when a position is increased is realized on its trip', () => {
@@ -206,11 +207,43 @@ test('wallet trips: incomplete trips have no return; meta belongs to the cached 
     row('close', 1, LONG, { lot: 10n, start_lot: 10n, notional: 1020n, pnl: 20n })
   ];
   const clock = { t: 1790005000000 };
-  const api = analyticsWith({ accountEventCount: async () => rows.length, accountEvents: async () => rows }, { clock });
+  const api = analyticsWith({ accountEventCount: async () => rows.length, accountEventsPage: async () => rows }, { clock });
   const a = await api.walletAnalytics('7');
   assert.deepEqual(a.trips.map(t => [t.complete, t.return_pct]), [[true, 2], [false, null]]);
   clock.t += 1000;
   assert.equal((await api.walletAnalytics('7')).meta.generated_at, a.meta.generated_at);
+});
+
+// Pages of an account's events after a [block, log_index] cursor, as ClickHouse
+// returns them (the block as a string).
+const pagesOf = rows => ({
+  accountEventCount: async () => rows.length,
+  accountEventCursor: async (id, n) => [String(rows[n - 1].block), rows[n - 1].log_index],
+  accountEventsPage: async (id, { after, limit }) => rows.filter(r => !after || r.block > Number(after[0]) || (r.block === Number(after[0]) && r.log_index > Number(after[1]))).slice(0, limit)
+});
+
+test('wallet analytics read a long history in pages, all of it, as one read would', async () => {
+  const rows = tradeHistory(2500);
+  const q = pagesOf(rows), cursors = [];
+  const page = q.accountEventsPage;
+  q.accountEventsPage = async (id, o) => { cursors.push(o.after); return page(id, o); };
+  const paged = await analyticsWith(q, { options: { tripPage: 300 } }).walletAnalytics('7');
+  assert.equal(cursors.length, 9, 'eight full pages and a short one');
+  assert.equal(cursors[0], null);
+  const once = await analyticsWith(q, { options: { tripPage: 10000 } }).walletAnalytics('7');
+  const view = a => [a.performance, a.insights, a.activity, a.trip_curve, a.trips, a.open_trips];
+  assert.deepEqual(view(paged), view(once));
+  assert.deepEqual(paged.performance.based_on, { events: 2500, total_events: 2500, truncated: false, since: rows[0].ts });
+  assert.ok(paged.performance.closed_trips > 400);
+});
+
+test('past maxTripEvents, wallet analytics read the latest events and say from when', async () => {
+  const rows = tradeHistory(1200);
+  const a = await analyticsWith(pagesOf(rows), { options: { maxTripEvents: 500, tripPage: 200 } }).walletAnalytics('7');
+  assert.deepEqual(a.performance.based_on, { events: 500, total_events: 1200, truncated: true, since: rows[700].ts });
+  const an = walletAnalyzer();
+  an.add(rows.slice(700));
+  assert.equal(a.performance.closed_trips, an.result().perf.closedTrips);
 });
 
 test('wallet summary: first trade is the first trade time, not its day', async () => {
