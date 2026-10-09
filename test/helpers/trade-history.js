@@ -1,7 +1,8 @@
 // A long, varied trading history for one account, the same rows on every run:
 // opens, adds, partial and full closes, flips, partial and full liquidations,
 // deleveraging and unwinds across three markets, several events to a block.
-// Market 3 starts with a position opened before the history begins.
+// Market 3 starts with a position opened before the history begins; the last
+// three events open or add, so the history ends with positions open.
 export function tradeHistory(n, { seed = 7, start = 1790000000 } = {}) {
   let x = seed;
   const rnd = () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648;
@@ -21,7 +22,7 @@ export function tradeHistory(n, { seed = 7, start = 1790000000 } = {}) {
       const side = pick(0, 1), lot = BigInt(pick(1, 10));
       r = { ...at, kind: 'open', side, lot, start_lot: 0n, end_lot: lot, notional: lot * 100n, pnl: 0n };
       pos.set(market, { side, lot });
-    } else if (u < 0.25) {
+    } else if (u < 0.25 || i >= n - 3) { // the last events add, so some trips are still open at the end
       const add = BigInt(pick(1, 5));
       r = { ...at, kind: 'increase', side: p.side, lot: add, start_lot: p.lot, end_lot: p.lot + add, notional: add * 100n, pnl: BigInt(pick(-3, 3)) };
       p.lot += add;
