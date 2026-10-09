@@ -735,6 +735,34 @@ select.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 /* Scrolled sideways (five wallets on a tablet), each row keeps its metric's name. */
 .cmp th.cmp-m, .cmp td.cmp-m { position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: inset -1px 0 0 var(--line); }
 .cmp th.cmp-m { z-index: 2; }
+/* The best value of a row: brighter, with its wallet's dot after it. */
+.cmp td.cmp-best { color: var(--text); font-weight: 600; }
+.cmp td.cmp-best::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 7px; border-radius: 50%; background: var(--c); vertical-align: 1px; }
+/* A card per wallet above the chart: who it is, its net PnL and curve, three facts. */
+.cmp-cards { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 12px; }
+.cmp-card { display: grid; gap: 10px; align-content: start; min-width: 0; padding: 16px 18px 14px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--card-edge); container-type: inline-size; }
+.cmp-card header { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.cmp-card header a { color: var(--text); font-family: var(--mono); font-size: 13.5px; }
+.cmp-card header .icon-btn { margin-left: auto; }
+.cmp-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
+.cmp-big { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cmp-cap { margin-top: -6px; color: var(--text-3); font-size: 12px; }
+.cmp-spark { height: 46px; margin: 0 -4px; }
+.cmp-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding-top: 10px; border-top: 1px solid var(--line); }
+.cmp-facts dt { color: var(--text-3); font-size: 11.5px; }
+.cmp-facts dd { margin: 2px 0 0; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+/* A narrow card (four or five wallets) lists its facts one per line. */
+@container (max-width: 300px) {
+  .cmp-facts { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .cmp-facts div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .cmp-facts dd { margin: 0; }
+}
+/* On a tablet or phone the cards sit in a row that scrolls sideways, edge to edge. */
+@media (max-width: 1000px) {
+  .cmp-cards { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; scroll-padding-inline: var(--gutter); margin: -2px calc(-1 * var(--gutter)) -22px; padding: 2px var(--gutter) 22px; }
+  .cmp-card { scroll-snap-align: start; }
+}
+@media (max-width: 560px) { .cmp-cards { grid-auto-columns: 82%; } }
 @media (max-width: 640px) {
   table.t.cmp, .cmp thead, .cmp tbody { display: block; }
   .cmp tr { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); column-gap: 10px; padding: 9px 16px; border-bottom: 1px solid var(--line); }
