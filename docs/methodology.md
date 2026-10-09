@@ -400,9 +400,11 @@ points: the per-account points formula is not published.
   - hold time = close time − open time (mean, median, winners, losers);
   - best and worst market by net PnL.
 
-  For very active wallets, trips are built from the latest 150,000 events
-  and the response says so. Totals, per-market sums and period ranks always
-  use full history.
+  Trips are built from the wallet's whole history, read 100,000 events at a
+  time with open positions carried from one page to the next. Only a wallet
+  with more than 5,000,000 trading events uses its latest 5,000,000, and the
+  response says so. Totals, per-market sums and period ranks always use full
+  history.
 - **Periods and ranks.** For the last 24 h, 7 d, 30 d and all time: volume,
   trades, net PnL, PnL per volume (bps), and the wallet's rank by net PnL and
   by volume. The rank is 1 + the number of accounts with a strictly higher

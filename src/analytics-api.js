@@ -5,7 +5,7 @@
 import { BALANCE_MOVES, BALANCE_KINDS, protocolBalance, CHECKED_FROM_TS } from './revenue.js';
 import * as m from './math.js';
 import { WINDOWS, BUCKETS, DEFAULT_BUCKET, EPOCH_WINDOWS, epochRange, epochStart } from './query.js';
-import { roundTrips, performance, insights, activityGrid } from './analytics.js';
+import { walletAnalyzer, insights } from './analytics.js';
 import { metrics as computeMetrics } from './state.js';
 import { cohortTable } from './cohorts.js';
 
@@ -54,7 +54,7 @@ export function pickLeaders(rows, { days, top }) {
   return { leaders: profitable.filter(r => !maker(r) && !fast(r)).slice(0, top), excluded: profitable.filter(r => maker(r) || fast(r)).length };
 }
 
-export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collector, accountState = null, now = () => Date.now(), maxTripEvents = 150000 }) {
+export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collector, accountState = null, now = () => Date.now(), maxTripEvents = 5000000, tripPage = 100000 }) {
   const { state } = collector;
   // A wallet's own figures keep the short stale window: its owner may have just traded.
   const cache = createCache({ now, longStaleFor: key => !key.startsWith('wallet') });
@@ -558,21 +558,44 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
     return { ...view, portfolio: live?.portfolio ?? null, positions: live?.positions ?? [] };
   }
 
-  // Wallet page, analytics part: round trips over the account's events
-  // (latest maxTripEvents), performance, behaviour notes and activity.
+  // Wallet page, analytics part: round trips over the account's whole history
+  // (the latest maxTripEvents events at most), read tripPage events at a time,
+  // with performance, behaviour notes and activity. A history longer than one
+  // page is kept for 10 minutes and served stale while it is read again; at
+  // most two such histories are read at once.
+  const longHistories = new Set();
+  let reading = 0;
+  const waiting = [];
+  const readSlot = async fn => {
+    if (reading < 2) reading++; else await new Promise(r => waiting.push(r));
+    try { return await fn(); } finally { const next = waiting.shift(); if (next) next(); else reading--; }
+  };
   async function walletAnalytics(key) {
     const acct = await resolve(key);
     const c = cd();
-    return cache.get(`wallet-analytics:${acct.id}`, 30000, async () => {
-      const [total, rows] = await Promise.all([queries.accountEventCount(acct.id), queries.accountEvents(acct.id, { limit: maxTripEvents })]);
-      const { trips, openTrips } = roundTrips(rows);
-      const perf = performance(trips);
+    return cache.get(`wallet-analytics:${acct.id}`, longHistories.has(acct.id) ? 600000 : 30000, async () => {
+      const total = await queries.accountEventCount(acct.id);
+      const skip = Math.max(0, total - maxTripEvents);
+      const read = async () => {
+        const an = walletAnalyzer();
+        let after = skip ? await queries.accountEventCursor(acct.id, skip) : null;
+        for (;;) {
+          const rows = await queries.accountEventsPage(acct.id, { after, limit: tripPage });
+          an.add(rows);
+          if (rows.length < tripPage) break;
+          const last = rows[rows.length - 1];
+          after = [last.block, last.log_index];
+        }
+        return an.result();
+      };
+      if (total > tripPage) longHistories.add(acct.id); else longHistories.delete(acct.id);
+      const { perf, trips, openTrips, events, count, firstTs } = await (total > tripPage ? readSlot(read) : read());
       const tripView = t => ({ market: t.market, symbol: symbol(t.market), side: t.side === 0 ? 'long' : 'short', open_ts: t.openTs, first_ts: t.firstTs, close_ts: t.closeTs, hold_seconds: t.complete && t.closeTs !== null ? t.closeTs - t.openTs : null, entry_notional: dec(t.entryNotional, c), exit_notional: dec(t.exitNotional, c), max_size: size(t.maxLot, t.market), realized: dec(t.realized, c), fees: dec(t.fees, c), funding: dec(t.funding, c), net_pnl: dec(t.net, c), return_pct: t.complete && t.entryNotional > 0n ? Number(t.net * 1000000n / t.entryNotional) / 10000 : null, max_leverage: t.maxLeverage ? t.maxLeverage / 100 : null, complete: t.complete, liquidated: t.liquidated, deleveraged: t.deleveraged, events: t.events });
       return {
         meta: metaOf(),
         account: { id: acct.id, address: acct.address },
         performance: {
-          based_on: { events: rows.length, total_events: total, truncated: total > rows.length, since: rows.length ? Number(rows[0].ts) : null },
+          based_on: { events: count, total_events: Math.max(total, count), truncated: skip > 0, since: firstTs },
           closed_trips: perf.closedTrips, wins: perf.wins, losses: perf.losses, win_rate_pct: perf.winRate === null ? null : Math.round(perf.winRate * 10000) / 100,
           profit_factor: perf.profitFactor, net_pnl: dec(perf.net, c), gross_profit: dec(perf.grossProfit, c), gross_loss: dec(perf.grossLoss, c), expectancy: dec(perf.expectancy, c),
           average_win: dec(perf.averageWin, c), average_loss: dec(perf.averageLoss, c), largest_win: dec(perf.largestWin, c), largest_loss: dec(perf.largestLoss, c),
@@ -586,8 +609,8 @@ export function createAnalyticsApi({ ch = null, ingest, rollups, queries, collec
           worst_market: perf.worstMarket ? { market: perf.worstMarket.market, symbol: symbol(perf.worstMarket.market), net_pnl: dec(perf.worstMarket.net, c), trips: perf.worstMarket.trips } : null,
           markets: perf.markets.map(x => ({ market: x.market, symbol: symbol(x.market), trips: x.trips, wins: x.wins, win_rate_pct: x.trips ? Math.round(x.wins / x.trips * 10000) / 100 : null, net_pnl: dec(x.net, c) }))
         },
-        insights: insights(perf, rows, { symbol }),
-        activity: activityGrid(rows),
+        insights: insights(perf, events, { symbol }),
+        activity: events.grid,
         trip_curve: perf.curve.slice(-2000).map(p => ({ t: p.ts, equity: dec(p.equity, c) })),
         trips: trips.slice(-200).reverse().map(tripView),
         open_trips: openTrips.map(tripView)

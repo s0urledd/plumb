@@ -246,16 +246,25 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
 
   const EV_COLUMNS = 'block, log_index, tx_index, toUnixTimestamp(ts) AS ts, tx, kind, market, account, side, role, buy, price, lot, start_lot, end_lot, notional, fee, builder_fee, ins_fee, prot_fee, pnl, funding, deposit, amount, balance, leverage, mark, flags';
 
-  // An account's trading events in chain order (newest `limit` when capped),
-  // with only the columns round-trip analytics need, as compact rows.
+  // An account's trading events in chain order, a page of `limit` after the
+  // cursor [block, log_index], with only the columns round-trip analytics need.
+  // The cursor is a key range (block >= b), so a later page does not rescan the
+  // account's earlier events.
   const LEAN = ['block', 'log_index', 'ts', 'kind', 'market', 'side', 'role', 'lot', 'start_lot', 'end_lot', 'notional', 'fee', 'builder_fee', 'pnl', 'funding', 'leverage'];
-  async function accountEvents(accountId, { limit = 150000 } = {}) {
-    const rows = await ch.queryCompact(`SELECT block, log_index, toUnixTimestamp(ts), kind, market, side, role, lot, start_lot, end_lot, notional, fee, builder_fee, pnl, funding, leverage FROM ev_account WHERE account = {a:UInt32} AND kind IN ('open','increase','decrease','close','invert','liquidation','deleverage','unwind') ORDER BY block DESC, log_index DESC LIMIT ${int(limit)}`, { a: accountId }, SQL_SETTINGS);
+  const TRIP_KINDS = "kind IN ('open','increase','decrease','close','invert','liquidation','deleverage','unwind')";
+  async function accountEventsPage(accountId, { after = null, limit = 100000 } = {}) {
+    const from = after ? ` AND block >= ${int(after[0])} AND (block > ${int(after[0])} OR log_index > ${int(after[1])})` : '';
+    const rows = await ch.queryCompact(`SELECT block, log_index, toUnixTimestamp(ts), kind, market, side, role, lot, start_lot, end_lot, notional, fee, builder_fee, pnl, funding, leverage FROM ev_account WHERE account = {a:UInt32} AND ${TRIP_KINDS}${from} ORDER BY block, log_index LIMIT ${int(limit)}`, { a: accountId }, SQL_SETTINGS);
     const out = new Array(rows.length);
-    for (let i = rows.length - 1, j = 0; i >= 0; i--, j++) { const r = rows[i], o = {}; for (let k = 0; k < LEAN.length; k++) o[LEAN[k]] = r[k]; out[j] = o; }
+    for (let i = 0; i < rows.length; i++) { const r = rows[i], o = {}; for (let k = 0; k < LEAN.length; k++) o[LEAN[k]] = r[k]; out[i] = o; }
     return out;
   }
-  async function accountEventCount(accountId) { return Number((await ch.first("SELECT count() AS n FROM ev_account WHERE account = {a:UInt32} AND kind IN ('open','increase','decrease','close','invert','liquidation','deleverage','unwind')", { a: accountId })).n); }
+  // The cursor at an account's n-th trading event (to read only what follows).
+  async function accountEventCursor(accountId, n) {
+    const r = await ch.first(`SELECT block, log_index FROM ev_account WHERE account = {a:UInt32} AND ${TRIP_KINDS} ORDER BY block, log_index LIMIT 1 OFFSET ${int(n - 1)}`, { a: accountId }, SQL_SETTINGS);
+    return r ? [r.block, r.log_index] : null;
+  }
+  async function accountEventCount(accountId) { return Number((await ch.first(`SELECT count() AS n FROM ev_account WHERE account = {a:UInt32} AND ${TRIP_KINDS}`, { a: accountId })).n); }
   // Time of an account's first trade (null before any).
   async function accountFirstTrade(accountId) {
     const r = await ch.first(`SELECT toUnixTimestamp(ts) AS ts FROM ev_account WHERE account = {a:UInt32} AND ${ACCOUNT_TRADES} ORDER BY block, log_index LIMIT 1`, { a: accountId }, SQL_SETTINGS);
@@ -341,5 +350,5 @@ export function createQueries({ ch, rollups, coverage = null, rates = null }) {
     return new Map(rows.map(r => [Number(r.account), { address: r.address, created: Number(r.ts) }]));
   }
 
-  return { tsAtBlock, blockSpan, marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEvents, accountEventCount, accountFirstTrade, accountTrades, accountFlows, accountTransfers, balanceMoves, balanceMovesAtBlock, revenueUpTo, unsplitAtBlock, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
+  return { tsAtBlock, blockSpan, marketTotals, protocolTotals, traders, newTraders, accounts, accountScores, accountMarkets, accountSeries, cumulativeBefore, cumulativeAtBlock, lastPricesBefore, accountEventsPage, accountEventCursor, accountEventCount, accountFirstTrade, accountTrades, accountFlows, accountTransfers, balanceMoves, balanceMovesAtBlock, revenueUpTo, unsplitAtBlock, recent, recentCount, movesOf, positionFlow, fundingHistory, fundingSeries, findAccounts, addresses, split };
 }
